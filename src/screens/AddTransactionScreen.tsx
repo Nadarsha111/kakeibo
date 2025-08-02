@@ -81,7 +81,9 @@ export default function AddTransactionScreen({
         paymentMethod,
       };
 
-      DatabaseService.addTransaction(transactionData);
+      console.log('Adding transaction:', transactionData);
+      const transactionId = DatabaseService.addTransaction(transactionData);
+      console.log('Transaction added with ID:', transactionId);
       
       Alert.alert(
         'Success', 
@@ -98,6 +100,12 @@ export default function AddTransactionScreen({
         ]
       );
     } catch (error) {
+      console.error('Error adding transaction:', error);
+      Alert.alert(
+        'Error',
+        'Failed to add transaction. Please try again.',
+        [{ text: 'OK' }]
+      );
       console.error('Error adding transaction:', error);
       Alert.alert('Error', 'Failed to add transaction. Please try again.');
     }

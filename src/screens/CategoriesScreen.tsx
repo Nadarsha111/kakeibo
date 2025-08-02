@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import DatabaseService from '../services/database';
 
 const screenWidth = Dimensions.get('window').width;
@@ -220,6 +221,13 @@ export default function CategoriesScreen() {
   useEffect(() => {
     loadCategoryData();
   }, [selectedPeriod]);
+
+  // Reload data when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadCategoryData();
+    }, [selectedPeriod])
+  );
 
   const loadCategoryData = async () => {
     try {

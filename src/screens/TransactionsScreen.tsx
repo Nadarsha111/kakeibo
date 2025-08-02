@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import DatabaseService from '../services/database';
 import { Transaction } from '../types';
 
@@ -14,6 +15,14 @@ export default function TransactionsScreen() {
     loadTransactions();
     loadChartData();
   }, []);
+
+  // Reload data when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadTransactions();
+      loadChartData();
+    }, [])
+  );
 
   const loadTransactions = async () => {
     try {

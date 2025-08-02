@@ -6,7 +6,9 @@ import OverviewScreen from '../screens/OverviewScreen';
 import TransactionsScreen from '../screens/TransactionsScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import CategoriesScreen from '../screens/CategoriesScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 import AddTransactionScreen from '../screens/AddTransactionScreen';
+import { useTheme } from '../context/ThemeContext';
 
 const Tab = createBottomTabNavigator();
 
@@ -16,35 +18,38 @@ const TabIcon = ({ name, color }: { name: string; color: string }) => (
     <Text style={[styles.iconText, { color }]}>
       {name === 'Overview' ? '📊' : 
        name === 'Transactions' ? '📝' :
-       name === 'Budget' ? '⏰' : '📋'}
+       name === 'Budget' ? '⏰' : 
+       name === 'Categories' ? '📋' : '⚙️'}
     </Text>
   </View>
 );
 
 export default function AppNavigator() {
+  const { theme } = useTheme();
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleTransactionAdded = () => {
+    console.log('Transaction added, refreshing data...');
     setRefreshKey(prev => prev + 1);
   };
 
   return (
     <NavigationContainer>
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <Tab.Navigator
           screenOptions={{
-            tabBarActiveTintColor: '#14b8a6',
-            tabBarInactiveTintColor: '#6b7280',
+            tabBarActiveTintColor: theme.colors.primary,
+            tabBarInactiveTintColor: theme.colors.textSecondary,
             tabBarStyle: {
-              backgroundColor: '#ffffff',
-              borderTopColor: '#e5e7eb',
+              backgroundColor: theme.colors.card,
+              borderTopColor: theme.colors.border,
               height: 60,
               paddingBottom: 8,
               paddingTop: 8,
             },
             headerStyle: {
-              backgroundColor: '#14b8a6',
+              backgroundColor: theme.colors.primary,
             },
             headerTintColor: '#ffffff',
             headerTitleStyle: {
@@ -84,11 +89,18 @@ export default function AppNavigator() {
           >
             {() => <CategoriesScreen key={refreshKey} />}
           </Tab.Screen>
+          <Tab.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{
+              tabBarIcon: ({ color }) => <TabIcon name="Settings" color={color} />,
+            }}
+          />
         </Tab.Navigator>
 
         {/* Floating Action Button */}
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, { backgroundColor: theme.colors.primary }]}
           onPress={() => setShowAddTransaction(true)}
         >
           <Text style={styles.fabText}>+</Text>
