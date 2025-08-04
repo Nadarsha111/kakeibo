@@ -224,12 +224,25 @@ class DatabaseService {
     }
   };
 
-  getTransactionsByDateRange = (startDate: string, endDate: string): Transaction[] => {
+  getTransactionsByDateRange = (startDate: string, endDate: string, includeCategory: boolean = false): Array<Transaction & { categoryName?: string }> => {
     try {
-      return this.db.getAllSync(
-        'SELECT * FROM transactions WHERE date BETWEEN ? AND ? ORDER BY date DESC',
-        [startDate, endDate]
-      ) as Transaction[];
+      if (includeCategory) {
+        const query = `
+          SELECT 
+            t.*,
+            c.name as categoryName
+          FROM transactions t
+          LEFT JOIN categories c ON t.category = c.name
+          WHERE DATE(t.date) BETWEEN DATE(?) AND DATE(?)
+          ORDER BY t.date DESC, t.createdAt DESC
+        `;
+        return this.db.getAllSync(query, [startDate, endDate]) as Array<Transaction & { categoryName?: string }>;
+      } else {
+        return this.db.getAllSync(
+          'SELECT * FROM transactions WHERE date BETWEEN ? AND ? ORDER BY date DESC',
+          [startDate, endDate]
+        ) as Transaction[];
+      }
     } catch (error) {
       console.error('Error getting transactions by date range:', error);
       return [];
@@ -361,6 +374,147 @@ class DatabaseService {
       this.db.runSync('DELETE FROM app_settings WHERE key = ?', [key]);
     } catch (error) {
       console.error('Error deleting setting:', error);
+    }
+  };
+
+  // Category management methods
+  addCategory = (category: Omit<Category, 'id'>): boolean => {
+    try {
+      this.db.runSync(
+        'INSERT INTO categories (name, color, icon, type, budgetLimit) VALUES (?, ?, ?, ?, ?)',
+        [category.name, category.color, category.icon, category.type, category.budgetLimit || null]
+      );
+      return true;
+    } catch (error) {
+      console.error('Error adding category:', error);
+      return false;
+    }
+  };
+
+  updateCategory = (id: number, category: Partial<Omit<Category, 'id'>>): boolean => {
+    try {
+      const fields = [];
+      const values = [];
+      
+      if (category.name !== undefined) {
+        fields.push('name = ?');
+        values.push(category.name);
+      }
+      if (category.color !== undefined) {
+        fields.push('color = ?');
+        values.push(category.color);
+      }
+      if (category.icon !== undefined) {
+        fields.push('icon = ?');
+        values.push(category.icon);
+      }
+      if (category.type !== undefined) {
+        fields.push('type = ?');
+        values.push(category.type);
+      }
+      if (category.budgetLimit !== undefined) {
+        fields.push('budgetLimit = ?');
+        values.push(category.budgetLimit);
+      }
+
+      if (fields.length === 0) return false;
+
+      values.push(id);
+      this.db.runSync(
+        `UPDATE categories SET ${fields.join(', ')} WHERE id = ?`,
+        values
+      );
+      return true;
+    } catch (error) {
+      console.error('Error updating category:', error);
+      return false;
+    }
+  };
+
+  deleteCategory = (id: number): boolean => {
+    try {
+      // Check if category is being used in transactions
+      const usageCount = this.db.getFirstSync(
+        'SELECT COUNT(*) as count FROM transactions WHERE category = (SELECT name FROM categories WHERE id = ?)',
+        [id]
+      ) as { count: number };
+
+      if (usageCount.count > 0) {
+        throw new Error('Cannot delete category that is being used in transactions');
+      }
+
+      this.db.runSync('DELETE FROM categories WHERE id = ?', [id]);
+      return true;
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      return false;
+    }
+  };
+
+  getCategoryById = (id: number): Category | null => {
+    try {
+      return this.db.getFirstSync('SELECT * FROM categories WHERE id = ?', [id]) as Category | null;
+    } catch (error) {
+      console.error('Error getting category by id:', error);
+      return null;
+    }
+  };
+
+  getCategoriesByType = (type: 'income' | 'expense'): Category[] => {
+    try {
+      return this.db.getAllSync('SELECT * FROM categories WHERE type = ? ORDER BY name', [type]) as Category[];
+    } catch (error) {
+      console.error('Error getting categories by type:', error);
+      return [];
+    }
+  };
+
+  // Data export methods
+  getAllTransactionsForExport = (): Array<Transaction & { categoryName?: string }> => {
+    try {
+      const query = `
+        SELECT 
+          t.*,
+          c.name as categoryName
+        FROM transactions t
+        LEFT JOIN categories c ON t.category = c.name
+        ORDER BY t.date DESC, t.createdAt DESC
+      `;
+      return this.db.getAllSync(query) as Array<Transaction & { categoryName?: string }>;
+    } catch (error) {
+      console.error('Error getting transactions for export:', error);
+      return [];
+    }
+  };
+
+  getExportSummary = () => {
+    try {
+      const totalTransactions = this.db.getFirstSync('SELECT COUNT(*) as count FROM transactions') as { count: number };
+      const totalIncome = this.db.getFirstSync('SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE type = "income"') as { total: number };
+      const totalExpense = this.db.getFirstSync('SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE type = "expense"') as { total: number };
+      const dateRange = this.db.getFirstSync(`
+        SELECT 
+          MIN(date) as earliestDate,
+          MAX(date) as latestDate
+        FROM transactions
+      `) as { earliestDate: string; latestDate: string };
+      
+      return {
+        totalTransactions: totalTransactions.count,
+        totalIncome: totalIncome.total,
+        totalExpense: totalExpense.total,
+        earliestDate: dateRange.earliestDate,
+        latestDate: dateRange.latestDate,
+      };
+    } catch (error) {
+      console.error('Error getting export summary:', error);
+      return {
+        totalTransactions: 0,
+        totalIncome: 0,
+        totalExpense: 0,
+        earliestDate: null,
+        latestDate: null,
+      };
     }
   };
 }

@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, useColorScheme } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, useColorScheme, SafeAreaView } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../../context/ThemeContext';
 import DatabaseService from '../../database/database';
 import OptionSelector from '../../components/OptionSelector';
+import ManageCategoriesScreen from '../../components/ManageCategoriesScreen';
+import ExportDataScreen from '../../components/ExportDataScreen';
 
 export default function SettingsScreen() {
   const { theme, toggleTheme, isDark, isLoading, refreshTheme } = useTheme();
@@ -17,6 +20,8 @@ export default function SettingsScreen() {
   const [themeModalVisible, setThemeModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [decimalModalVisible, setDecimalModalVisible] = useState(false);
+  const [manageCategoriesVisible, setManageCategoriesVisible] = useState(false);
+  const [exportDataVisible, setExportDataVisible] = useState(false);
 
   useEffect(() => {
     loadAllSettings();
@@ -118,7 +123,9 @@ export default function SettingsScreen() {
   );
 
   return (
-    <ScrollView style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      <StatusBar style={isDark ? "light" : "dark"} backgroundColor={theme.colors.background} />
+      <ScrollView style={{ flex: 1 }}>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Appearance</Text>
         <SettingItem
@@ -152,6 +159,7 @@ export default function SettingsScreen() {
           title="Export Data"
           subtitle="Export transactions to CSV"
           rightComponent={<Text style={styles.chevron}>›</Text>}
+          onPress={() => setExportDataVisible(true)}
         />
         <SettingItem
           title="Import Data"
@@ -171,6 +179,7 @@ export default function SettingsScreen() {
           title="Manage Categories"
           subtitle="Add, edit, or remove categories"
           rightComponent={<Text style={styles.chevron}>›</Text>}
+          onPress={() => setManageCategoriesVisible(true)}
         />
         <SettingItem
           title="Category Colors"
@@ -246,7 +255,20 @@ export default function SettingsScreen() {
           handleDecimalPlacesChange(value);
         }}
       />
-    </ScrollView>
+
+      {/* Manage Categories Screen */}
+      <ManageCategoriesScreen
+        visible={manageCategoriesVisible}
+        onClose={() => setManageCategoriesVisible(false)}
+      />
+
+      {/* Export Data Screen */}
+      <ExportDataScreen
+        visible={exportDataVisible}
+        onClose={() => setExportDataVisible(false)}
+      />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

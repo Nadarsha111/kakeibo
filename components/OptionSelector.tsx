@@ -1,13 +1,15 @@
+import React from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
 interface OptionSelectorProps {
   visible: boolean;
   title: string;
-  options: Array<{ label: string; value: string; subtitle?: string }>;
+  options: Array<{ label: string; value: string; subtitle?: string; color?: string }>;
   selectedValue: string;
   onSelect: (value: string) => void;
   onClose: () => void;
+  renderOption?: (option: { label: string; value: string; subtitle?: string; color?: string }) => React.ReactNode;
 }
 
 export default function OptionSelector({
@@ -17,6 +19,7 @@ export default function OptionSelector({
   selectedValue,
   onSelect,
   onClose,
+  renderOption: customRenderOption,
 }: OptionSelectorProps) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -26,35 +29,54 @@ export default function OptionSelector({
     onClose();
   };
 
-  const renderOption = ({ item }: { item: { label: string; value: string; subtitle?: string } }) => (
-    <TouchableOpacity
-      style={[
-        styles.optionItem,
-        selectedValue === item.value && styles.selectedOption
-      ]}
-      onPress={() => handleSelect(item.value)}
-    >
-      <View style={styles.optionContent}>
-        <Text style={[
-          styles.optionLabel,
-          selectedValue === item.value && styles.selectedOptionText
-        ]}>
-          {item.label}
-        </Text>
-        {item.subtitle && (
+  const renderOptionItem = ({ item }: { item: { label: string; value: string; subtitle?: string; color?: string } }) => {
+    if (customRenderOption) {
+      return (
+        <TouchableOpacity
+          style={[
+            styles.optionItem,
+            selectedValue === item.value && styles.selectedOption
+          ]}
+          onPress={() => handleSelect(item.value)}
+        >
+          {customRenderOption(item)}
+          {selectedValue === item.value && (
+            <Text style={styles.checkmark}>✓</Text>
+          )}
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.optionItem,
+          selectedValue === item.value && styles.selectedOption
+        ]}
+        onPress={() => handleSelect(item.value)}
+      >
+        <View style={styles.optionContent}>
           <Text style={[
-            styles.optionSubtitle,
-            selectedValue === item.value && styles.selectedOptionSubtext
+            styles.optionLabel,
+            selectedValue === item.value && styles.selectedOptionText
           ]}>
-            {item.subtitle}
+            {item.label}
           </Text>
+          {item.subtitle && (
+            <Text style={[
+              styles.optionSubtitle,
+              selectedValue === item.value && styles.selectedOptionSubtext
+            ]}>
+              {item.subtitle}
+            </Text>
+          )}
+        </View>
+        {selectedValue === item.value && (
+          <Text style={styles.checkmark}>✓</Text>
         )}
-      </View>
-      {selectedValue === item.value && (
-        <Text style={styles.checkmark}>✓</Text>
-      )}
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <Modal
@@ -82,7 +104,7 @@ export default function OptionSelector({
           
           <FlatList
             data={options}
-            renderItem={renderOption}
+            renderItem={renderOptionItem}
             keyExtractor={(item) => item.value}
             style={styles.optionsList}
             showsVerticalScrollIndicator={false}
