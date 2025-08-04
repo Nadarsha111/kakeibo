@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { Transaction, Category, Budget, AccountBalance } from '../types';
+import { Transaction, Category, Budget, AccountBalance, Account } from '../types';
 
 class DatabaseService {
   private db: SQLite.SQLiteDatabase;
@@ -11,6 +11,22 @@ class DatabaseService {
 
   private initDatabase = () => {
     try {
+      // Create accounts table
+      this.db.execSync(`
+        CREATE TABLE IF NOT EXISTS accounts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK (type IN ('savings', 'checking', 'credit_card', 'loan', 'investment', 'cash')),
+          balance REAL NOT NULL DEFAULT 0,
+          currency TEXT NOT NULL DEFAULT 'USD',
+          bankName TEXT,
+          accountNumber TEXT,
+          isActive INTEGER NOT NULL DEFAULT 1,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+      `);
+
       // Create transactions table
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS transactions (
@@ -21,14 +37,17 @@ class DatabaseService {
           description TEXT,
           date TEXT NOT NULL,
           paymentMethod TEXT NOT NULL CHECK (paymentMethod IN ('cash', 'credit_card', 'debit_card')),
+          accountId INTEGER,
           priority TEXT CHECK (priority IN ('need', 'want')),
           createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL
+          updatedAt TEXT NOT NULL,
+          FOREIGN KEY (accountId) REFERENCES accounts (id)
         );
       `);
 
-      // Add priority column to existing transactions if it doesn't exist
+      // Add priority and accountId columns to existing transactions if they don't exist
       this.addPriorityColumnIfNotExists();
+      this.addAccountIdColumnIfNotExists();
 
       // Create categories table
       this.db.execSync(`
@@ -76,8 +95,29 @@ class DatabaseService {
 
       // Insert default categories
       this.insertDefaultCategories();
+      
+      // Insert default accounts
+      this.insertDefaultAccounts();
     } catch (error) {
       console.error('Error initializing database:', error);
+    }
+  };
+
+  private addAccountIdColumnIfNotExists = () => {
+    try {
+      // Check if accountId column exists
+      const tableInfo = this.db.getAllSync("PRAGMA table_info(transactions)");
+      const hasColumn = tableInfo.some((row: any) => row.name === 'accountId');
+      
+      if (!hasColumn) {
+        this.db.execSync(`
+          ALTER TABLE transactions 
+          ADD COLUMN accountId INTEGER REFERENCES accounts(id)
+        `);
+        console.log('Added accountId column to transactions table');
+      }
+    } catch (error) {
+      console.error('Error adding accountId column:', error);
     }
   };
 
@@ -136,6 +176,27 @@ class DatabaseService {
 
     // Add sample transactions for testing
     this.addSampleTransactions();
+  };
+
+  private insertDefaultAccounts = () => {
+    const defaultAccounts = [
+      { name: 'Cash Wallet', type: 'cash', balance: 500.00, currency: 'USD' },
+      { name: 'Main Checking', type: 'checking', balance: 2500.85, currency: 'USD', bankName: 'Bank of America' },
+      { name: 'Savings Account', type: 'savings', balance: 5000.00, currency: 'USD', bankName: 'Bank of America' },
+      { name: 'Credit Card', type: 'credit_card', balance: -25.00, currency: 'USD', bankName: 'Chase' },
+    ];
+
+    defaultAccounts.forEach((account) => {
+      try {
+        const now = new Date().toISOString();
+        this.db.runSync(
+          'INSERT OR IGNORE INTO accounts (name, type, balance, currency, bankName, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+          [account.name, account.type, account.balance, account.currency, account.bankName || null, now, now]
+        );
+      } catch (error) {
+        console.log('Account already exists:', account.name);
+      }
+    });
   };
 
   private addSampleTransactions = () => {
@@ -209,11 +270,16 @@ class DatabaseService {
     try {
       const now = new Date().toISOString();
       const result = this.db.runSync(
-        `INSERT INTO transactions (amount, type, category, description, date, paymentMethod, priority, createdAt, updatedAt) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO transactions (amount, type, category, description, date, paymentMethod, accountId, priority, createdAt, updatedAt) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [transaction.amount, transaction.type, transaction.category, transaction.description, 
-         transaction.date, transaction.paymentMethod, transaction.priority || null, now, now]
+         transaction.date, transaction.paymentMethod, transaction.accountId || null, transaction.priority || null, now, now]
       );
+      
+      // Update account balance if account is specified
+      if (transaction.accountId) {
+        this.updateAccountBalanceForTransaction(transaction.accountId, transaction.amount, transaction.type);
+      }
       
       this.updateAccountBalance(transaction.amount, transaction.type);
       
@@ -222,13 +288,28 @@ class DatabaseService {
         amount: transaction.amount,
         type: transaction.type,
         category: transaction.category,
-        date: transaction.date
+        date: transaction.date,
+        accountId: transaction.accountId
       });
       
       return result.lastInsertRowId;
     } catch (error) {
       console.error('Error adding transaction:', error);
       throw error;
+    }
+  };
+
+  private updateAccountBalanceForTransaction = (accountId: number, amount: number, type: 'income' | 'expense'): void => {
+    try {
+      const account = this.getAccountById(accountId);
+      if (account) {
+        const balanceChange = type === 'income' ? amount : -amount;
+        const newBalance = account.balance + balanceChange;
+        
+        this.updateAccount(accountId, { balance: newBalance });
+      }
+    } catch (error) {
+      console.error('Error updating account balance for transaction:', error);
     }
   };
 
@@ -268,6 +349,117 @@ class DatabaseService {
     } catch (error) {
       console.error('Error getting transactions by date range:', error);
       return [];
+    }
+  };
+
+  // Account methods
+  getAccounts = (): Account[] => {
+    try {
+      const accounts = this.db.getAllSync('SELECT * FROM accounts WHERE isActive = 1 ORDER BY name');
+      return accounts as Account[];
+    } catch (error) {
+      console.error('Error getting accounts:', error);
+      return [];
+    }
+  };
+
+  addAccount = (account: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>): number => {
+    try {
+      const now = new Date().toISOString();
+      const result = this.db.runSync(
+        `INSERT INTO accounts (name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [account.name, account.type, account.balance, account.currency, 
+         account.bankName || null, account.accountNumber || null, account.isActive ? 1 : 0, now, now]
+      );
+      
+      console.log('Account added:', { id: result.lastInsertRowId, name: account.name });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error adding account:', error);
+      throw error;
+    }
+  };
+
+  updateAccount = (id: number, account: Partial<Omit<Account, 'id' | 'createdAt'>>): void => {
+    try {
+      const now = new Date().toISOString();
+      const fields = [];
+      const values = [];
+      
+      if (account.name !== undefined) {
+        fields.push('name = ?');
+        values.push(account.name);
+      }
+      if (account.type !== undefined) {
+        fields.push('type = ?');
+        values.push(account.type);
+      }
+      if (account.balance !== undefined) {
+        fields.push('balance = ?');
+        values.push(account.balance);
+      }
+      if (account.currency !== undefined) {
+        fields.push('currency = ?');
+        values.push(account.currency);
+      }
+      if (account.bankName !== undefined) {
+        fields.push('bankName = ?');
+        values.push(account.bankName);
+      }
+      if (account.accountNumber !== undefined) {
+        fields.push('accountNumber = ?');
+        values.push(account.accountNumber);
+      }
+      if (account.isActive !== undefined) {
+        fields.push('isActive = ?');
+        values.push(account.isActive ? 1 : 0);
+      }
+      
+      fields.push('updatedAt = ?');
+      values.push(now);
+      values.push(id);
+      
+      this.db.runSync(
+        `UPDATE accounts SET ${fields.join(', ')} WHERE id = ?`,
+        values
+      );
+      
+      console.log('Account updated:', id);
+    } catch (error) {
+      console.error('Error updating account:', error);
+      throw error;
+    }
+  };
+
+  deleteAccount = (id: number): void => {
+    try {
+      // Soft delete - mark as inactive
+      this.db.runSync('UPDATE accounts SET isActive = 0 WHERE id = ?', [id]);
+      console.log('Account deleted (marked inactive):', id);
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      throw error;
+    }
+  };
+
+  getAccountById = (id: number): Account | null => {
+    try {
+      const account = this.db.getFirstSync('SELECT * FROM accounts WHERE id = ? AND isActive = 1', [id]);
+      return account as Account || null;
+    } catch (error) {
+      console.error('Error getting account by id:', error);
+      return null;
+    }
+  };
+
+  getTotalAccountsBalance = (): number => {
+    try {
+      const result = this.db.getFirstSync('SELECT SUM(balance) as total FROM accounts WHERE isActive = 1');
+      return (result as any)?.total || 0;
+    } catch (error) {
+      console.error('Error getting total accounts balance:', error);
+      return 0;
     }
   };
 

@@ -10,7 +10,7 @@ import {
   Modal 
 } from 'react-native';
 import DatabaseService from '../database/database';
-import { Category } from '../types';
+import { Category, Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 
 interface AddTransactionScreenProps {
@@ -31,13 +31,16 @@ export default function AddTransactionScreen({
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit_card' | 'debit_card'>('credit_card');
+  const [selectedAccount, setSelectedAccount] = useState<number | undefined>(undefined);
   const [priority, setPriority] = useState<'need' | 'want' | undefined>(undefined);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     if (visible) {
       loadCategories();
+      loadAccounts();
     }
   }, [visible]);
 
@@ -53,6 +56,20 @@ export default function AddTransactionScreen({
       }
     } catch (error) {
       console.error('Error loading categories:', error);
+    }
+  };
+
+  const loadAccounts = () => {
+    try {
+      const allAccounts = DatabaseService.getAccounts();
+      setAccounts(allAccounts);
+      
+      // Set default account (first active account)
+      if (allAccounts.length > 0 && !selectedAccount) {
+        setSelectedAccount(allAccounts[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading accounts:', error);
     }
   };
 
@@ -105,6 +122,7 @@ export default function AddTransactionScreen({
         description: description.trim() || '',
         date,
         paymentMethod,
+        accountId: selectedAccount,
         priority: type === 'expense' ? priority : undefined,
       };
 
@@ -133,6 +151,7 @@ export default function AddTransactionScreen({
     setPaymentMethod('credit_card');
     setDate(new Date().toISOString().split('T')[0]);
     setPriority(undefined);
+    setSelectedAccount(accounts.length > 0 ? accounts[0].id : undefined);
   };
 
   const getFilteredCategories = () => {
@@ -153,6 +172,18 @@ export default function AddTransactionScreen({
       'Investment': '📈',
     };
     return emojiMap[categoryName] || '💵';
+  };
+
+  const getAccountTypeEmoji = (type: Account['type']) => {
+    const emojiMap = {
+      savings: '🏦',
+      checking: '💳',
+      credit_card: '💰',
+      loan: '🏠',
+      investment: '📈',
+      cash: '💵',
+    };
+    return emojiMap[type] || '💰';
   };
 
   return (
@@ -225,92 +256,130 @@ export default function AddTransactionScreen({
           {/* Category Selector */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Category</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.categoryGrid}>
-                {getFilteredCategories().map((category) => (
-                  <TouchableOpacity
-                    key={category.id}
-                    style={[
-                      styles.categoryItem,
-                      selectedCategory === category.name && styles.categoryItemActive
-                    ]}
-                    onPress={() => setSelectedCategory(category.name)}
-                  >
-                    <View style={[
-                      styles.categoryIcon,
-                      { backgroundColor: category.color }
-                    ]}>
-                      <Text style={styles.categoryEmoji}>
-                        {getCategoryEmoji(category.name)}
-                      </Text>
-                    </View>
-                    <Text style={styles.categoryName}>{category.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryScrollContent}
+            >
+              {getFilteredCategories().map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryItemCompact,
+                    selectedCategory === category.name && styles.categoryItemCompactActive
+                  ]}
+                  onPress={() => setSelectedCategory(category.name)}
+                >
+                  <Text style={styles.categoryEmojiCompact}>
+                    {getCategoryEmoji(category.name)}
+                  </Text>
+                  <Text style={[
+                    styles.categoryNameCompact,
+                    selectedCategory === category.name && styles.categoryNameCompactActive
+                  ]}>
+                    {category.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
           </View>
 
-          {/* Payment Method */}
+          {/* Account Selector */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Method</Text>
-            <View style={styles.paymentGrid}>
-              {[
-                { value: 'cash', label: 'Cash', emoji: '💵' },
-                { value: 'credit_card', label: 'Credit Card', emoji: '💳' },
-                { value: 'debit_card', label: 'Debit Card', emoji: '💳' }
-              ].map((method) => (
+            <Text style={styles.sectionTitle}>Account</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryScrollContent}
+            >
+              {accounts.map((account) => (
                 <TouchableOpacity
-                  key={method.value}
+                  key={account.id}
                   style={[
-                    styles.paymentItem,
-                    paymentMethod === method.value && styles.paymentItemActive
+                    styles.categoryItemCompact,
+                    selectedAccount === account.id && styles.categoryItemCompactActive
                   ]}
-                  onPress={() => setPaymentMethod(method.value as any)}
+                  onPress={() => setSelectedAccount(account.id)}
                 >
-                  <Text style={styles.paymentEmoji}>{method.emoji}</Text>
-                  <Text style={styles.paymentLabel}>{method.label}</Text>
+                  <Text style={styles.categoryEmojiCompact}>
+                    {getAccountTypeEmoji(account.type)}
+                  </Text>
+                  <Text style={[
+                    styles.categoryNameCompact,
+                    selectedAccount === account.id && styles.categoryNameCompactActive
+                  ]}>
+                    {account.name}
+                  </Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
           </View>
 
-          {/* Priority (for expenses only) */}
-          {type === 'expense' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Priority (Optional)</Text>
-              <Text style={styles.sectionSubtitle}>
-                Classify this expense to help with budgeting
-              </Text>
-              <View style={styles.priorityGrid}>
+          {/* Payment Method & Priority (Combined) */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {type === 'expense' ? 'Payment & Priority' : 'Payment Method'}
+            </Text>
+            
+            {/* Compact Payment Method Selector */}
+            <View style={styles.compactRow}>
+              <Text style={styles.compactLabel}>Method:</Text>
+              <View style={styles.compactSelector}>
                 {[
-                  { value: 'need', label: 'Need', emoji: '🎯', description: 'Essential expense' },
-                  { value: 'want', label: 'Want', emoji: '✨', description: 'Discretionary expense' }
-                ].map((priorityOption) => (
+                  { value: 'cash', emoji: '💵' },
+                  { value: 'credit_card', emoji: '💳' },
+                  { value: 'debit_card', emoji: '🏧' }
+                ].map((method) => (
                   <TouchableOpacity
-                    key={priorityOption.value}
+                    key={method.value}
                     style={[
-                      styles.priorityItem,
-                      priority === priorityOption.value && styles.priorityItemActive
+                      styles.compactButton,
+                      paymentMethod === method.value && styles.compactButtonActive
                     ]}
-                    onPress={() => setPriority(priorityOption.value as 'need' | 'want')}
+                    onPress={() => setPaymentMethod(method.value as any)}
                   >
-                    <Text style={styles.priorityEmoji}>{priorityOption.emoji}</Text>
-                    <Text style={styles.priorityLabel}>{priorityOption.label}</Text>
-                    <Text style={styles.priorityDescription}>{priorityOption.description}</Text>
+                    <Text style={styles.compactEmoji}>{method.emoji}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              {priority && (
-                <TouchableOpacity
-                  style={styles.clearPriorityButton}
-                  onPress={() => setPriority(undefined)}
-                >
-                  <Text style={styles.clearPriorityText}>Clear Selection</Text>
-                </TouchableOpacity>
-              )}
             </View>
-          )}
+
+            {/* Compact Priority Selector (for expenses only) */}
+            {type === 'expense' && (
+              <View style={styles.compactRow}>
+                <Text style={styles.compactLabel}>Priority:</Text>
+                <View style={styles.compactSelector}>
+                  <TouchableOpacity
+                    style={[
+                      styles.compactButton,
+                      priority === 'need' && styles.compactButtonActive
+                    ]}
+                    onPress={() => setPriority(priority === 'need' ? undefined : 'need')}
+                  >
+                    <Text style={styles.compactEmoji}>🎯</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.compactButton,
+                      priority === 'want' && styles.compactButtonActive
+                    ]}
+                    onPress={() => setPriority(priority === 'want' ? undefined : 'want')}
+                  >
+                    <Text style={styles.compactEmoji}>✨</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.compactButton,
+                      !priority && styles.compactButtonActive
+                    ]}
+                    onPress={() => setPriority(undefined)}
+                  >
+                    <Text style={styles.compactText}>Skip</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
 
           {/* Description */}
           <View style={styles.section}>
@@ -556,5 +625,79 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 12,
     color: theme.colors.textSecondary,
     textDecorationLine: 'underline',
+  },
+  // Compact UI styles
+  compactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  compactLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: theme.colors.text,
+    flex: 1,
+  },
+  compactSelector: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surface,
+    borderRadius: 8,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  compactButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginHorizontal: 2,
+    borderRadius: 6,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactButtonActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  compactEmoji: {
+    fontSize: 16,
+  },
+  compactText: {
+    fontSize: 12,
+    color: theme.colors.text,
+    fontWeight: '500',
+  },
+  // Compact category styles
+  categoryScrollContent: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  categoryItemCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  categoryItemCompactActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  categoryEmojiCompact: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  categoryNameCompact: {
+    fontSize: 12,
+    color: theme.colors.text,
+    fontWeight: '500',
+  },
+  categoryNameCompactActive: {
+    color: '#fff',
   },
 });

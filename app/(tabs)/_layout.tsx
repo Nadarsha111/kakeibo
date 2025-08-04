@@ -41,24 +41,24 @@ export default function TabLayout() {
             }}
           />
           <Tabs.Screen
-            name="budget"
+            name="accounts"
             options={{
-              title: 'Budget',
-              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="calendar-month-outline" color={color} />,
+              title: 'Accounts',
+              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="bank-outline" color={color} />,
             }}
           />
           <Tabs.Screen
-            name="categories"
+            name="manage"
             options={{
-              title: 'Categories',
-              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="shape-outline" color={color} />,
+              title: 'Manage',
+              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="cog-outline" color={color} />,
             }}
           />
           <Tabs.Screen
             name="settings"
             options={{
               title: 'Settings',
-              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="cog-outline" color={color} />,
+              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="account-settings-outline" color={color} />,
             }}
           />
         </Tabs>

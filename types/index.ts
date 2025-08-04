@@ -1,3 +1,16 @@
+export interface Account {
+  id: number;
+  name: string;
+  type: 'savings' | 'checking' | 'credit_card' | 'loan' | 'investment' | 'cash';
+  balance: number;
+  currency: string;
+  bankName?: string;
+  accountNumber?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Transaction {
   id: number;
   amount: number;
@@ -6,6 +19,7 @@ export interface Transaction {
   description: string;
   date: string;
   paymentMethod: 'cash' | 'credit_card' | 'debit_card';
+  accountId?: number;
   priority?: 'need' | 'want';
   createdAt: string;
   updatedAt: string;
