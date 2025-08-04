@@ -10,7 +10,7 @@ export default function TabLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Tabs screenOptions={{ tabBarActiveTintColor: '#2563eb' }}>
+      <Tabs screenOptions={{ tabBarActiveTintColor: '#2563eb', headerShown: false }}>
         <Tabs.Screen
           name="index"
           options={{
@@ -56,6 +56,7 @@ export default function TabLayout() {
       <AddTransactionScreen
         visible={showAddTransaction}
         onClose={() => setShowAddTransaction(false)}
+        onTransactionAdded={() => {}}
       />
     </View>
   );
@@ -64,7 +65,7 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 120,
     right: 20,
     width: 56,
     height: 56,
