@@ -31,6 +31,7 @@ export default function AddTransactionScreen({
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit_card' | 'debit_card'>('credit_card');
+  const [priority, setPriority] = useState<'need' | 'want' | undefined>(undefined);
   const [categories, setCategories] = useState<Category[]>([]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -60,6 +61,11 @@ export default function AddTransactionScreen({
     // Reset category selection when type changes
     const categoryForType = categories.find(cat => cat.type === newType);
     setSelectedCategory(categoryForType?.name || '');
+    
+    // Reset priority for income transactions
+    if (newType === 'income') {
+      setPriority(undefined);
+    }
   };
 
   const handleSubmit = () => {
@@ -74,6 +80,23 @@ export default function AddTransactionScreen({
       return;
     }
 
+    // For expense transactions, priority is optional but recommended
+    if (type === 'expense' && !priority) {
+      Alert.alert(
+        'Priority Selection', 
+        'Would you like to classify this expense as a Need or Want? This helps with budgeting.',
+        [
+          { text: 'Skip', style: 'cancel', onPress: () => submitTransaction() },
+          { text: 'Select Priority', onPress: () => {} }
+        ]
+      );
+      return;
+    }
+
+    submitTransaction();
+  };
+
+  const submitTransaction = () => {
     try {
       const transactionData = {
         amount: parseFloat(amount),
@@ -82,6 +105,7 @@ export default function AddTransactionScreen({
         description: description.trim() || '',
         date,
         paymentMethod,
+        priority: type === 'expense' ? priority : undefined,
       };
 
       console.log('Adding transaction:', transactionData);
@@ -89,8 +113,8 @@ export default function AddTransactionScreen({
       console.log('Transaction added with ID:', transactionId);
       
       resetForm();
-              onTransactionAdded();
-              onClose();
+      onTransactionAdded();
+      onClose();
     } catch (error) {
       console.error('Error adding transaction:', error);
       Alert.alert(
@@ -98,8 +122,6 @@ export default function AddTransactionScreen({
         'Failed to add transaction. Please try again.',
         [{ text: 'OK' }]
       );
-      console.error('Error adding transaction:', error);
-      Alert.alert('Error', 'Failed to add transaction. Please try again.');
     }
   };
 
@@ -110,6 +132,7 @@ export default function AddTransactionScreen({
     setSelectedCategory('');
     setPaymentMethod('credit_card');
     setDate(new Date().toISOString().split('T')[0]);
+    setPriority(undefined);
   };
 
   const getFilteredCategories = () => {
@@ -251,6 +274,43 @@ export default function AddTransactionScreen({
               ))}
             </View>
           </View>
+
+          {/* Priority (for expenses only) */}
+          {type === 'expense' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Priority (Optional)</Text>
+              <Text style={styles.sectionSubtitle}>
+                Classify this expense to help with budgeting
+              </Text>
+              <View style={styles.priorityGrid}>
+                {[
+                  { value: 'need', label: 'Need', emoji: '🎯', description: 'Essential expense' },
+                  { value: 'want', label: 'Want', emoji: '✨', description: 'Discretionary expense' }
+                ].map((priorityOption) => (
+                  <TouchableOpacity
+                    key={priorityOption.value}
+                    style={[
+                      styles.priorityItem,
+                      priority === priorityOption.value && styles.priorityItemActive
+                    ]}
+                    onPress={() => setPriority(priorityOption.value as 'need' | 'want')}
+                  >
+                    <Text style={styles.priorityEmoji}>{priorityOption.emoji}</Text>
+                    <Text style={styles.priorityLabel}>{priorityOption.label}</Text>
+                    <Text style={styles.priorityDescription}>{priorityOption.description}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {priority && (
+                <TouchableOpacity
+                  style={styles.clearPriorityButton}
+                  onPress={() => setPriority(undefined)}
+                >
+                  <Text style={styles.clearPriorityText}>Clear Selection</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* Description */}
           <View style={styles.section}>
@@ -445,5 +505,56 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     color: theme.colors.text,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  priorityGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  priorityItem: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 16,
+    marginHorizontal: 4,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  priorityItemActive: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primaryLight || theme.colors.surface,
+  },
+  priorityEmoji: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  priorityLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  priorityDescription: {
+    fontSize: 10,
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  clearPriorityButton: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  clearPriorityText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    textDecorationLine: 'underline',
   },
 });

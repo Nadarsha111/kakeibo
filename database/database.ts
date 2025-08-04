@@ -21,10 +21,14 @@ class DatabaseService {
           description TEXT,
           date TEXT NOT NULL,
           paymentMethod TEXT NOT NULL CHECK (paymentMethod IN ('cash', 'credit_card', 'debit_card')),
+          priority TEXT CHECK (priority IN ('need', 'want')),
           createdAt TEXT NOT NULL,
           updatedAt TEXT NOT NULL
         );
       `);
+
+      // Add priority column to existing transactions if it doesn't exist
+      this.addPriorityColumnIfNotExists();
 
       // Create categories table
       this.db.execSync(`
@@ -74,6 +78,24 @@ class DatabaseService {
       this.insertDefaultCategories();
     } catch (error) {
       console.error('Error initializing database:', error);
+    }
+  };
+
+  private addPriorityColumnIfNotExists = () => {
+    try {
+      // Check if priority column exists
+      const tableInfo = this.db.getAllSync("PRAGMA table_info(transactions)");
+      const hasColumn = tableInfo.some((row: any) => row.name === 'priority');
+      
+      if (!hasColumn) {
+        this.db.execSync(`
+          ALTER TABLE transactions 
+          ADD COLUMN priority TEXT CHECK (priority IN ('need', 'want'))
+        `);
+        console.log('Added priority column to transactions table');
+      }
+    } catch (error) {
+      console.error('Error adding priority column:', error);
     }
   };
 
@@ -187,10 +209,10 @@ class DatabaseService {
     try {
       const now = new Date().toISOString();
       const result = this.db.runSync(
-        `INSERT INTO transactions (amount, type, category, description, date, paymentMethod, createdAt, updatedAt) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO transactions (amount, type, category, description, date, paymentMethod, priority, createdAt, updatedAt) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [transaction.amount, transaction.type, transaction.category, transaction.description, 
-         transaction.date, transaction.paymentMethod, now, now]
+         transaction.date, transaction.paymentMethod, transaction.priority || null, now, now]
       );
       
       this.updateAccountBalance(transaction.amount, transaction.type);
@@ -515,6 +537,87 @@ class DatabaseService {
         earliestDate: null,
         latestDate: null,
       };
+    }
+  };
+
+  // Need/Want analysis methods
+  getNeedWantSummary = (dateRange?: { startDate: string; endDate: string }) => {
+    try {
+      let baseQuery = `
+        SELECT 
+          priority,
+          COALESCE(SUM(amount), 0) as total,
+          COUNT(*) as count
+        FROM transactions 
+        WHERE type = 'expense' AND priority IS NOT NULL
+      `;
+      
+      let params: string[] = [];
+      if (dateRange) {
+        baseQuery += ` AND DATE(date) BETWEEN DATE(?) AND DATE(?)`;
+        params = [dateRange.startDate, dateRange.endDate];
+      }
+      
+      baseQuery += ` GROUP BY priority`;
+      
+      const results = this.db.getAllSync(baseQuery, params) as Array<{
+        priority: 'need' | 'want';
+        total: number;
+        count: number;
+      }>;
+      
+      const summary = {
+        needs: { total: 0, count: 0 },
+        wants: { total: 0, count: 0 }
+      };
+      
+      results.forEach(row => {
+        if (row.priority === 'need') {
+          summary.needs = { total: row.total, count: row.count };
+        } else if (row.priority === 'want') {
+          summary.wants = { total: row.total, count: row.count };
+        }
+      });
+      
+      return summary;
+    } catch (error) {
+      console.error('Error getting need/want summary:', error);
+      return {
+        needs: { total: 0, count: 0 },
+        wants: { total: 0, count: 0 }
+      };
+    }
+  };
+
+  getNeedWantByCategory = (dateRange?: { startDate: string; endDate: string }) => {
+    try {
+      let baseQuery = `
+        SELECT 
+          category,
+          priority,
+          COALESCE(SUM(amount), 0) as total,
+          COUNT(*) as count
+        FROM transactions 
+        WHERE type = 'expense' AND priority IS NOT NULL
+      `;
+      
+      let params: string[] = [];
+      if (dateRange) {
+        baseQuery += ` AND DATE(date) BETWEEN DATE(?) AND DATE(?)`;
+        params = [dateRange.startDate, dateRange.endDate];
+      }
+      
+      baseQuery += ` GROUP BY category, priority ORDER BY total DESC`;
+      
+      return this.db.getAllSync(baseQuery, params) as Array<{
+        category: string;
+        priority: 'need' | 'want';
+        total: number;
+        count: number;
+      }>;
+    } catch (error) {
+      console.error('Error getting need/want by category:', error);
+      return [];
     }
   };
 }

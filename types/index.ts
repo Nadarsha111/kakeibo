@@ -6,6 +6,7 @@ export interface Transaction {
   description: string;
   date: string;
   paymentMethod: 'cash' | 'credit_card' | 'debit_card';
+  priority?: 'need' | 'want';
   createdAt: string;
   updatedAt: string;
 }
