@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import OverviewScreen from '../screens/OverviewScreen';
 import TransactionsScreen from '../screens/TransactionsScreen';
 import BudgetScreen from '../screens/BudgetScreen';
@@ -28,6 +29,7 @@ export default function AppNavigator() {
   const { theme } = useTheme();
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const insets = useSafeAreaInsets();
 
   const handleTransactionAdded = () => {
     console.log('Transaction added, refreshing data...');
@@ -36,7 +38,7 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['bottom', 'left', 'right']}>
         <Tab.Navigator
           screenOptions={{
             tabBarActiveTintColor: theme.colors.primary,
@@ -100,7 +102,7 @@ export default function AppNavigator() {
 
         {/* Floating Action Button */}
         <TouchableOpacity
-          style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+          style={[styles.fab, { backgroundColor: theme.colors.primary, bottom: 75 + insets.bottom }]}
           onPress={() => setShowAddTransaction(true)}
         >
           <Text style={styles.fabText}>+</Text>
@@ -112,7 +114,7 @@ export default function AppNavigator() {
           onClose={() => setShowAddTransaction(false)}
           onTransactionAdded={handleTransactionAdded}
         />
-      </View>
+      </SafeAreaView>
     </NavigationContainer>
   );
 }
