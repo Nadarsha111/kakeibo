@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
+import DatabaseService from '../database/database';
 
 export interface ThemeColors {
   primary: string;
@@ -55,6 +56,8 @@ interface ThemeContextType {
   theme: Theme;
   toggleTheme: () => void;
   isDark: boolean;
+  isLoading: boolean;
+  refreshTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -74,19 +77,63 @@ interface ThemeProviderProps {
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const systemColorScheme = useColorScheme();
   const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Load saved theme preference on app start
   useEffect(() => {
-    setIsDark(systemColorScheme === 'dark');
+    loadThemePreference();
+  }, []);
+
+  // Apply system theme changes when no explicit preference is set
+  useEffect(() => {
+    const savedTheme = DatabaseService.getSetting('theme_preference');
+    if (!savedTheme || savedTheme === 'system') {
+      setIsDark(systemColorScheme === 'dark');
+    }
   }, [systemColorScheme]);
 
+  const loadThemePreference = async () => {
+    try {
+      const savedTheme = DatabaseService.getSetting('theme_preference');
+      
+      if (savedTheme) {
+        if (savedTheme === 'system') {
+          setIsDark(systemColorScheme === 'dark');
+        } else {
+          setIsDark(savedTheme === 'dark');
+        }
+      } else {
+        // First time - use system preference and save it
+        setIsDark(systemColorScheme === 'dark');
+        DatabaseService.setSetting('theme_preference', 'system');
+      }
+    } catch (error) {
+      console.error('Error loading theme preference:', error);
+      setIsDark(systemColorScheme === 'dark');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const toggleTheme = () => {
+    const newTheme = isDark ? 'light' : 'dark';
     setIsDark(!isDark);
+    
+    try {
+      DatabaseService.setSetting('theme_preference', newTheme);
+    } catch (error) {
+      console.error('Error saving theme preference:', error);
+    }
+  };
+
+  const refreshTheme = () => {
+    loadThemePreference();
   };
 
   const theme = isDark ? darkTheme : lightTheme;
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, isDark }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, isDark, isLoading, refreshTheme }}>
       {children}
     </ThemeContext.Provider>
   );

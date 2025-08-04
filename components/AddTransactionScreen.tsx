@@ -88,20 +88,9 @@ export default function AddTransactionScreen({
       const transactionId = DatabaseService.addTransaction(transactionData);
       console.log('Transaction added with ID:', transactionId);
       
-      Alert.alert(
-        'Success', 
-        'Transaction added successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              resetForm();
+      resetForm();
               onTransactionAdded();
               onClose();
-            }
-          }
-        ]
-      );
     } catch (error) {
       console.error('Error adding transaction:', error);
       Alert.alert(

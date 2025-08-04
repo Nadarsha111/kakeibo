@@ -173,14 +173,15 @@ function createStyles(theme:any) {
     categoryGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 12,
+      justifyContent: 'space-between',
     },
     categoryCard: {
-      width: (screenWidth - 64) / 2,
+      width: '48%',
       backgroundColor: theme.colors.card,
       borderRadius: 12,
       padding: 16,
       alignItems: 'center',
+      marginBottom: 16,
     },
     categoryIconContainer: {
       width: 50,

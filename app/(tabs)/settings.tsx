@@ -1,10 +1,101 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, useColorScheme } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
+import DatabaseService from '../../database/database';
+import OptionSelector from '../../components/OptionSelector';
 
 export default function SettingsScreen() {
-  const { theme, toggleTheme, isDark } = useTheme();
+  const { theme, toggleTheme, isDark, isLoading, refreshTheme } = useTheme();
+  const systemColorScheme = useColorScheme();
   const styles = createStyles(theme);
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>('system');
+  const [currency, setCurrency] = useState('₹');
+  const [decimalPlaces, setDecimalPlaces] = useState('2');
+  const [appLockEnabled, setAppLockEnabled] = useState(false);
+  
+  // Modal states
+  const [themeModalVisible, setThemeModalVisible] = useState(false);
+  const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [decimalModalVisible, setDecimalModalVisible] = useState(false);
+
+  useEffect(() => {
+    loadAllSettings();
+  }, []);
+
+  const loadAllSettings = () => {
+    // Load theme preference
+    const savedTheme = DatabaseService.getSetting('theme_preference');
+    if (savedTheme) {
+      setThemePreference(savedTheme as 'system' | 'light' | 'dark');
+    }
+
+    // Load currency setting
+    const savedCurrency = DatabaseService.getSetting('currency');
+    if (savedCurrency) {
+      setCurrency(savedCurrency);
+    }
+
+    // Load decimal places
+    const savedDecimalPlaces = DatabaseService.getSetting('decimal_places');
+    if (savedDecimalPlaces) {
+      setDecimalPlaces(savedDecimalPlaces);
+    }
+
+    // Load app lock setting
+    const savedAppLock = DatabaseService.getSetting('app_lock_enabled');
+    if (savedAppLock) {
+      setAppLockEnabled(savedAppLock === 'true');
+    }
+  };
+
+  const handleThemeChange = (newTheme: 'system' | 'light' | 'dark') => {
+    setThemePreference(newTheme);
+    DatabaseService.setSetting('theme_preference', newTheme);
+    
+    // Refresh the theme context to pick up the new setting
+    refreshTheme();
+  };
+
+  const handleCurrencyChange = (newCurrency: string) => {
+    setCurrency(newCurrency);
+    DatabaseService.setSetting('currency', newCurrency);
+  };
+
+  const handleDecimalPlacesChange = (newDecimalPlaces: string) => {
+    setDecimalPlaces(newDecimalPlaces);
+    DatabaseService.setSetting('decimal_places', newDecimalPlaces);
+  };
+
+  // Theme options
+  const themeOptions = [
+    { label: 'System', value: 'system', subtitle: 'Follow device setting' },
+    { label: 'Light', value: 'light', subtitle: 'Always use light theme' },
+    { label: 'Dark', value: 'dark', subtitle: 'Always use dark theme' },
+  ];
+
+  // Currency options
+  const currencyOptions = [
+    { label: '₹ Indian Rupee', value: '₹' },
+    { label: '$ US Dollar', value: '$' },
+    { label: '€ Euro', value: '€' },
+    { label: '£ British Pound', value: '£' },
+    { label: '¥ Japanese Yen', value: '¥' },
+    { label: '₽ Russian Ruble', value: '₽' },
+  ];
+
+  // Decimal places options
+  const decimalOptions = [
+    { label: '0 decimal places', value: '0', subtitle: 'e.g. ₹100' },
+    { label: '1 decimal place', value: '1', subtitle: 'e.g. ₹100.0' },
+    { label: '2 decimal places', value: '2', subtitle: 'e.g. ₹100.00' },
+    { label: '3 decimal places', value: '3', subtitle: 'e.g. ₹100.000' },
+  ];
+
+  const toggleAppLock = () => {
+    const newValue = !appLockEnabled;
+    setAppLockEnabled(newValue);
+    DatabaseService.setSetting('app_lock_enabled', newValue.toString());
+  };
 
   const SettingItem = ({ 
     title, 
@@ -31,30 +122,27 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Appearance</Text>
         <SettingItem
-          title="Dark Mode"
-          subtitle="Switch between light and dark theme"
-          rightComponent={
-            <Switch
-              value={isDark}
-              onValueChange={toggleTheme}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-              thumbColor={theme.colors.surface}
-            />
-          }
+          title="Theme"
+          subtitle={`${themePreference.charAt(0).toUpperCase() + themePreference.slice(1)} theme`}
+          rightComponent={<Text style={styles.chevron}>›</Text>}
+          onPress={() => setThemeModalVisible(true)}
         />
+        
       </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Currency</Text>
         <SettingItem
           title="Currency"
-          subtitle="USD ($)"
+          subtitle={currency}
           rightComponent={<Text style={styles.chevron}>›</Text>}
+          onPress={() => setCurrencyModalVisible(true)}
         />
         <SettingItem
           title="Decimal Places"
-          subtitle="2"
+          subtitle={decimalPlaces}
           rightComponent={<Text style={styles.chevron}>›</Text>}
+          onPress={() => setDecimalModalVisible(true)}
         />
       </View>
 
@@ -98,8 +186,8 @@ export default function SettingsScreen() {
           subtitle="Require authentication to open app"
           rightComponent={
             <Switch
-              value={false}
-              onValueChange={() => {}}
+              value={appLockEnabled}
+              onValueChange={toggleAppLock}
               trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
               thumbColor={theme.colors.surface}
             />
@@ -122,6 +210,42 @@ export default function SettingsScreen() {
           rightComponent={<Text style={styles.chevron}>›</Text>}
         />
       </View>
+
+      {/* Theme Selection Modal */}
+      <OptionSelector
+        visible={themeModalVisible}
+        onClose={() => setThemeModalVisible(false)}
+        title="Select Theme"
+        options={themeOptions}
+        selectedValue={themePreference}
+        onSelect={(value: string) => {
+          handleThemeChange(value as 'system' | 'light' | 'dark');
+        }}
+      />
+
+      {/* Currency Selection Modal */}
+      <OptionSelector
+        visible={currencyModalVisible}
+        onClose={() => setCurrencyModalVisible(false)}
+        title="Select Currency"
+        options={currencyOptions}
+        selectedValue={currency}
+        onSelect={(value: string) => {
+          handleCurrencyChange(value);
+        }}
+      />
+
+      {/* Decimal Places Selection Modal */}
+      <OptionSelector
+        visible={decimalModalVisible}
+        onClose={() => setDecimalModalVisible(false)}
+        title="Decimal Places"
+        options={decimalOptions}
+        selectedValue={decimalPlaces}
+        onSelect={(value: string) => {
+          handleDecimalPlacesChange(value);
+        }}
+      />
     </ScrollView>
   );
 }

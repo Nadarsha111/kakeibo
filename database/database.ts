@@ -60,6 +60,16 @@ class DatabaseService {
         );
       `);
 
+      // Create app_settings table for persistent user preferences
+      this.db.execSync(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          id INTEGER PRIMARY KEY,
+          key TEXT NOT NULL UNIQUE,
+          value TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+      `);
+
       // Insert default categories
       this.insertDefaultCategories();
     } catch (error) {
@@ -300,6 +310,57 @@ class DatabaseService {
     } catch (error) {
       console.error('Error getting total income:', error);
       return 0;
+    }
+  };
+
+  // Settings methods for persistent user preferences
+  getSetting = (key: string): string | null => {
+    try {
+      const result = this.db.getFirstSync(
+        'SELECT value FROM app_settings WHERE key = ?',
+        [key]
+      ) as {value: string} | null;
+      return result?.value || null;
+    } catch (error) {
+      console.error('Error getting setting:', error);
+      return null;
+    }
+  };
+
+  setSetting = (key: string, value: string): void => {
+    try {
+      const now = new Date().toISOString();
+      this.db.runSync(
+        'INSERT OR REPLACE INTO app_settings (key, value, updatedAt) VALUES (?, ?, ?)',
+        [key, value, now]
+      );
+    } catch (error) {
+      console.error('Error setting preference:', error);
+    }
+  };
+
+  getAllSettings = (): Record<string, string> => {
+    try {
+      const results = this.db.getAllSync(
+        'SELECT key, value FROM app_settings'
+      ) as {key: string, value: string}[];
+      
+      const settings: Record<string, string> = {};
+      results.forEach(row => {
+        settings[row.key] = row.value;
+      });
+      return settings;
+    } catch (error) {
+      console.error('Error getting all settings:', error);
+      return {};
+    }
+  };
+
+  deleteSetting = (key: string): void => {
+    try {
+      this.db.runSync('DELETE FROM app_settings WHERE key = ?', [key]);
+    } catch (error) {
+      console.error('Error deleting setting:', error);
     }
   };
 }

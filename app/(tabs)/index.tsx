@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet, RefreshControl } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import DatabaseService from "../../database/database";
 import { useTheme } from "../../context/ThemeContext";
+import SettingsManager from "../../utils/settings";
 
 interface DashboardData {
   totalBalance: number;
@@ -26,19 +27,28 @@ export default function OverviewScreen() {
     monthlyExpenses: 0,
     categorySummary: [],
   });
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
+ 
 
   // Reload data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      loadDashboardData();
+      loadDashboardData(true); // Force refresh when tab is focused
+      
+      // Also refresh after a short delay to catch any recent changes
+      const timeout = setTimeout(() => {
+        loadDashboardData(true);
+      }, 500); // Reduced delay for faster updates
+
+      return () => clearTimeout(timeout);
     }, [])
   );
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (forceRefresh = false) => {
+    if (isLoading && !forceRefresh) return; // Prevent multiple simultaneous loads unless forced
+    
+    setIsLoading(true);
     try {
       // Get current date ranges
       const now = new Date();
@@ -61,30 +71,26 @@ export default function OverviewScreen() {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-      console.log("Date ranges:", {
-        weekStart: weekStart.toISOString().split("T")[0],
-        weekEnd: weekEnd.toISOString().split("T")[0],
-        monthStart: monthStart.toISOString().split("T")[0],
-        monthEnd: monthEnd.toISOString().split("T")[0],
-      });
-
-      const balance = DatabaseService.getAccountBalance();
-      const weeklyExpenses = DatabaseService.getTotalExpenses(
-        weekStart.toISOString().split("T")[0],
-        weekEnd.toISOString().split("T")[0]
-      );
-      const weeklyIncome = DatabaseService.getTotalIncome(
-        weekStart.toISOString().split("T")[0],
-        weekEnd.toISOString().split("T")[0]
-      );
-      const monthlyExpenses = DatabaseService.getTotalExpenses(
-        monthStart.toISOString().split("T")[0],
-        monthEnd.toISOString().split("T")[0]
-      );
-      const categorySummary = DatabaseService.getCategorySummary(
-        monthStart.toISOString().split("T")[0],
-        monthEnd.toISOString().split("T")[0]
-      );
+      // Batch all database calls for better performance
+      const [balance, weeklyExpenses, weeklyIncome, monthlyExpenses, categorySummary] = await Promise.all([
+        Promise.resolve(DatabaseService.getAccountBalance()),
+        Promise.resolve(DatabaseService.getTotalExpenses(
+          weekStart.toISOString().split("T")[0],
+          weekEnd.toISOString().split("T")[0]
+        )),
+        Promise.resolve(DatabaseService.getTotalIncome(
+          weekStart.toISOString().split("T")[0],
+          weekEnd.toISOString().split("T")[0]
+        )),
+        Promise.resolve(DatabaseService.getTotalExpenses(
+          monthStart.toISOString().split("T")[0],
+          monthEnd.toISOString().split("T")[0]
+        )),
+        Promise.resolve(DatabaseService.getCategorySummary(
+          monthStart.toISOString().split("T")[0],
+          monthEnd.toISOString().split("T")[0]
+        ))
+      ]);
 
       console.log("Loaded data:", {
         balance: balance?.totalBalance,
@@ -111,11 +117,13 @@ export default function OverviewScreen() {
         monthlyExpenses: 0,
         categorySummary: [],
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
+    return SettingsManager.formatCurrency(amount);
   };
 
   const renderWeeklyChart = () => {
@@ -205,7 +213,18 @@ export default function OverviewScreen() {
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.colors.background }} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={{ flex: 1, backgroundColor: theme.colors.background }} 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={isLoading}
+          onRefresh={loadDashboardData}
+          tintColor={theme.colors.primary}
+          colors={[theme.colors.primary]}
+        />
+      }
+    >
       {/* Account Balance Header */}
       <View style={{ ...styles.header, backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }}>
         <Text style={{ ...styles.headerSubtext, color: theme.colors.textSecondary }}>Account balance</Text>
