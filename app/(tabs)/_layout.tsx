@@ -4,11 +4,13 @@ import { View, TouchableOpacity, StyleSheet } from 'react-native';
 
 import { Tabs } from 'expo-router';
 import AddTransactionScreen from '../../components/AddTransactionScreen';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const [showAddTransaction, setShowAddTransaction] = useState(false);
 
   return (
+    <SafeAreaView>
     <View style={{ flex: 1 }}>
       <Tabs screenOptions={{ tabBarActiveTintColor: '#2563eb', headerShown: false }}>
         <Tabs.Screen
@@ -59,6 +61,7 @@ export default function TabLayout() {
         onTransactionAdded={() => {}}
       />
     </View>
+    </SafeAreaView>
   );
 }
 
