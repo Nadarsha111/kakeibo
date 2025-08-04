@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import DatabaseService from '../database/database';
 import { Category } from '../types';
+import { useTheme } from '../context/ThemeContext';
 
 interface AddTransactionScreenProps {
   visible: boolean;
@@ -23,6 +24,8 @@ export default function AddTransactionScreen({
   onClose, 
   onTransactionAdded 
 }: AddTransactionScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<'income' | 'expense'>('expense');
@@ -289,10 +292,10 @@ export default function AddTransactionScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -300,31 +303,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: theme.colors.border,
   },
   cancelButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   cancelButtonText: {
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     fontSize: 16,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#111827',
+    color: theme.colors.text,
   },
   saveButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#14b8a6',
+    backgroundColor: theme.colors.primary,
     borderRadius: 8,
   },
   saveButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -338,11 +341,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: theme.colors.text,
     marginBottom: 12,
   },
   amountInput: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
@@ -350,11 +353,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.colors.border,
+    color: theme.colors.text,
   },
   typeSelector: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 4,
   },
@@ -365,14 +369,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   typeButtonActive: {
-    backgroundColor: '#14b8a6',
+    backgroundColor: theme.colors.primary,
   },
   typeButtonText: {
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     fontWeight: '500',
   },
   typeButtonTextActive: {
-    color: 'white',
+    color: '#fff',
   },
   categoryGrid: {
     flexDirection: 'row',
@@ -383,11 +387,11 @@ const styles = StyleSheet.create({
     marginRight: 16,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     minWidth: 80,
   },
   categoryItemActive: {
-    backgroundColor: '#14b8a6',
+    backgroundColor: theme.colors.primary,
   },
   categoryIcon: {
     width: 40,
@@ -399,12 +403,12 @@ const styles = StyleSheet.create({
   },
   categoryEmoji: {
     fontSize: 20,
-    color: 'white',
+    color: theme.colors.text,
   },
   categoryName: {
     fontSize: 12,
     textAlign: 'center',
-    color: '#111827',
+    color: theme.colors.text,
   },
   paymentGrid: {
     flexDirection: 'row',
@@ -415,13 +419,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     marginHorizontal: 4,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   paymentItemActive: {
-    borderColor: '#14b8a6',
+    borderColor: theme.colors.primary,
   },
   paymentEmoji: {
     fontSize: 24,
@@ -429,26 +433,28 @@ const styles = StyleSheet.create({
   },
   paymentLabel: {
     fontSize: 12,
-    color: '#111827',
+    color: theme.colors.text,
     textAlign: 'center',
   },
   descriptionInput: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.colors.border,
     textAlignVertical: 'top',
+    color: theme.colors.text,
   },
   dateInput: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.colors.border,
+    color: theme.colors.text,
   },
 });

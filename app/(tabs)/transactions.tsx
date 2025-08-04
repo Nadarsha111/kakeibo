@@ -3,8 +3,11 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView } from '
 import { useFocusEffect } from '@react-navigation/native';
 import DatabaseService from '../../database/database';
 import { Transaction } from '../types';
+import { useTheme } from '../../context/ThemeContext';
 
 export default function TransactionsScreen() {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState('All');
@@ -156,7 +159,7 @@ export default function TransactionsScreen() {
         </View>
         <Text style={[
           styles.transactionAmount,
-          { color: item.type === 'income' ? '#10b981' : '#ef4444' }
+          { color: item.type === 'income' ? theme.colors.success : theme.colors.error }
         ]}>
           {item.type === 'expense' ? '-' : '+'}{formatCurrency(item.amount)}
         </Text>
@@ -170,8 +173,8 @@ export default function TransactionsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <Text>Loading transactions...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
+        <Text style={{ color: theme.colors.text }}>Loading transactions...</Text>
       </View>
     );
   }
@@ -222,10 +225,10 @@ export default function TransactionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.colors.background,
   },
   centerContainer: {
     flex: 1,
@@ -236,13 +239,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chartContainer: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     marginHorizontal: 16,
     marginVertical: 8,
     padding: 20,
     borderRadius: 12,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: theme.colors.border,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
@@ -250,7 +253,7 @@ const styles = StyleSheet.create({
   chartTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#111827',
+    color: theme.colors.text,
     marginBottom: 16,
   },
   barChart: {
@@ -266,7 +269,7 @@ const styles = StyleSheet.create({
   barContainer: {
     height: 100,
     width: 40,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.colors.card,
     borderRadius: 4,
     justifyContent: 'flex-end',
     marginBottom: 8,
@@ -277,20 +280,20 @@ const styles = StyleSheet.create({
     minHeight: 4,
   },
   incomeBar: {
-    backgroundColor: '#10b981',
+    backgroundColor: theme.colors.success,
   },
   expenseBar: {
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
   },
   barLabel: {
     fontSize: 12,
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     marginBottom: 4,
   },
   barAmount: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: theme.colors.text,
   },
   categoryChart: {
     gap: 12,
@@ -313,13 +316,13 @@ const styles = StyleSheet.create({
   },
   categoryLabel: {
     fontSize: 14,
-    color: '#111827',
+    color: theme.colors.text,
     minWidth: 80,
   },
   categoryBarContainer: {
     flex: 2,
     height: 8,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.colors.card,
     borderRadius: 4,
     marginHorizontal: 12,
   },
@@ -330,7 +333,7 @@ const styles = StyleSheet.create({
   },
   categoryAmount: {
     fontSize: 12,
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     minWidth: 60,
     textAlign: 'right',
   },
@@ -342,21 +345,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.colors.border,
   },
   filterButtonActive: {
-    backgroundColor: '#14b8a6',
-    borderColor: '#14b8a6',
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
   filterButtonText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
   },
   filterButtonTextActive: {
-    color: 'white',
+    color: '#fff',
   },
   transactionsContainer: {
     paddingHorizontal: 16,
@@ -365,16 +368,16 @@ const styles = StyleSheet.create({
   transactionsTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#111827',
+    color: theme.colors.text,
     marginBottom: 12,
   },
   transactionCard: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     marginVertical: 4,
     padding: 16,
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#14b8a6',
+    borderLeftColor: theme.colors.primary,
   },
   transactionHeader: {
     flexDirection: 'row',
@@ -391,7 +394,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -402,11 +405,11 @@ const styles = StyleSheet.create({
   transactionCategory: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: theme.colors.text,
   },
   transactionPayment: {
     fontSize: 12,
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     marginTop: 2,
   },
   transactionAmount: {
@@ -414,12 +417,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   transactionDescription: {
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     fontSize: 14,
     marginBottom: 4,
   },
   transactionDate: {
-    color: '#9ca3af',
+    color: theme.colors.textSecondary,
     fontSize: 12,
   },
 });

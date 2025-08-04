@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useTheme } from '../../context/ThemeContext';
 
 export default function BudgetScreen() {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [selectedPeriod, setSelectedPeriod] = useState('JUNE 2023');
 
   const budgetData = {
@@ -131,34 +134,34 @@ export default function BudgetScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.colors.background,
   },
   header: {
-    backgroundColor: '#14b8a6',
+    backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 24,
   },
   headerSubtext: {
-    color: 'white',
+    color: '#fff',
     fontSize: 14,
     opacity: 0.9,
   },
   headerAmount: {
-    color: 'white',
+    color: '#fff',
     fontSize: 28,
     fontWeight: 'bold',
     marginVertical: 8,
   },
   headerPeriod: {
-    color: 'white',
+    color: '#fff',
     fontSize: 12,
     opacity: 0.8,
   },
   budgetOverview: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     margin: 16,
     borderRadius: 12,
     padding: 20,
@@ -172,22 +175,22 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   budgetLabel: {
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     marginBottom: 4,
   },
   budgetTitle: {
-    color: '#ef4444',
+    color: theme.colors.error,
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 8,
   },
   budgetSubtext: {
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     fontSize: 12,
   },
   availableAmount: {
-    color: '#111827',
+    color: theme.colors.text,
     fontSize: 20,
     fontWeight: 'bold',
   },
@@ -195,13 +198,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   budgetBarLabel: {
-    color: '#111827',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
   },
   budgetBarAmount: {
-    color: '#ef4444',
+    color: theme.colors.error,
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
@@ -211,7 +214,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 8,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.colors.card,
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 4,
@@ -221,7 +224,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   progressLimit: {
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     textAlign: 'right',
   },
@@ -232,7 +235,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 16,
-    color: '#111827',
+    color: theme.colors.text,
   },
   categoryItem: {
     marginBottom: 20,
@@ -257,17 +260,17 @@ const styles = StyleSheet.create({
   },
   categoryEmoji: {
     fontSize: 16,
-    color: 'white',
+    color: '#fff',
   },
   categoryName: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#111827',
+    color: theme.colors.text,
   },
   categoryAmount: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#ef4444',
+    color: theme.colors.error,
   },
   categoryProgress: {
     flexDirection: 'row',
@@ -275,12 +278,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   categoryLimit: {
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     textAlign: 'right',
   },
   categorySpent: {
-    color: '#111827',
+    color: theme.colors.text,
     fontSize: 12,
     fontWeight: '500',
     marginLeft: 8,
@@ -292,7 +295,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 16,
-    color: '#111827',
+    color: theme.colors.text,
   },
   unbudgetedGrid: {
     flexDirection: 'row',
@@ -301,7 +304,7 @@ const styles = StyleSheet.create({
   },
   unbudgetedItem: {
     width: '48%',
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.colors.card,
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -313,13 +316,13 @@ const styles = StyleSheet.create({
   },
   unbudgetedName: {
     fontSize: 12,
-    color: '#6b7280',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
     marginBottom: 4,
   },
   unbudgetedAmount: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: theme.colors.text,
   },
 });
