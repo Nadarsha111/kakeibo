@@ -1,4 +1,4 @@
-import DatabaseService from '../services/database';
+import DatabaseService from '../../database/database';
 
 export const initializeSampleData = () => {
   try {

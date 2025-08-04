@@ -9,7 +9,7 @@ import {
   Alert,
   Modal 
 } from 'react-native';
-import DatabaseService from '../services/database';
+import DatabaseService from '../../database/database';
 import { Category } from '../types';
 
 interface AddTransactionScreenProps {

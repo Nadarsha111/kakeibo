@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DatabaseService from '../services/database';
-import { useTheme } from '../context/ThemeContext';
+import DatabaseService from '../../database/database';
+import { useTheme } from '../../context/ThemeContext';
 
 interface DashboardData {
   totalBalance: number;

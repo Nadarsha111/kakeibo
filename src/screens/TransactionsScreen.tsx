@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DatabaseService from '../services/database';
+import DatabaseService from '../../database/database';
 import { Transaction } from '../types';
 
 export default function TransactionsScreen() {

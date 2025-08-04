@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DatabaseService from '../services/database';
+import DatabaseService from '../../database/database';
 
 const screenWidth = Dimensions.get('window').width;
 

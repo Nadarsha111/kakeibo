@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { Transaction, Category, Budget, AccountBalance } from '../types';
+import { Transaction, Category, Budget, AccountBalance } from '../src/types';
 
 class DatabaseService {
   private db: SQLite.SQLiteDatabase;
