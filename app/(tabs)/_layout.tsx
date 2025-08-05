@@ -3,21 +3,25 @@ import { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import AddTransactionScreen from '../../components/AddTransactionScreen';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../../context/ThemeContext';
 
 export default function TabLayout() {
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
 
   return (
       <View style={{ flex: 1 }}>
         <Tabs
           screenOptions={{
-            tabBarActiveTintColor: '#2563eb',
-            tabBarInactiveTintColor: '#64748b',
+            tabBarActiveTintColor: theme.colors.primary,
+            tabBarInactiveTintColor: theme.colors.textSecondary,
             headerShown: false,
             tabBarStyle: {
-              backgroundColor: '#fff',
+              backgroundColor: theme.colors.surface,
+              borderTopColor: theme.colors.border,
+              borderTopWidth: 1,
             },
             tabBarLabelStyle: {
               fontWeight: '600',
@@ -31,6 +35,11 @@ export default function TabLayout() {
             options={{
               title: 'Overview',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="chart-donut" color={color} />,
+              tabBarButton: ({ children, onPress, style }) => (
+                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
+                  {children}
+                </TouchableOpacity>
+              ),
             }}
           />
           <Tabs.Screen
@@ -38,6 +47,11 @@ export default function TabLayout() {
             options={{
               title: 'Transactions',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="clipboard-list-outline" color={color} />,
+              tabBarButton: ({ children, onPress, style }) => (
+                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
+                  {children}
+                </TouchableOpacity>
+              ),
             }}
           />
           <Tabs.Screen
@@ -45,6 +59,11 @@ export default function TabLayout() {
             options={{
               title: 'Accounts',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="bank-outline" color={color} />,
+              tabBarButton: ({ children, onPress, style }) => (
+                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
+                  {children}
+                </TouchableOpacity>
+              ),
             }}
           />
           <Tabs.Screen
@@ -52,6 +71,11 @@ export default function TabLayout() {
             options={{
               title: 'Manage',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="account-settings-outline" color={color} />,
+              tabBarButton: ({ children, onPress, style }) => (
+                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
+                  {children}
+                </TouchableOpacity>
+              ),
             }}
           />
           <Tabs.Screen
@@ -59,6 +83,11 @@ export default function TabLayout() {
             options={{
               title: 'Settings',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="cog-outline" color={color} />,
+              tabBarButton: ({ children, onPress, style }) => (
+                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
+                  {children}
+                </TouchableOpacity>
+              ),
             }}
           />
           <Tabs.Screen
@@ -70,10 +99,16 @@ export default function TabLayout() {
           />
         </Tabs>
         <TouchableOpacity
-          style={[styles.fab, { bottom: 55 + insets.bottom }]}
+          style={[
+            styles.fab, 
+            { 
+              backgroundColor: theme.colors.primary,
+              bottom: 55 + insets.bottom 
+            }
+          ]}
           onPress={() => setShowAddTransaction(true)}
         >
-          <MaterialCommunityIcons name="plus" size={32} color="#fff" />
+          <MaterialCommunityIcons name="plus" size={32} color="white" />
         </TouchableOpacity>
         <AddTransactionScreen
           visible={showAddTransaction}
@@ -91,7 +126,6 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#14b8a6',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 10,

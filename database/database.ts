@@ -102,7 +102,9 @@ class DatabaseService {
       console.error('Error initializing database:', error);
     }
   };
-
+ getDatabaseInstance() {
+    return this.db;
+  }
   private addAccountIdColumnIfNotExists = () => {
     try {
       // Check if accountId column exists
