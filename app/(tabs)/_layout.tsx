@@ -51,14 +51,21 @@ export default function TabLayout() {
             name="manage"
             options={{
               title: 'Manage',
-              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="cog-outline" color={color} />,
+              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="account-settings-outline" color={color} />,
             }}
           />
           <Tabs.Screen
             name="settings"
             options={{
               title: 'Settings',
-              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="account-settings-outline" color={color} />,
+              tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="cog-outline" color={color} />,
+            }}
+          />
+          <Tabs.Screen
+            name="budget"
+            options={{
+              title: 'Budget',
+              href: null
             }}
           />
         </Tabs>

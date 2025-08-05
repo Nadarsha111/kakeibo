@@ -134,7 +134,8 @@ export default function TransactionsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>\n        <Text style={{ color: theme.colors.text }}>Loading transactions...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
+        <Text style={{ color: theme.colors.text }}>Loading transactions...</Text>
       </View>
     );
   }

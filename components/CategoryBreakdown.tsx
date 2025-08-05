@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text,  StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView } from 'react-native';
 
 interface CategorySummary {
   category: string;
@@ -182,7 +184,8 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({ categorySummary, 
   const styles = createStyles(theme);
 
   return (
-    <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      <SafeAreaView style={{ flex: 1 }}>
+    <ScrollView  showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
         <Text style={styles.headerSubtext}>Account balance</Text>
         <Text style={styles.headerAmount}>{formatCurrency(totals.balance)}</Text>
@@ -244,6 +247,7 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({ categorySummary, 
         </View>
       </View>
     </ScrollView>
+    </SafeAreaView>
   );
 };
 
