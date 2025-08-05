@@ -11,11 +11,13 @@ import {
 import DatabaseService from '../../database/database';
 import { Account } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
 import AddAccountScreen from '../../components/AddAccountScreen';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AccountsScreen() {
   const { theme } = useTheme();
+  const { formatCurrency } = useSettings();
   const styles = createStyles(theme);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -89,15 +91,6 @@ export default function AccountsScreen() {
     return labelMap[type] || type;
   };
 
-  const formatBalance = (balance: number) => {
-    const isNegative = balance < 0;
-    const absoluteBalance = Math.abs(balance);
-    return `${isNegative ? '-' : ''}$${absoluteBalance.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  };
-
   const renderAccountItem = ({ item: account }: { item: Account }) => (
     <TouchableOpacity
       style={styles.accountCard}
@@ -121,7 +114,7 @@ export default function AccountsScreen() {
               account.balance < 0 && styles.negativeBalance,
             ]}
           >
-            {formatBalance(account.balance)}
+            {formatCurrency(account.balance)}
           </Text>
           <Text style={styles.currency}>{account.currency}</Text>
         </View>
@@ -156,7 +149,7 @@ export default function AccountsScreen() {
             totalBalance < 0 && styles.negativeBalance,
           ]}
         >
-          {formatBalance(totalBalance)}
+          {formatCurrency(totalBalance)}
         </Text>
         <Text style={styles.accountCount}>
           {accounts.length} {accounts.length === 1 ? 'Account' : 'Accounts'}

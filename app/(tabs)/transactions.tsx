@@ -4,10 +4,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import DatabaseService from '../../database/database';
 import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
+  const { formatCurrency } = useSettings();
   const styles = createStyles(theme);
   const [tab, setTab] = useState<'Transactions' | 'Categories'>('Transactions');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -84,7 +86,6 @@ export default function TransactionsScreen() {
     }
   };
 
-  const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });

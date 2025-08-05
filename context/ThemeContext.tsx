@@ -54,7 +54,9 @@ const darkTheme: Theme = {
 
 interface ThemeContextType {
   theme: Theme;
+  themePreference: 'system' | 'light' | 'dark';
   toggleTheme: () => void;
+  updateThemePreference: (theme: 'system' | 'light' | 'dark') => void;
   isDark: boolean;
   isLoading: boolean;
   refreshTheme: () => void;
@@ -77,6 +79,7 @@ interface ThemeProviderProps {
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const systemColorScheme = useColorScheme();
   const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>('system');
   const [isLoading, setIsLoading] = useState(true);
 
   // Load saved theme preference on app start
@@ -97,6 +100,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       const savedTheme = DatabaseService.getSetting('theme_preference');
       
       if (savedTheme) {
+        setThemePreference(savedTheme as 'system' | 'light' | 'dark');
         if (savedTheme === 'system') {
           setIsDark(systemColorScheme === 'dark');
         } else {
@@ -104,11 +108,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         }
       } else {
         // First time - use system preference and save it
+        setThemePreference('system');
         setIsDark(systemColorScheme === 'dark');
         DatabaseService.setSetting('theme_preference', 'system');
       }
     } catch (error) {
       console.error('Error loading theme preference:', error);
+      setThemePreference('system');
       setIsDark(systemColorScheme === 'dark');
     } finally {
       setIsLoading(false);
@@ -118,9 +124,26 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const toggleTheme = () => {
     const newTheme = isDark ? 'light' : 'dark';
     setIsDark(!isDark);
+    setThemePreference(newTheme);
     
     try {
       DatabaseService.setSetting('theme_preference', newTheme);
+    } catch (error) {
+      console.error('Error saving theme preference:', error);
+    }
+  };
+
+  const updateThemePreference = (theme: 'system' | 'light' | 'dark') => {
+    setThemePreference(theme);
+    
+    if (theme === 'system') {
+      setIsDark(systemColorScheme === 'dark');
+    } else {
+      setIsDark(theme === 'dark');
+    }
+    
+    try {
+      DatabaseService.setSetting('theme_preference', theme);
     } catch (error) {
       console.error('Error saving theme preference:', error);
     }
@@ -133,7 +156,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const theme = isDark ? darkTheme : lightTheme;
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, isDark, isLoading, refreshTheme }}>
+    <ThemeContext.Provider value={{ theme, themePreference, toggleTheme, updateThemePreference, isDark, isLoading, refreshTheme }}>
       {children}
     </ThemeContext.Provider>
   );

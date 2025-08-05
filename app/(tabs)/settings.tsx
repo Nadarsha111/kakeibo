@@ -2,19 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, useColorScheme, SafeAreaView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
 import DatabaseService from '../../database/database';
 import OptionSelector from '../../components/OptionSelector';
 import ManageCategoriesScreen from '../../components/ManageCategoriesScreen';
 import ExportDataScreen from '../../components/ExportDataScreen';
 
 export default function SettingsScreen() {
-  const { theme, toggleTheme, isDark, isLoading, refreshTheme } = useTheme();
-  const systemColorScheme = useColorScheme();
+  const { theme, themePreference, updateThemePreference, isDark, refreshTheme } = useTheme();
+  const { 
+    currency, 
+    decimalPlaces, 
+    appLockEnabled,
+    updateCurrency,
+    updateDecimalPlaces,
+    updateAppLock
+  } = useSettings();
   const styles = createStyles(theme);
-  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>('system');
-  const [currency, setCurrency] = useState('₹');
-  const [decimalPlaces, setDecimalPlaces] = useState('2');
-  const [appLockEnabled, setAppLockEnabled] = useState(false);
   
   // Modal states
   const [themeModalVisible, setThemeModalVisible] = useState(false);
@@ -23,52 +27,19 @@ export default function SettingsScreen() {
   const [manageCategoriesVisible, setManageCategoriesVisible] = useState(false);
   const [exportDataVisible, setExportDataVisible] = useState(false);
 
-  useEffect(() => {
-    loadAllSettings();
-  }, []);
-
-  const loadAllSettings = () => {
-    // Load theme preference
-    const savedTheme = DatabaseService.getSetting('theme_preference');
-    if (savedTheme) {
-      setThemePreference(savedTheme as 'system' | 'light' | 'dark');
-    }
-
-    // Load currency setting
-    const savedCurrency = DatabaseService.getSetting('currency');
-    if (savedCurrency) {
-      setCurrency(savedCurrency);
-    }
-
-    // Load decimal places
-    const savedDecimalPlaces = DatabaseService.getSetting('decimal_places');
-    if (savedDecimalPlaces) {
-      setDecimalPlaces(savedDecimalPlaces);
-    }
-
-    // Load app lock setting
-    const savedAppLock = DatabaseService.getSetting('app_lock_enabled');
-    if (savedAppLock) {
-      setAppLockEnabled(savedAppLock === 'true');
-    }
-  };
-
   const handleThemeChange = (newTheme: 'system' | 'light' | 'dark') => {
-    setThemePreference(newTheme);
-    DatabaseService.setSetting('theme_preference', newTheme);
+    updateThemePreference(newTheme);
     
     // Refresh the theme context to pick up the new setting
     refreshTheme();
   };
 
   const handleCurrencyChange = (newCurrency: string) => {
-    setCurrency(newCurrency);
-    DatabaseService.setSetting('currency', newCurrency);
+    updateCurrency(newCurrency);
   };
 
   const handleDecimalPlacesChange = (newDecimalPlaces: string) => {
-    setDecimalPlaces(newDecimalPlaces);
-    DatabaseService.setSetting('decimal_places', newDecimalPlaces);
+    updateDecimalPlaces(parseInt(newDecimalPlaces, 10));
   };
 
   // Theme options
@@ -97,9 +68,7 @@ export default function SettingsScreen() {
   ];
 
   const toggleAppLock = () => {
-    const newValue = !appLockEnabled;
-    setAppLockEnabled(newValue);
-    DatabaseService.setSetting('app_lock_enabled', newValue.toString());
+    updateAppLock(!appLockEnabled);
   };
 
   const SettingItem = ({ 
@@ -147,7 +116,7 @@ export default function SettingsScreen() {
         />
         <SettingItem
           title="Decimal Places"
-          subtitle={decimalPlaces}
+          subtitle={decimalPlaces.toString()}
           rightComponent={<Text style={styles.chevron}>›</Text>}
           onPress={() => setDecimalModalVisible(true)}
         />
@@ -250,7 +219,7 @@ export default function SettingsScreen() {
         onClose={() => setDecimalModalVisible(false)}
         title="Decimal Places"
         options={decimalOptions}
-        selectedValue={decimalPlaces}
+        selectedValue={decimalPlaces.toString()}
         onSelect={(value: string) => {
           handleDecimalPlacesChange(value);
         }}
