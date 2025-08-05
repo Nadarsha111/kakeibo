@@ -1,30 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DatabaseService from '../../database/database';
-import { Transaction } from '../types';
+import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
+import CategoryBreakdown from '../../components/CategoryBreakdown';
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+  const [tab, setTab] = useState<'Transactions' | 'Categories'>('Transactions');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState('All');
-  const [weeklyData, setWeeklyData] = useState<{income: number, expense: number}>({income: 0, expense: 0});
-  const [categorySummary, setCategorySummary] = useState<{category: string, amount: number, color: string}[]>([]);
+  const [selectedPeriod, setSelectedPeriod] = useState('This Month');
+  const [categorySummary, setCategorySummary] = useState<{category: string, amount: number, color: string, percentage: number}[]>([]);
+  const [totals, setTotals] = useState({ expenses: 0, balance: 0, income: 0 });
 
   useEffect(() => {
     loadTransactions();
-    loadChartData();
-  }, []);
+    loadCategoryData();
+  }, [selectedPeriod]);
 
-  // Reload data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       loadTransactions();
-      loadChartData();
-    }, [])
+      loadCategoryData();
+    }, [selectedPeriod])
   );
 
   const loadTransactions = async () => {
@@ -38,100 +40,59 @@ export default function TransactionsScreen() {
     }
   };
 
-  const loadChartData = () => {
+  const loadCategoryData = async () => {
     try {
-      // Get current week's data
-      const today = new Date();
-      const startOfWeek = new Date(today.setDate(today.getDate() - today.getDay()));
-      const endOfWeek = new Date(today.setDate(today.getDate() - today.getDay() + 6));
-      
-      const startDate = startOfWeek.toISOString().split('T')[0];
-      const endDate = endOfWeek.toISOString().split('T')[0];
-      
-      const weekIncome = DatabaseService.getTotalIncome(startDate, endDate);
-      const weekExpenses = DatabaseService.getTotalExpenses(startDate, endDate);
-      const categoryData = DatabaseService.getCategorySummary(startDate, endDate);
-      
-      setWeeklyData({ income: weekIncome, expense: weekExpenses });
-      setCategorySummary(categoryData.slice(0, 5)); // Top 5 categories
+      let startDate: string, endDate: string;
+      const now = new Date();
+
+      if (selectedPeriod === 'This Month') {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        startDate = monthStart.toISOString().split('T')[0];
+        endDate = monthEnd.toISOString().split('T')[0];
+      } else if (selectedPeriod === 'This Week') {
+        const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
+        const weekEnd = new Date(now.setDate(now.getDate() - now.getDay() + 6));
+        startDate = weekStart.toISOString().split('T')[0];
+        endDate = weekEnd.toISOString().split('T')[0];
+      } else {
+        const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        startDate = threeMonthsAgo.toISOString().split('T')[0];
+        endDate = monthEnd.toISOString().split('T')[0];
+      }
+
+      const expenses = DatabaseService.getTotalExpenses(startDate, endDate);
+      const income = DatabaseService.getTotalIncome(startDate, endDate);
+      const balance = DatabaseService.getAccountBalance();
+      const summary = DatabaseService.getCategorySummary(startDate, endDate);
+
+      const totalExpenses = expenses;
+      const summaryWithPercentage = summary.map(item => ({
+        ...item,
+        percentage: totalExpenses > 0 ? (item.amount / totalExpenses) * 100 : 0
+      }));
+
+      setTotals({
+        expenses,
+        income,
+        balance: balance?.totalBalance || 0
+      });
+      setCategorySummary(summaryWithPercentage);
     } catch (error) {
-      console.error('Error loading chart data:', error);
+      console.error('Error loading category data:', error);
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
-
+  const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      year: 'numeric'
-    });
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
-
   const getFilteredTransactions = () => {
     if (selectedFilter === 'All') return transactions;
     return transactions.filter(t => t.type === selectedFilter.toLowerCase());
   };
-
-  const renderWeeklyChart = () => {
-    const maxAmount = Math.max(weeklyData.income, weeklyData.expense);
-    const incomeHeight = maxAmount > 0 ? (weeklyData.income / maxAmount) * 100 : 0;
-    const expenseHeight = maxAmount > 0 ? (weeklyData.expense / maxAmount) * 100 : 0;
-
-    return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>This Week Overview</Text>
-        <View style={styles.barChart}>
-          <View style={styles.barGroup}>
-            <View style={styles.barContainer}>
-              <View style={[styles.bar, styles.incomeBar, { height: `${incomeHeight}%` }]} />
-            </View>
-            <Text style={styles.barLabel}>Income</Text>
-            <Text style={styles.barAmount}>{formatCurrency(weeklyData.income)}</Text>
-          </View>
-          <View style={styles.barGroup}>
-            <View style={styles.barContainer}>
-              <View style={[styles.bar, styles.expenseBar, { height: `${expenseHeight}%` }]} />
-            </View>
-            <Text style={styles.barLabel}>Expenses</Text>
-            <Text style={styles.barAmount}>{formatCurrency(weeklyData.expense)}</Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const renderCategoryChart = () => {
-    const maxAmount = Math.max(...categorySummary.map(cat => cat.amount));
-    
-    return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Top Categories</Text>
-        <View style={styles.categoryChart}>
-          {categorySummary.map((category, index) => {
-            const percentage = maxAmount > 0 ? (category.amount / maxAmount) * 100 : 0;
-            return (
-              <View key={index} style={styles.categoryRow}>
-                <View style={styles.categoryInfo}>
-                  <View style={[styles.categoryColorDot, { backgroundColor: category.color }]} />
-                  <Text style={styles.categoryLabel}>{category.category}</Text>
-                </View>
-                <View style={styles.categoryBarContainer}>
-                  <View style={[styles.categoryBar, { width: `${percentage}%`, backgroundColor: category.color }]} />
-                </View>
-                <Text style={styles.categoryAmount}>{formatCurrency(category.amount)}</Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
-
   const renderTransaction = ({ item }: { item: Transaction }) => (
     <View style={styles.transactionCard}>
       <View style={styles.transactionHeader}>
@@ -173,256 +134,192 @@ export default function TransactionsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
-        <Text style={{ color: theme.colors.text }}>Loading transactions...</Text>
+      <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>\n        <Text style={{ color: theme.colors.text }}>Loading transactions...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Charts Section */}
-        {renderWeeklyChart()}
-        {renderCategoryChart()}
-
-        {/* Filter Section */}
-        <View style={styles.filterContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {['All', 'Income', 'Expense'].map((filter) => (
-              <TouchableOpacity
-                key={filter}
-                style={[
-                  styles.filterButton,
-                  selectedFilter === filter && styles.filterButtonActive
-                ]}
-                onPress={() => setSelectedFilter(filter)}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  selectedFilter === filter && styles.filterButtonTextActive
-                ]}>
-                  {filter}
-                </Text>
-              </TouchableOpacity>
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabButton, tab === 'Transactions' && styles.tabButtonActive]}
+          onPress={() => setTab('Transactions')}
+        >
+          <Text style={[styles.tabButtonText, tab === 'Transactions' && styles.tabButtonTextActive]}>Transactions</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, tab === 'Categories' && styles.tabButtonActive]}
+          onPress={() => setTab('Categories')}
+        >
+          <Text style={[styles.tabButtonText, tab === 'Categories' && styles.tabButtonTextActive]}>Categories</Text>
+        </TouchableOpacity>
+      </View>
+      {tab === 'Transactions' ? (
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <View style={styles.filterContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {['All', 'Income', 'Expense'].map((filter) => (
+                <TouchableOpacity
+                  key={filter}
+                  style={[styles.filterButton, selectedFilter === filter && styles.filterButtonActive]}
+                  onPress={() => setSelectedFilter(filter)}
+                >
+                  <Text style={[styles.filterButtonText, selectedFilter === filter && styles.filterButtonTextActive]}>
+                    {filter}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+          <View style={styles.transactionsContainer}>
+            <Text style={styles.transactionsTitle}>
+              Recent Transactions ({getFilteredTransactions().length})
+            </Text>
+            {getFilteredTransactions().map((item) => (
+              <View key={item.id}>
+                {renderTransaction({ item })}
+              </View>
             ))}
-          </ScrollView>
-        </View>
-
-        {/* Transactions List */}
-        <View style={styles.transactionsContainer}>
-          <Text style={styles.transactionsTitle}>
-            Recent Transactions ({getFilteredTransactions().length})
-          </Text>
-          {getFilteredTransactions().map((item) => (
-            <View key={item.id}>
-              {renderTransaction({ item })}
-            </View>
-          ))}
-        </View>
-      </ScrollView>
+          </View>
+        </ScrollView>
+      ) : (
+        <CategoryBreakdown
+          categorySummary={categorySummary}
+          totals={totals}
+          selectedPeriod={selectedPeriod}
+          onPeriodChange={setSelectedPeriod}
+        />
+      )}
     </View>
   );
 }
-
-const createStyles = (theme: any) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  chartContainer: {
-    backgroundColor: theme.colors.surface,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 20,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: theme.colors.border,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-  },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 16,
-  },
-  barChart: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    height: 150,
-  },
-  barGroup: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  barContainer: {
-    height: 100,
-    width: 40,
-    backgroundColor: theme.colors.card,
-    borderRadius: 4,
-    justifyContent: 'flex-end',
-    marginBottom: 8,
-  },
-  bar: {
-    width: '100%',
-    borderRadius: 4,
-    minHeight: 4,
-  },
-  incomeBar: {
-    backgroundColor: theme.colors.success,
-  },
-  expenseBar: {
-    backgroundColor: theme.colors.error,
-  },
-  barLabel: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginBottom: 4,
-  },
-  barAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.text,
-  },
-  categoryChart: {
-    gap: 12,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  categoryInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  categoryColorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  categoryLabel: {
-    fontSize: 14,
-    color: theme.colors.text,
-    minWidth: 80,
-  },
-  categoryBarContainer: {
-    flex: 2,
-    height: 8,
-    backgroundColor: theme.colors.card,
-    borderRadius: 4,
-    marginHorizontal: 12,
-  },
-  categoryBar: {
-    height: '100%',
-    borderRadius: 4,
-    minWidth: 8,
-  },
-  categoryAmount: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    minWidth: 60,
-    textAlign: 'right',
-  },
-  filterContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: theme.colors.surface,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  filterButtonActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  filterButtonTextActive: {
-    color: '#fff',
-  },
-  transactionsContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 100, // Space for floating action button
-  },
-  transactionsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 12,
-  },
-  transactionCard: {
-    backgroundColor: theme.colors.surface,
-    marginVertical: 4,
-    padding: 16,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: theme.colors.primary,
-  },
-  transactionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  transactionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  categoryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: theme.colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  categoryEmoji: {
-    fontSize: 20,
-  },
-  transactionCategory: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text,
-  },
-  transactionPayment: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  transactionAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  transactionDescription: {
-    color: theme.colors.textSecondary,
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  transactionDate: {
-    color: theme.colors.textSecondary,
-    fontSize: 12,
-  },
-});
+function createStyles(theme: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    centerContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    tabBar: {
+      flexDirection: 'row',
+      backgroundColor: theme.colors.surface,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    tabButton: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 12,
+      borderBottomWidth: 2,
+      borderBottomColor: 'transparent',
+    },
+    tabButtonActive: {
+      borderBottomColor: theme.colors.primary,
+    },
+    tabButtonText: {
+      fontSize: 16,
+      color: theme.colors.textSecondary,
+    },
+    tabButtonTextActive: {
+      color: theme.colors.primary,
+      fontWeight: 'bold',
+    },
+    scrollView: {
+      flex: 1,
+    },
+    filterContainer: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    filterButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: theme.colors.surface,
+      marginRight: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    filterButtonActive: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    filterButtonText: {
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+    },
+    filterButtonTextActive: {
+      color: '#fff',
+    },
+    transactionsContainer: {
+      paddingHorizontal: 16,
+      paddingBottom: 100, // Space for floating action button
+    },
+    transactionsTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: theme.colors.text,
+      marginBottom: 12,
+    },
+    transactionCard: {
+      backgroundColor: theme.colors.surface,
+      marginVertical: 4,
+      padding: 16,
+      borderRadius: 8,
+      borderLeftWidth: 4,
+      borderLeftColor: theme.colors.primary,
+    },
+    transactionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    transactionLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    categoryIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: theme.colors.card,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    categoryEmoji: {
+      fontSize: 20,
+    },
+    transactionCategory: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    transactionPayment: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      marginTop: 2,
+    },
+    transactionAmount: {
+      fontSize: 18,
+      fontWeight: 'bold',
+    },
+    transactionDescription: {
+      color: theme.colors.textSecondary,
+      fontSize: 14,
+      marginBottom: 4,
+    },
+    transactionDate: {
+      color: theme.colors.textSecondary,
+      fontSize: 12,
+    },
+  });
+}
