@@ -29,6 +29,13 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a93f02ca-7269-4cdd-9a17-b62bbdee1471"
+      }
+    },
+    "owner": "nadarsha"
   }
 }
