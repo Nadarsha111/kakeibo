@@ -36,3 +36,4 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 android/app/src/main/AndroidManifest.xml
+android/app/src/main/AndroidManifest.xml
