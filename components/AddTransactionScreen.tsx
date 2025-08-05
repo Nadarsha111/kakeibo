@@ -308,7 +308,7 @@ export default function AddTransactionScreen({
                     styles.categoryNameCompact,
                     selectedAccount === account.id && styles.categoryNameCompactActive
                   ]}>
-                    {account.name}
+                    {account.bankName ? `${account.name} (${account.bankName})` : account.name}
                   </Text>
                 </TouchableOpacity>
               ))}

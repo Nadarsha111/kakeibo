@@ -12,6 +12,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../context/ThemeContext';
 import ManageCategoriesScreen from '../../components/ManageCategoriesScreen';
 import ExportDataScreen from '../../components/ExportDataScreen';
+import { router } from 'expo-router';
 
 export default function ManageTab() {
   const { theme } = useTheme();
@@ -35,8 +36,7 @@ export default function ManageTab() {
       icon: 'calendar-month-outline',
       color: '#06b6d4',
       onPress: () => {
-        // TODO: Add budget functionality
-        console.log('Budget functionality to be implemented');
+        router.push('/budget');
       },
     },
     {
