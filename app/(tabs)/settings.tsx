@@ -93,7 +93,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style={isDark ? "light" : "dark"} backgroundColor={theme.colors.background} />
+      <StatusBar style={isDark ? "light" : "dark"} />
       <ScrollView style={{ flex: 1 }}>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Appearance</Text>

@@ -210,7 +210,7 @@ function createStyles(theme: any) {
     tabBar: {
       flexDirection: 'row',
       backgroundColor: theme.colors.surface,
-      paddingVertical: 8,
+      paddingVertical: 20,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },

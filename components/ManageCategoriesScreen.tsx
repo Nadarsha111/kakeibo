@@ -187,7 +187,7 @@ export default function ManageCategoriesScreen({ visible, onClose }: ManageCateg
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="formSheet">
       <SafeAreaView style={styles.container}>
-        <StatusBar style={isDark ? "light" : "dark"} backgroundColor={theme.colors.background} />
+        <StatusBar style={isDark ? "light" : "dark"} />
         
         {/* Header */}
         <View style={styles.header}>

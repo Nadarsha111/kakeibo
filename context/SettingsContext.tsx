@@ -91,7 +91,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
 
   // Format currency with current settings
   const formatCurrency = (amount: number) => {
-    return `${currency}${amount.toFixed(decimalPlaces)}`;
+    return `${currency} ${amount.toFixed(decimalPlaces)}`;
   };
 
   // Refresh settings (useful after database changes)

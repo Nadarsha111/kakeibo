@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text,  StyleSheet, TouchableOpacity } from 'react-native';
-import { useTheme } from '../context/ThemeContext';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ScrollView } from 'react-native';
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { useTheme } from "../context/ThemeContext";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { ScrollView } from "react-native";
+import { useSettings } from "../context/SettingsContext";
 
 interface CategorySummary {
   category: string;
@@ -43,7 +44,7 @@ function createStyles(theme: any) {
     headerAmount: {
       color: theme.colors.text,
       fontSize: 28,
-      fontWeight: 'bold',
+      fontWeight: "bold",
       marginVertical: 8,
     },
     headerPeriod: {
@@ -52,7 +53,7 @@ function createStyles(theme: any) {
       opacity: 0.8,
     },
     periodSelector: {
-      flexDirection: 'row',
+      flexDirection: "row",
       paddingVertical: 12,
       marginBottom: 8,
     },
@@ -63,7 +64,7 @@ function createStyles(theme: any) {
       marginHorizontal: 4,
       borderRadius: 20,
       backgroundColor: theme.colors.card,
-      alignItems: 'center',
+      alignItems: "center",
     },
     periodButtonActive: {
       backgroundColor: theme.colors.primary,
@@ -73,10 +74,10 @@ function createStyles(theme: any) {
       color: theme.colors.textSecondary,
     },
     periodButtonTextActive: {
-      color: '#fff',
+      color: "#fff",
     },
     pieChartContainer: {
-      alignItems: 'center',
+      alignItems: "center",
       marginBottom: 20,
     },
     donutChart: {
@@ -84,14 +85,14 @@ function createStyles(theme: any) {
       height: 150,
       borderRadius: 75,
       backgroundColor: theme.colors.card,
-      alignItems: 'center',
-      justifyContent: 'center',
+      alignItems: "center",
+      justifyContent: "center",
       borderWidth: 20,
       borderColor: theme.colors.primary,
     },
     donutCenterText: {
       fontSize: 18,
-      fontWeight: 'bold',
+      fontWeight: "bold",
       color: theme.colors.text,
     },
     donutCenterLabel: {
@@ -104,8 +105,8 @@ function createStyles(theme: any) {
       marginBottom: 16,
     },
     legendItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection: "row",
+      alignItems: "center",
       paddingVertical: 4,
     },
     legendColor: {
@@ -128,45 +129,45 @@ function createStyles(theme: any) {
       fontSize: 12,
       color: theme.colors.textSecondary,
       minWidth: 40,
-      textAlign: 'right',
+      textAlign: "right",
     },
     categoryGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'space-between',
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
     },
     categoryCard: {
-      width: '48%',
+      width: "48%",
       backgroundColor: theme.colors.card,
       borderRadius: 12,
       padding: 16,
-      alignItems: 'center',
+      alignItems: "center",
       marginBottom: 16,
     },
     categoryIconContainer: {
       width: 50,
       height: 50,
       borderRadius: 25,
-      alignItems: 'center',
-      justifyContent: 'center',
+      alignItems: "center",
+      justifyContent: "center",
       marginBottom: 12,
     },
     categoryIcon: {
       fontSize: 24,
-      color: '#fff',
+      color: "#fff",
     },
     categoryContent: {
-      alignItems: 'center',
+      alignItems: "center",
     },
     categoryName: {
       fontSize: 14,
-      fontWeight: '600',
+      fontWeight: "600",
       color: theme.colors.text,
       marginBottom: 4,
     },
     categoryAmount: {
       fontSize: 16,
-      fontWeight: 'bold',
+      fontWeight: "bold",
       color: theme.colors.error,
       marginBottom: 4,
     },
@@ -177,76 +178,128 @@ function createStyles(theme: any) {
   });
 }
 
-const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
 
-const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({ categorySummary, totals, selectedPeriod, onPeriodChange }) => {
+const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
+  categorySummary,
+  totals,
+  selectedPeriod,
+  onPeriodChange,
+}) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
-
+  const {formatCurrency} =useSettings();
   return (
-      <SafeAreaView style={{ flex: 1 }}>
-    <ScrollView  showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Text style={styles.headerSubtext}>Account balance</Text>
-        <Text style={styles.headerAmount}>{formatCurrency(totals.balance)}</Text>
-        <Text style={styles.headerPeriod}>📅 {selectedPeriod}</Text>
-      </View>
-      <View style={styles.periodSelector}>
-        {['This Week', 'This Month', 'Last 3 Months'].map((period) => (
-          <TouchableOpacity
-            key={period}
-            style={[styles.periodButton, selectedPeriod === period && styles.periodButtonActive]}
-            onPress={() => onPeriodChange(period)}
-          >
-            <Text style={[styles.periodButtonText, selectedPeriod === period && styles.periodButtonTextActive]}>
-              {period}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.pieChartContainer}>
-        <View style={styles.donutChart}>
-          <Text style={styles.donutCenterText}>{formatCurrency(totals.expenses)}</Text>
-          <Text style={styles.donutCenterLabel}>Total Expenses</Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <Text style={styles.headerSubtext}>Account balance</Text>
+          <Text style={styles.headerAmount}>
+            {formatCurrency(totals.balance)}
+          </Text>
+          <Text style={styles.headerPeriod}>📅 {selectedPeriod}</Text>
         </View>
-      </View>
-      <View style={styles.legendContainer}>
-        {categorySummary.slice(0, 6).map((category, index) => (
-          <View key={index} style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: category.color }]} />
-            <Text style={styles.legendLabel}>{category.category}</Text>
-            <Text style={styles.legendAmount}>{formatCurrency(category.amount)}</Text>
-            <Text style={styles.legendPercentage}>{category.percentage.toFixed(1)}%</Text>
+        <View style={styles.periodSelector}>
+          {["This Week", "This Month", "Last 3 Months"].map((period) => (
+            <TouchableOpacity
+              key={period}
+              style={[
+                styles.periodButton,
+                selectedPeriod === period && styles.periodButtonActive,
+              ]}
+              onPress={() => onPeriodChange(period)}
+            >
+              <Text
+                style={[
+                  styles.periodButtonText,
+                  selectedPeriod === period && styles.periodButtonTextActive,
+                ]}
+              >
+                {period}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={styles.pieChartContainer}>
+          <View style={styles.donutChart}>
+            <Text style={styles.donutCenterText}>
+              {formatCurrency(totals.expenses)}
+            </Text>
+            <Text style={styles.donutCenterLabel}>Total Expenses</Text>
           </View>
-        ))}
-      </View>
-      <View>
-        <Text style={{ fontSize: 18, fontWeight: '600', color: theme.colors.text, marginBottom: 16 }}>Category Breakdown</Text>
-        <View style={styles.categoryGrid}>
-          {categorySummary.map((category, index) => (
-            <View key={index} style={styles.categoryCard}>
-              <View style={[styles.categoryIconContainer, { backgroundColor: category.color }]}>
-                <Text style={styles.categoryIcon}>
-                  {category.category === 'Transport' ? '🚗' : 
-                   category.category === 'Restaurant' ? '🍽️' :
-                   category.category === 'Shopping' ? '🛍️' :
-                   category.category === 'Food' ? '🍎' :
-                   category.category === 'Gift' ? '🎁' :
-                   category.category === 'Free time' ? '🎮' :
-                   category.category === 'Family' ? '👨‍👩‍👧‍👦' :
-                   category.category === 'Health' ? '🏥' : '💰'}
-                </Text>
-              </View>
-              <View style={styles.categoryContent}>
-                <Text style={styles.categoryName}>{category.category}</Text>
-                <Text style={styles.categoryAmount}>{formatCurrency(category.amount)}</Text>
-                <Text style={styles.categoryPercentage}>{category.percentage.toFixed(1)}%</Text>
-              </View>
+        </View>
+        <View style={styles.legendContainer}>
+          {categorySummary.slice(0, 6).map((category, index) => (
+            <View key={index} style={styles.legendItem}>
+              <View
+                style={[
+                  styles.legendColor,
+                  { backgroundColor: category.color },
+                ]}
+              />
+              <Text style={styles.legendLabel}>{category.category}</Text>
+              <Text style={styles.legendAmount}>
+                {formatCurrency(category.amount)}
+              </Text>
+              <Text style={styles.legendPercentage}>
+                {category.percentage.toFixed(1)}%
+              </Text>
             </View>
           ))}
         </View>
-      </View>
-    </ScrollView>
+        <View>
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: "600",
+              color: theme.colors.text,
+              marginBottom: 16,
+            }}
+          >
+            Category Breakdown
+          </Text>
+          <View style={styles.categoryGrid}>
+            {categorySummary.map((category, index) => (
+              <View key={index} style={styles.categoryCard}>
+                <View
+                  style={[
+                    styles.categoryIconContainer,
+                    { backgroundColor: category.color },
+                  ]}
+                >
+                  <Text style={styles.categoryIcon}>
+                    {category.category === "Transport"
+                      ? "🚗"
+                      : category.category === "Restaurant"
+                      ? "🍽️"
+                      : category.category === "Shopping"
+                      ? "🛍️"
+                      : category.category === "Food"
+                      ? "🍎"
+                      : category.category === "Gift"
+                      ? "🎁"
+                      : category.category === "Free time"
+                      ? "🎮"
+                      : category.category === "Family"
+                      ? "👨‍👩‍👧‍👦"
+                      : category.category === "Health"
+                      ? "🏥"
+                      : "💰"}
+                  </Text>
+                </View>
+                <View style={styles.categoryContent}>
+                  <Text style={styles.categoryName}>{category.category}</Text>
+                  <Text style={styles.categoryAmount}>
+                    {formatCurrency(category.amount)}
+                  </Text>
+                  <Text style={styles.categoryPercentage}>
+                    {category.percentage.toFixed(1)}%
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };

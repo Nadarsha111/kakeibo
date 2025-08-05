@@ -64,7 +64,6 @@ export default function ManageTab() {
     <SafeAreaView style={styles.container}>
       <StatusBar
         barStyle={theme.isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={theme.colors.background}
       />
       
       <View style={styles.header}>
