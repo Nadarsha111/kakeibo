@@ -3,6 +3,8 @@ import { ThemeProvider } from "../context/ThemeContext";
 import { SettingsProvider } from "../context/SettingsContext";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { DrizzleStudioProvider } from "../hooks/useDrizzleStudio";
+import "../global.css";
+
 export default function Layout() {
   return (
     <SafeAreaProvider>

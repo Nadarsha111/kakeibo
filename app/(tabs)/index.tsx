@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, ScrollView, StyleSheet, RefreshControl } from "react-native";
+import { View, Text, ScrollView, RefreshControl } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 // Using the new service architecture for better separation of concerns
 import { getAccountService, getTransactionService } from "../../database";
 import { useTheme } from "../../context/ThemeContext";
-import SettingsManager from "../../utils/settings";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSettings } from "../../context/SettingsContext";
 
 interface DashboardData {
   totalBalance: number;
@@ -26,7 +25,7 @@ interface DashboardData {
 
 export default function OverviewScreen() {
   const { theme } = useTheme();
-  const styles = createStyles(theme);
+  const {formatCurrency} =useSettings();
   const [data, setData] = useState<DashboardData>({
     totalBalance: 0,
     monthlyAccountBalances: [],
@@ -140,9 +139,9 @@ export default function OverviewScreen() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return SettingsManager.formatCurrency(amount);
-  };
+  // const formatCurrency = (amount: number) => {
+  //   return SettingsManager.formatCurrency(amount);
+  // };
 
   const renderWeeklyChart = () => {
     const maxAmount = Math.max(data.weeklyIncome, data.weeklyExpenses);
@@ -152,32 +151,30 @@ export default function OverviewScreen() {
       maxAmount > 0 ? (data.weeklyExpenses / maxAmount) * 80 : 0;
 
     return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>This Week</Text>
-        <View style={styles.barChart}>
-          <View style={styles.barGroup}>
-            <View style={styles.barContainer}>
+      <View className="m-5 bg-white rounded-xl p-5 border border-gray-200" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+        <Text className="text-lg font-bold mb-5" style={{ color: theme.colors.text }}>This Week</Text>
+        <View className="flex-row justify-around items-end h-30">
+          <View className="items-center flex-1">
+            <View className="h-20 w-10 justify-end mb-2.5">
               <View
-                style={[styles.bar, styles.incomeBar, { height: incomeHeight }]}
+                className="w-10 rounded min-h-1"
+                style={[{ height: incomeHeight, backgroundColor: theme.colors.success }]}
               />
             </View>
-            <Text style={styles.barLabel}>Income</Text>
-            <Text style={styles.barAmount}>
+            <Text className="text-xs mt-1.25" style={{ color: theme.colors.textSecondary }}>Income</Text>
+            <Text className="text-sm font-bold mt-0.5" style={{ color: theme.colors.text }}>
               {formatCurrency(data.weeklyIncome)}
             </Text>
           </View>
-          <View style={styles.barGroup}>
-            <View style={styles.barContainer}>
+          <View className="items-center flex-1">
+            <View className="h-20 w-10 justify-end mb-2.5">
               <View
-                style={[
-                  styles.bar,
-                  styles.expenseBar,
-                  { height: expenseHeight },
-                ]}
+                className="w-10 rounded min-h-1"
+                style={[{ height: expenseHeight, backgroundColor: theme.colors.error }]}
               />
             </View>
-            <Text style={styles.barLabel}>Expenses</Text>
-            <Text style={styles.barAmount}>
+            <Text className="text-xs mt-1.25" style={{ color: theme.colors.textSecondary }}>Expenses</Text>
+            <Text className="text-sm font-bold mt-0.5" style={{ color: theme.colors.text }}>
               {formatCurrency(data.weeklyExpenses)}
             </Text>
           </View>
@@ -193,32 +190,51 @@ export default function OverviewScreen() {
     );
 
     return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Top Categories</Text>
-        <View style={styles.pieChartContainer}>
-          <View style={styles.pieChart}>
-            <Text style={styles.pieChartCenterText}>
+      <View className="m-5 rounded-xl p-5 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+        <Text className="text-lg font-bold mb-5" style={{ color: theme.colors.text }}>Top Categories</Text>
+        <View className="flex-row items-center">
+          <View 
+            className="justify-center items-center mr-5 rounded-full"
+            style={{ 
+              width: 100, 
+              height: 100, 
+              backgroundColor: theme.colors.primary 
+            }}
+          >
+            <Text className="text-base font-bold text-white">
               {formatCurrency(total)}
             </Text>
-            <Text style={styles.pieChartCenterLabel}>Total</Text>
+            <Text className="text-xs text-white" style={{ opacity: 0.8 }}>
+              Total
+            </Text>
           </View>
-          <View style={styles.categoriesLegend}>
+          <View className="flex-1">
             {data.categorySummary.map((category, index) => {
               const percentage =
                 total > 0 ? (category.amount / total) * 100 : 0;
               return (
-                <View key={index} style={styles.legendItem}>
+                <View key={index} className="flex-row items-center mb-2">
                   <View
-                    style={[
-                      styles.legendDot,
-                      { backgroundColor: category.color },
-                    ]}
+                    className="rounded-full mr-2"
+                    style={{ 
+                      width: 12, 
+                      height: 12, 
+                      backgroundColor: category.color 
+                    }}
                   />
-                  <Text style={styles.legendText}>{category.category}</Text>
-                  <Text style={styles.legendAmount}>
+                  <Text className="flex-1 text-sm" style={{ color: theme.colors.text }}>
+                    {category.category}
+                  </Text>
+                  <Text className="text-sm font-bold mr-2" style={{ color: theme.colors.text }}>
                     {formatCurrency(category.amount)}
                   </Text>
-                  <Text style={styles.legendPercentage}>
+                  <Text 
+                    className="text-xs text-right" 
+                    style={{ 
+                      color: theme.colors.textSecondary,
+                      width: 40 
+                    }}
+                  >
                     {percentage.toFixed(1)}%
                   </Text>
                 </View>
@@ -232,34 +248,34 @@ export default function OverviewScreen() {
 
   const renderAccountBalances = () => {
     return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Monthly Account Balances</Text>
+      <View className="m-5 bg-white rounded-xl p-5 border border-gray-200" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+        <Text className="text-lg font-bold mb-5" style={{ color: theme.colors.text }}>Monthly Account Balances</Text>
         {data.monthlyAccountBalances.length > 0 ? (
-          <View style={styles.accountsList}>
+          <View className="mt-2.5">
             {data.monthlyAccountBalances.map((account, index) => (
-              <View key={account.accountId} style={styles.accountItem}>
-                <Text style={styles.accountName}>{account.name}</Text>
-                <Text style={styles.accountBalance}>
+              <View key={account.accountId} className="flex-row justify-between items-center py-3 border-b border-opacity-30" style={{ borderBottomColor: theme.colors.border }}>
+                <Text className="text-sm flex-1" style={{ color: theme.colors.text }}>{account.name}</Text>
+                <Text className="text-base font-semibold" style={{ color: theme.colors.text }}>
                   {formatCurrency(account.closingBalance)}
                 </Text>
               </View>
             ))}
-            <View style={[styles.accountItem, styles.totalAccountItem]}>
-              <Text style={styles.totalAccountName}>Total</Text>
-              <Text style={styles.totalAccountBalance}>
+            <View className="flex-row justify-between items-center pt-4 mt-2 border-t-2" style={{ borderTopColor: theme.colors.primary }}>
+              <Text className="text-base font-bold flex-1" style={{ color: theme.colors.text }}>Total</Text>
+              <Text className="text-lg font-bold" style={{ color: theme.colors.primary }}>
                 {formatCurrency(data.totalBalance)}
               </Text>
             </View>
           </View>
         ) : (
-          <Text style={styles.noDataText}>No account data available</Text>
+          <Text className="text-sm text-center mt-5" style={{ color: theme.colors.textSecondary }}>No account data available</Text>
         )}
       </View>
     );
   };
 
   return (
-    <View style={{flex:1,backgroundColor: theme.colors.background}} >
+    <View className="flex-1" style={{ backgroundColor: theme.colors.background }}>
     <ScrollView 
       showsVerticalScrollIndicator={false}
       refreshControl={
@@ -272,33 +288,33 @@ export default function OverviewScreen() {
       }
     >
       {/* Account Balance Header */}
-      <View style={{ ...styles.header, backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }}>
-        <Text style={{ ...styles.headerSubtext, color: theme.colors.textSecondary }}>Account balance</Text>
-        <Text style={{ ...styles.headerAmount, color: theme.colors.text }}>{formatCurrency(data.totalBalance)}</Text>
-        <Text style={{ ...styles.headerPeriod, color: theme.colors.textSecondary }}>
+      <View className="px-5 pt-9 pb-5 border-b" style={{ backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }}>
+        <Text className="text-sm mb-1" style={{ color: theme.colors.textSecondary }}>Account balance</Text>
+        <Text className="text-3xl font-bold mb-2.5" style={{ color: theme.colors.text }}>{formatCurrency(data.totalBalance)}</Text>
+        <Text className="text-sm" style={{ color: theme.colors.textSecondary }}>
           📅 This Month • {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
         </Text>
       </View>
 
       {/* Quick Summary Cards */}
-      <View style={styles.summaryContainer}>
-        <View style={styles.summaryRow}>
-          <View style={{ ...styles.summaryCard, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text style={{ ...styles.summaryLabel, color: theme.colors.textSecondary }}>Income</Text>
-            <Text style={{ ...styles.summaryAmount, color: theme.colors.success }}>{formatCurrency(data.weeklyIncome)}</Text>
-            <Text style={{ ...styles.summaryPeriod, color: theme.colors.textSecondary }}>This week</Text>
+      <View className="p-5">
+        <View className="flex-row justify-between">
+          <View className="flex-1 bg-white rounded-xl p-4 mx-1 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+            <Text className="text-xs mb-2 uppercase" style={{ color: theme.colors.textSecondary }}>Income</Text>
+            <Text className="text-lg font-bold mb-1" style={{ color: theme.colors.success }}>{formatCurrency(data.weeklyIncome)}</Text>
+            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>This week</Text>
           </View>
-          <View style={{ ...styles.summaryCard, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text style={{ ...styles.summaryLabel, color: theme.colors.textSecondary }}>Expenses</Text>
-            <Text style={{ ...styles.summaryAmount, color: theme.colors.error }}>{formatCurrency(data.weeklyExpenses)}</Text>
-            <Text style={{ ...styles.summaryPeriod, color: theme.colors.textSecondary }}>This week</Text>
+          <View className="flex-1 bg-white rounded-xl p-4 mx-1 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+            <Text className="text-xs mb-2 uppercase" style={{ color: theme.colors.textSecondary }}>Expenses</Text>
+            <Text className="text-lg font-bold mb-1" style={{ color: theme.colors.error }}>{formatCurrency(data.weeklyExpenses)}</Text>
+            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>This week</Text>
           </View>
-          <View style={{ ...styles.summaryCard, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text style={{ ...styles.summaryLabel, color: theme.colors.textSecondary }}>Net</Text>
-            <Text style={{ ...styles.summaryAmount, color: data.weeklyIncome - data.weeklyExpenses >= 0 ? theme.colors.success : theme.colors.error }}>
+          <View className="flex-1 bg-white rounded-xl p-4 mx-1 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+            <Text className="text-xs mb-2 uppercase" style={{ color: theme.colors.textSecondary }}>Net</Text>
+            <Text className="text-lg font-bold mb-1" style={{ color: data.weeklyIncome - data.weeklyExpenses >= 0 ? theme.colors.success : theme.colors.error }}>
               {formatCurrency(data.weeklyIncome - data.weeklyExpenses)}
             </Text>
-            <Text style={{ ...styles.summaryPeriod, color: theme.colors.textSecondary }}>This week</Text>
+            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>This week</Text>
           </View>
         </View>
       </View>
@@ -313,24 +329,24 @@ export default function OverviewScreen() {
       {renderCategoriesPieChart()}
 
       {/* Quick Actions */}
-      <View style={styles.actionsContainer}>
-        <Text style={{ ...styles.actionsTitle, color: theme.colors.text }}>Quick Actions</Text>
-        <View style={styles.actionsGrid}>
-          <View style={{ ...styles.actionCard, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text style={styles.actionIcon}>📊</Text>
-            <Text style={{ ...styles.actionText, color: theme.colors.text }}>View Reports</Text>
+      <View className="p-5">
+        <Text className="text-lg font-bold mb-4" style={{ color: theme.colors.text }}>Quick Actions</Text>
+        <View className="flex-row flex-wrap justify-between">
+          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+            <Text className="text-2xl mb-2">📊</Text>
+            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>View Reports</Text>
           </View>
-          <View style={{ ...styles.actionCard, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text style={styles.actionIcon}>🎯</Text>
-            <Text style={{ ...styles.actionText, color: theme.colors.text }}>Set Budget</Text>
+          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+            <Text className="text-2xl mb-2">🎯</Text>
+            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>Set Budget</Text>
           </View>
-          <View style={{ ...styles.actionCard, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text style={styles.actionIcon}>📋</Text>
-            <Text style={{ ...styles.actionText, color: theme.colors.text }}>Categories</Text>
+          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+            <Text className="text-2xl mb-2">📋</Text>
+            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>Categories</Text>
           </View>
-          <View style={{ ...styles.actionCard, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text style={styles.actionIcon}>⚙️</Text>
-            <Text style={{ ...styles.actionText, color: theme.colors.text }}>Settings</Text>
+          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
+            <Text className="text-2xl mb-2">⚙️</Text>
+            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>Settings</Text>
           </View>
         </View>
       </View>
@@ -338,249 +354,3 @@ export default function OverviewScreen() {
     </View>
   );
 }
-
-const createStyles = (theme: any) =>
-  StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: theme.colors.background,
-    },
-    header: {
-      paddingHorizontal: 20,
-      paddingTop: 35,
-      paddingBottom: 20,
-      backgroundColor: theme.colors.surface,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    headerSubtext: {
-      fontSize: 14,
-      color: theme.colors.textSecondary,
-      marginBottom: 5,
-    },
-    headerAmount: {
-      fontSize: 32,
-      fontWeight: "bold",
-      color: theme.colors.text,
-      marginBottom: 10,
-    },
-    headerPeriod: {
-      fontSize: 14,
-      color: theme.colors.textSecondary,
-    },
-    summaryContainer: {
-      padding: 20,
-    },
-    summaryRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-    },
-    summaryCard: {
-      flex: 1,
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      padding: 16,
-      marginHorizontal: 4,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-    },
-    summaryLabel: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      marginBottom: 8,
-      textTransform: "uppercase",
-    },
-    summaryAmount: {
-      fontSize: 18,
-      fontWeight: "bold",
-      marginBottom: 4,
-    },
-    summaryPeriod: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-    },
-    chartContainer: {
-      margin: 20,
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      padding: 20,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-    },
-    chartTitle: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: theme.colors.text,
-      marginBottom: 20,
-    },
-    barChart: {
-      flexDirection: "row",
-      justifyContent: "space-around",
-      alignItems: "flex-end",
-      height: 120,
-    },
-    barGroup: {
-      alignItems: "center",
-      flex: 1,
-    },
-    barContainer: {
-      height: 80,
-      width: 40,
-      justifyContent: "flex-end",
-      marginBottom: 10,
-    },
-    bar: {
-      width: 40,
-      borderRadius: 4,
-      minHeight: 4,
-    },
-    incomeBar: {
-      backgroundColor: theme.colors.success,
-    },
-    expenseBar: {
-      backgroundColor: theme.colors.error,
-    },
-    barLabel: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      marginTop: 5,
-    },
-    barAmount: {
-      fontSize: 14,
-      fontWeight: "bold",
-      color: theme.colors.text,
-      marginTop: 2,
-    },
-    pieChartContainer: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-    pieChart: {
-      width: 100,
-      height: 100,
-      borderRadius: 50,
-      backgroundColor: theme.colors.primary,
-      justifyContent: "center",
-      alignItems: "center",
-      marginRight: 20,
-    },
-    pieChartCenterText: {
-      fontSize: 16,
-      fontWeight: "bold",
-      color: "#FFFFFF",
-    },
-    pieChartCenterLabel: {
-      fontSize: 12,
-      color: "#FFFFFF",
-      opacity: 0.8,
-    },
-    categoriesLegend: {
-      flex: 1,
-    },
-    legendItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 8,
-    },
-    legendDot: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      marginRight: 8,
-    },
-    legendText: {
-      flex: 1,
-      fontSize: 14,
-      color: theme.colors.text,
-    },
-    legendAmount: {
-      fontSize: 14,
-      fontWeight: "bold",
-      color: theme.colors.text,
-      marginRight: 8,
-    },
-    legendPercentage: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      width: 40,
-      textAlign: "right",
-    },
-    actionsContainer: {
-      padding: 20,
-    },
-    actionsTitle: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: theme.colors.text,
-      marginBottom: 15,
-    },
-    actionsGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      justifyContent: "space-between",
-    },
-    actionCard: {
-      width: "48%",
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      padding: 20,
-      alignItems: "center",
-      marginBottom: 12,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-    },
-    actionIcon: {
-      fontSize: 24,
-      marginBottom: 8,
-    },
-    actionText: {
-      fontSize: 14,
-      color: theme.colors.text,
-      textAlign: "center",
-    },
-    accountsList: {
-      marginTop: 10,
-    },
-    accountItem: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border + "30", // Semi-transparent
-    },
-    totalAccountItem: {
-      borderTopWidth: 2,
-      borderTopColor: theme.colors.primary,
-      borderBottomWidth: 0,
-      marginTop: 8,
-      paddingTop: 16,
-    },
-    accountName: {
-      fontSize: 14,
-      color: theme.colors.text,
-      flex: 1,
-    },
-    accountBalance: {
-      fontSize: 16,
-      fontWeight: "600",
-      color: theme.colors.text,
-    },
-    totalAccountName: {
-      fontSize: 16,
-      fontWeight: "bold",
-      color: theme.colors.text,
-      flex: 1,
-    },
-    totalAccountBalance: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: theme.colors.primary,
-    },
-    noDataText: {
-      fontSize: 14,
-      color: theme.colors.textSecondary,
-      textAlign: "center",
-      marginTop: 20,
-    },
-  });

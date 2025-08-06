@@ -1,8 +1,8 @@
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { Alert, Platform } from 'react-native';
+import { Alert} from 'react-native';
 import { Transaction } from '../types';
-import SettingsManager from './settings';
+import { useSettings } from '../context/SettingsContext';
 
 export interface ExportOptions {
   dateRange?: 'all' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'custom';
@@ -12,14 +12,13 @@ export interface ExportOptions {
   includeCategories?: boolean;
 }
 
-export class DataExporter {
-  
-  static async exportToCSV(
+export const useDataExporter = () => {
+  const { currency } = useSettings();
+
+  const exportToCSV = async (
     transactions: Array<Transaction & { categoryName?: string }>, 
     options: ExportOptions = { format: 'csv' }
-  ): Promise<string> {
-    const currency = SettingsManager.getCurrency();
-    
+  ): Promise<string> => {
     // CSV Headers
     const headers = [
       'Date',
@@ -50,17 +49,17 @@ export class DataExporter {
     });
     
     return csvRows.join('\n');
-  }
+  };
   
-  static async exportToJSON(
+  const exportToJSON = async (
     transactions: Array<Transaction & { categoryName?: string }>,
     options: ExportOptions = { format: 'json' }
-  ): Promise<string> {
+  ): Promise<string> => {
     const exportData = {
       exportInfo: {
         generatedAt: new Date().toISOString(),
         totalTransactions: transactions.length,
-        currency: SettingsManager.getCurrency(),
+        currency: currency,
         dateRange: options.dateRange || 'all',
         ...(options.startDate && { startDate: options.startDate }),
         ...(options.endDate && { endDate: options.endDate })
@@ -79,13 +78,13 @@ export class DataExporter {
     };
     
     return JSON.stringify(exportData, null, 2);
-  }
+  };
   
-  static async saveAndShareFile(
+  const saveAndShareFile = async (
     content: string, 
     filename: string, 
     format: 'csv' | 'json'
-  ): Promise<{ success: boolean; filePath?: string }> {
+  ): Promise<{ success: boolean; filePath?: string }> => {
     try {
       const fileUri = `${FileSystem.documentDirectory}${filename}.${format}`;
       
@@ -115,9 +114,9 @@ export class DataExporter {
       console.error('Error saving and sharing file:', error);
       return { success: false };
     }
-  }
+  };
   
-  static generateFilename(options: ExportOptions): string {
+  const generateFilename = (options: ExportOptions): string => {
     const now = new Date();
     const timestamp = now.toISOString().slice(0, 10); // YYYY-MM-DD
     
@@ -143,9 +142,9 @@ export class DataExporter {
     }
     
     return `kakeibo_export${rangePart}_${timestamp}`;
-  }
+  };
   
-  static getDateRangeForOption(option: string): { startDate: string; endDate: string } | null {
+  const getDateRangeForOption = (option: string): { startDate: string; endDate: string } | null => {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
@@ -172,16 +171,15 @@ export class DataExporter {
       default:
         return null;
     }
-  }
+  };
   
-  static formatSummaryText(summary: {
+  const formatSummaryText = (summary: {
     totalTransactions: number;
     totalIncome: number;
     totalExpense: number;
     earliestDate: string | null;
     latestDate: string | null;
-  }): string {
-    const currency = SettingsManager.getCurrency();
+  }): string => {
     const balance = summary.totalIncome - summary.totalExpense;
     
     return `Export Summary:
@@ -190,5 +188,14 @@ export class DataExporter {
 • Total Expenses: ${currency}${summary.totalExpense.toFixed(2)}
 • Net Balance: ${currency}${balance.toFixed(2)}
 • Date Range: ${summary.earliestDate || 'N/A'} to ${summary.latestDate || 'N/A'}`;
-  }
-}
+  };
+
+  return {
+    exportToCSV,
+    exportToJSON,
+    saveAndShareFile,
+    generateFilename,
+    getDateRangeForOption,
+    formatSummaryText
+  };
+};

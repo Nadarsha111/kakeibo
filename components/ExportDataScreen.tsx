@@ -14,7 +14,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../context/ThemeContext';
 import { getTransactionService } from '../database';
-import { DataExporter, ExportOptions } from '../utils/dataExporter';
+import { useDataExporter, ExportOptions } from '../hooks/useDataExporter';
 import OptionSelector from './OptionSelector';
 
 interface ExportDataScreenProps {
@@ -25,7 +25,7 @@ interface ExportDataScreenProps {
 export default function ExportDataScreen({ visible, onClose }: ExportDataScreenProps) {
   const { theme, isDark } = useTheme();
   const styles = createStyles(theme);
-  
+  const dataExporter = useDataExporter();
   const [selectedFormat, setSelectedFormat] = useState<'csv' | 'json'>('csv');
   const [selectedDateRange, setSelectedDateRange] = useState<'all' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -99,7 +99,7 @@ export default function ExportDataScreen({ visible, onClose }: ExportDataScreenP
         exportOptions.startDate = customStartDate;
         exportOptions.endDate = customEndDate;
       } else {
-        const range = DataExporter.getDateRangeForOption(selectedDateRange);
+        const range = dataExporter.getDateRangeForOption(selectedDateRange);
         if (range) {
           transactions = transactionService.getTransactionsByDateRange(range.startDate, range.endDate, true);
           exportOptions.startDate = range.startDate;
@@ -118,14 +118,14 @@ export default function ExportDataScreen({ visible, onClose }: ExportDataScreenP
       // Generate content based on format
       let content: string;
       if (selectedFormat === 'csv') {
-        content = await DataExporter.exportToCSV(transactions, exportOptions);
+        content = await dataExporter.exportToCSV(transactions, exportOptions);
       } else {
-        content = await DataExporter.exportToJSON(transactions, exportOptions);
+        content = await dataExporter.exportToJSON(transactions, exportOptions);
       }
 
       // Generate filename and save
-      const filename = DataExporter.generateFilename(exportOptions);
-      const result = await DataExporter.saveAndShareFile(content, filename, selectedFormat);
+      const filename = dataExporter.generateFilename(exportOptions);
+      const result = await dataExporter.saveAndShareFile(content, filename, selectedFormat);
 
       if (result.success) {
         Alert.alert(
@@ -209,7 +209,7 @@ export default function ExportDataScreen({ visible, onClose }: ExportDataScreenP
             <View style={styles.summaryCard}>
               <Text style={styles.summaryTitle}>Export Summary</Text>
               <Text style={styles.summaryText}>
-                {DataExporter.formatSummaryText(exportSummary)}
+                {dataExporter.formatSummaryText(exportSummary)}
               </Text>
             </View>
           )}

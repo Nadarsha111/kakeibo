@@ -15,7 +15,6 @@ import { Account, Loan, LoanSummary } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
-import { SafeAreaView } from "react-native-safe-area-context";
 import AddLoanScreen from "../../components/AddLoanScreen";
 
 export default function AccountsScreen() {
