@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, ScrollView, StyleSheet, RefreshControl } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import DatabaseService from "../../database/database";
+// Using the new service architecture for better separation of concerns
+import { getAccountService, getTransactionService } from "../../database";
 import { useTheme } from "../../context/ThemeContext";
 import SettingsManager from "../../utils/settings";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -57,6 +58,10 @@ export default function OverviewScreen() {
     
     setIsLoading(true);
     try {
+      // Get service instances
+      const accountService = getAccountService();
+      const transactionService = getTransactionService();
+      
       // Get current date ranges
       const now = new Date();
 
@@ -80,27 +85,27 @@ export default function OverviewScreen() {
 
       // Batch all database calls for better performance
       const [monthlyAccountBalances, weeklyExpenses, weeklyIncome, monthlyExpenses, categorySummary] = await Promise.all([
-        Promise.resolve(DatabaseService.getMonthlyAccountBalances(now.getFullYear(), now.getMonth() + 1)),
-        Promise.resolve(DatabaseService.getTotalExpenses(
+        Promise.resolve(accountService.getMonthlyAccountBalances(now.getFullYear(), now.getMonth() + 1)),
+        Promise.resolve(transactionService.getTotalExpenses(
           weekStart.toISOString().split("T")[0],
           weekEnd.toISOString().split("T")[0]
         )),
-        Promise.resolve(DatabaseService.getTotalIncome(
+        Promise.resolve(transactionService.getTotalIncome(
           weekStart.toISOString().split("T")[0],
           weekEnd.toISOString().split("T")[0]
         )),
-        Promise.resolve(DatabaseService.getTotalExpenses(
+        Promise.resolve(transactionService.getTotalExpenses(
           monthStart.toISOString().split("T")[0],
           monthEnd.toISOString().split("T")[0]
         )),
-        Promise.resolve(DatabaseService.getCategorySummary(
+        Promise.resolve(transactionService.getCategorySummary(
           monthStart.toISOString().split("T")[0],
           monthEnd.toISOString().split("T")[0]
         ))
       ]);
 
       // Calculate total balance from monthly account balances
-      const totalBalance = monthlyAccountBalances.reduce((sum, account) => sum + account.closingBalance, 0);
+      const totalBalance = monthlyAccountBalances.reduce((sum: number, account: any) => sum + account.closingBalance, 0);
 
       console.log("Loaded data:", {
         totalBalance,

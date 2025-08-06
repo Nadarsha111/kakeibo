@@ -43,6 +43,12 @@ export interface Budget {
   endDate: string;
 }
 
+// Extended Budget type with category information from JOIN queries
+export interface BudgetWithCategory extends Budget {
+  categoryName: string;
+  categoryColor: string;
+}
+
 export interface AccountBalance {
   id: number;
   totalBalance: number;

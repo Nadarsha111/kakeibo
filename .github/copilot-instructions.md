@@ -8,7 +8,7 @@ This is an Expo React Native project for a Kakeibo expense tracking application 
 - Expo React Native with TypeScript
 - SQLite for offline data storage
 - NativeWind for styling
-- React Navigation for navigation
+- expo router for navigation
 
 ## App Features
 - **Overview Screen**: Dashboard with account balance, weekly/monthly summaries, and category breakdowns
