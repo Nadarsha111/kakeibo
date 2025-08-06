@@ -4,9 +4,15 @@ import { useFocusEffect } from "@react-navigation/native";
 import DatabaseService from "../../database/database";
 import { useTheme } from "../../context/ThemeContext";
 import SettingsManager from "../../utils/settings";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 interface DashboardData {
   totalBalance: number;
+  monthlyAccountBalances: Array<{
+    accountId: number;
+    name: string;
+    closingBalance: number;
+  }>;
   weeklyExpenses: number;
   weeklyIncome: number;
   monthlyExpenses: number;
@@ -22,6 +28,7 @@ export default function OverviewScreen() {
   const styles = createStyles(theme);
   const [data, setData] = useState<DashboardData>({
     totalBalance: 0,
+    monthlyAccountBalances: [],
     weeklyExpenses: 0,
     weeklyIncome: 0,
     monthlyExpenses: 0,
@@ -72,8 +79,8 @@ export default function OverviewScreen() {
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
       // Batch all database calls for better performance
-      const [balance, weeklyExpenses, weeklyIncome, monthlyExpenses, categorySummary] = await Promise.all([
-        Promise.resolve(DatabaseService.getAccountBalance()),
+      const [monthlyAccountBalances, weeklyExpenses, weeklyIncome, monthlyExpenses, categorySummary] = await Promise.all([
+        Promise.resolve(DatabaseService.getMonthlyAccountBalances(now.getFullYear(), now.getMonth() + 1)),
         Promise.resolve(DatabaseService.getTotalExpenses(
           weekStart.toISOString().split("T")[0],
           weekEnd.toISOString().split("T")[0]
@@ -92,8 +99,12 @@ export default function OverviewScreen() {
         ))
       ]);
 
+      // Calculate total balance from monthly account balances
+      const totalBalance = monthlyAccountBalances.reduce((sum, account) => sum + account.closingBalance, 0);
+
       console.log("Loaded data:", {
-        balance: balance?.totalBalance,
+        totalBalance,
+        monthlyAccountBalances: monthlyAccountBalances.length,
         weeklyExpenses,
         weeklyIncome,
         monthlyExpenses,
@@ -101,7 +112,8 @@ export default function OverviewScreen() {
       });
 
       setData({
-        totalBalance: balance?.totalBalance || 0,
+        totalBalance,
+        monthlyAccountBalances: monthlyAccountBalances || [],
         weeklyExpenses: weeklyExpenses || 0,
         weeklyIncome: weeklyIncome || 0,
         monthlyExpenses: monthlyExpenses || 0,
@@ -112,6 +124,7 @@ export default function OverviewScreen() {
       // Set default data on error
       setData({
         totalBalance: 0,
+        monthlyAccountBalances: [],
         weeklyExpenses: 0,
         weeklyIncome: 0,
         monthlyExpenses: 0,
@@ -212,9 +225,37 @@ export default function OverviewScreen() {
     );
   };
 
+  const renderAccountBalances = () => {
+    return (
+      <View style={styles.chartContainer}>
+        <Text style={styles.chartTitle}>Monthly Account Balances</Text>
+        {data.monthlyAccountBalances.length > 0 ? (
+          <View style={styles.accountsList}>
+            {data.monthlyAccountBalances.map((account, index) => (
+              <View key={account.accountId} style={styles.accountItem}>
+                <Text style={styles.accountName}>{account.name}</Text>
+                <Text style={styles.accountBalance}>
+                  {formatCurrency(account.closingBalance)}
+                </Text>
+              </View>
+            ))}
+            <View style={[styles.accountItem, styles.totalAccountItem]}>
+              <Text style={styles.totalAccountName}>Total</Text>
+              <Text style={styles.totalAccountBalance}>
+                {formatCurrency(data.totalBalance)}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.noDataText}>No account data available</Text>
+        )}
+      </View>
+    );
+  };
+
   return (
+    <View style={{flex:1,backgroundColor: theme.colors.background}} >
     <ScrollView 
-      style={{ flex: 1, backgroundColor: theme.colors.background }} 
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl
@@ -260,6 +301,9 @@ export default function OverviewScreen() {
       {/* Weekly Chart */}
       {renderWeeklyChart()}
 
+      {/* Account Balances */}
+      {renderAccountBalances()}
+
       {/* Categories Pie Chart */}
       {renderCategoriesPieChart()}
 
@@ -286,6 +330,7 @@ export default function OverviewScreen() {
         </View>
       </View>
     </ScrollView>
+    </View>
   );
 }
 
@@ -297,7 +342,7 @@ const createStyles = (theme: any) =>
     },
     header: {
       paddingHorizontal: 20,
-      paddingTop: 20,
+      paddingTop: 35,
       paddingBottom: 20,
       backgroundColor: theme.colors.surface,
       borderBottomWidth: 1,
@@ -487,5 +532,50 @@ const createStyles = (theme: any) =>
       fontSize: 14,
       color: theme.colors.text,
       textAlign: "center",
+    },
+    accountsList: {
+      marginTop: 10,
+    },
+    accountItem: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border + "30", // Semi-transparent
+    },
+    totalAccountItem: {
+      borderTopWidth: 2,
+      borderTopColor: theme.colors.primary,
+      borderBottomWidth: 0,
+      marginTop: 8,
+      paddingTop: 16,
+    },
+    accountName: {
+      fontSize: 14,
+      color: theme.colors.text,
+      flex: 1,
+    },
+    accountBalance: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: theme.colors.text,
+    },
+    totalAccountName: {
+      fontSize: 16,
+      fontWeight: "bold",
+      color: theme.colors.text,
+      flex: 1,
+    },
+    totalAccountBalance: {
+      fontSize: 18,
+      fontWeight: "bold",
+      color: theme.colors.primary,
+    },
+    noDataText: {
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+      textAlign: "center",
+      marginTop: 20,
     },
   });

@@ -1,21 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DatabaseService from '../../database/database';
 import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
   const { formatCurrency } = useSettings();
   const styles = createStyles(theme);
-  const [tab, setTab] = useState<'Transactions' | 'Categories'>('Transactions');
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  
+  // Shared state
+  const [activeTab, setActiveTab] = useState<'transactions' | 'categories'>('transactions');
   const [loading, setLoading] = useState(true);
-  const [selectedFilter, setSelectedFilter] = useState('All');
   const [selectedPeriod, setSelectedPeriod] = useState('This Month');
+  
+  // Transactions state
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState('All');
+  
+  // Categories state
   const [categorySummary, setCategorySummary] = useState<{category: string, amount: number, color: string, percentage: number}[]>([]);
   const [totals, setTotals] = useState({ expenses: 0, balance: 0, income: 0 });
 
@@ -143,21 +150,47 @@ export default function TransactionsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.tabBar}>
+      <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Transactions & Analytics</Text>
+      </View>
+
+      {/* Tab Switcher */}
+      <View style={styles.tabContainer}>
         <TouchableOpacity
-          style={[styles.tabButton, tab === 'Transactions' && styles.tabButtonActive]}
-          onPress={() => setTab('Transactions')}
+          style={[styles.tab, activeTab === "transactions" && styles.activeTab]}
+          onPress={() => setActiveTab("transactions")}
         >
-          <Text style={[styles.tabButtonText, tab === 'Transactions' && styles.tabButtonTextActive]}>Transactions</Text>
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === "transactions" && styles.activeTabText,
+            ]}
+          >
+            Transactions
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabButton, tab === 'Categories' && styles.tabButtonActive]}
-          onPress={() => setTab('Categories')}
+          style={[styles.tab, activeTab === "categories" && styles.activeTab]}
+          onPress={() => setActiveTab("categories")}
         >
-          <Text style={[styles.tabButtonText, tab === 'Categories' && styles.tabButtonTextActive]}>Categories</Text>
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === "categories" && styles.activeTabText,
+            ]}
+          >
+            Categories
+          </Text>
         </TouchableOpacity>
       </View>
-      {tab === 'Transactions' ? (
+
+      
+
+      {/* Content */}
+      {activeTab === "transactions" ? (
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           <View style={styles.filterContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -207,30 +240,73 @@ function createStyles(theme: any) {
       justifyContent: 'center',
       alignItems: 'center',
     },
-    tabBar: {
-      flexDirection: 'row',
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 20,
+      paddingVertical: 16,
       backgroundColor: theme.colors.surface,
-      paddingVertical: 20,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },
-    tabButton: {
+    headerTitle: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: theme.colors.text,
+    },
+    tabContainer: {
+      flexDirection: "row",
+      backgroundColor: theme.colors.surface,
+      marginHorizontal: 20,
+      marginTop: 16,
+      borderRadius: 8,
+      padding: 4,
+    },
+    tab: {
       flex: 1,
-      alignItems: 'center',
-      paddingVertical: 12,
-      borderBottomWidth: 2,
-      borderBottomColor: 'transparent',
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 6,
+      alignItems: "center",
     },
-    tabButtonActive: {
-      borderBottomColor: theme.colors.primary,
+    activeTab: {
+      backgroundColor: theme.colors.primary,
     },
-    tabButtonText: {
-      fontSize: 16,
+    tabText: {
+      fontSize: 14,
+      fontWeight: "600",
       color: theme.colors.textSecondary,
     },
-    tabButtonTextActive: {
-      color: theme.colors.primary,
-      fontWeight: 'bold',
+    activeTabText: {
+      color: "#fff",
+    },
+    summaryCard: {
+      backgroundColor: theme.colors.surface,
+      margin: 20,
+      padding: 20,
+      borderRadius: 16,
+      alignItems: "center",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    summaryLabel: {
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+      marginBottom: 8,
+    },
+    summaryAmount: {
+      fontSize: 32,
+      fontWeight: "bold",
+      color: theme.colors.text,
+      marginBottom: 4,
+    },
+    accountCount: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
     },
     scrollView: {
       flex: 1,

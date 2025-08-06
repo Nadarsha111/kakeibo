@@ -48,3 +48,27 @@ export interface AccountBalance {
   totalBalance: number;
   lastUpdated: string;
 }
+
+export interface Loan {
+  id: number;
+  borrowerName: string;
+  borrowerContact?: string;
+  amount: number;
+  lentDate: string;
+  expectedReturnDate?: string;
+  actualReturnDate?: string;
+  returnedAmount: number;
+  status: 'active' | 'partially_paid' | 'fully_paid' | 'overdue';
+  description?: string;
+  accountId?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoanSummary {
+  totalLoaned: number;
+  totalReturned: number;
+  totalOutstanding: number;
+  activeLoans: number;
+  overdueLoans: number;
+}

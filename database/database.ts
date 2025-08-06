@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { Transaction, Category, Budget, AccountBalance, Account } from '../types';
+import { Transaction, Category, Budget, AccountBalance, Account, Loan, LoanSummary } from '../types';
 
 class DatabaseService {
   private db: SQLite.SQLiteDatabase;
@@ -74,12 +74,37 @@ class DatabaseService {
         );
       `);
 
-      // Create account_balance table
+      // Create account_balance table for monthly balances per account
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS account_balance (
-          id INTEGER PRIMARY KEY,
-          totalBalance REAL NOT NULL,
-          lastUpdated TEXT NOT NULL
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          accountId INTEGER NOT NULL,
+          year INTEGER NOT NULL,
+          month INTEGER NOT NULL,
+          closingBalance REAL NOT NULL,
+          lastUpdated TEXT NOT NULL,
+          UNIQUE(accountId, year, month),
+          FOREIGN KEY (accountId) REFERENCES accounts (id)
+        );
+      `);
+
+      // Create loans table for tracking money lent to others
+      this.db.execSync(`
+        CREATE TABLE IF NOT EXISTS loans (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          borrowerName TEXT NOT NULL,
+          borrowerContact TEXT,
+          amount REAL NOT NULL,
+          lentDate TEXT NOT NULL,
+          expectedReturnDate TEXT,
+          actualReturnDate TEXT,
+          returnedAmount REAL NOT NULL DEFAULT 0,
+          status TEXT NOT NULL CHECK (status IN ('active', 'partially_paid', 'fully_paid', 'overdue')) DEFAULT 'active',
+          description TEXT,
+          accountId INTEGER,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          FOREIGN KEY (accountId) REFERENCES accounts (id)
         );
       `);
 
@@ -153,6 +178,7 @@ class DatabaseService {
       { name: 'Health', color: '#14b8a6', icon: '🏥', type: 'expense' },
       { name: 'Salary', color: '#22c55e', icon: '💰', type: 'income' },
       { name: 'Investment', color: '#6366f1', icon: '📈', type: 'income' },
+      { name: 'Loan Repayment', color: '#059669', icon: '💸', type: 'income' },
     ];
 
     defaultCategories.forEach((category) => {
@@ -166,43 +192,33 @@ class DatabaseService {
       }
     });
 
-    // Initialize account balance
-    try {
-      this.db.runSync(
-        'INSERT OR IGNORE INTO account_balance (id, totalBalance, lastUpdated) VALUES (1, 8025.85, ?)',
-        [new Date().toISOString()]
-      );
-    } catch (error) {
-      console.log('Account balance already initialized');
-    }
-
     // Add sample transactions for testing
   };
 
-  // private insertDefaultAccounts = () => {
-  //   // Only insert default accounts if none exist
-  //   const existingAccounts = this.db.getAllSync('SELECT id FROM accounts');
-  //   if (existingAccounts.length === 0) {
-  //     const defaultAccounts = [
-  //       { name: 'Cash Wallet', type: 'cash', balance: 0, currency: 'USD' },
-  //       { name: 'Main Checking', type: 'checking', balance: 0, currency: 'USD', bankName: 'Bank of America' },
-  //       { name: 'Savings Account', type: 'savings', balance: 0, currency: 'USD', bankName: 'Bank of America' },
-  //       { name: 'Credit Card', type: 'credit_card', balance: 0, currency: 'USD', bankName: 'Chase' },
-  //     ];
+  private insertDefaultAccounts = () => {
+    // Only insert default accounts if none exist
+    const existingAccounts = this.db.getAllSync('SELECT id FROM accounts');
+    if (existingAccounts.length === 0) {
+      const defaultAccounts = [
+        { name: 'Cash Wallet', type: 'cash', balance: 0, currency: 'USD' },
+        { name: 'Main Checking', type: 'checking', balance: 0, currency: 'USD', bankName: 'Bank of America' },
+        { name: 'Savings Account', type: 'savings', balance: 0, currency: 'USD', bankName: 'Bank of America' },
+        { name: 'Credit Card', type: 'credit_card', balance: 0, currency: 'USD', bankName: 'Chase' },
+      ];
 
-  //     defaultAccounts.forEach((account) => {
-  //       try {
-  //         const now = new Date().toISOString();
-  //         this.db.runSync(
-  //           'INSERT INTO accounts (name, type, balance, currency, bankName, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
-  //           [account.name, account.type, account.balance, account.currency, account.bankName || null, now, now]
-  //         );
-  //       } catch (error) {
-  //         console.log('Account already exists:', account.name);
-  //       }
-  //     });
-  //   }
-  // };
+      defaultAccounts.forEach((account) => {
+        try {
+          const now = new Date().toISOString();
+          this.db.runSync(
+            'INSERT INTO accounts (name, type, balance, currency, bankName, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+            [account.name, account.type, account.balance, account.currency, account.bankName || null, now, now]
+          );
+        } catch (error) {
+          console.log('Account already exists:', account.name);
+        }
+      });
+    }
+  };
 
   
 
@@ -417,8 +433,34 @@ class DatabaseService {
   // Account balance methods
   getAccountBalance = (): AccountBalance | null => {
     try {
-      const result = this.db.getFirstSync('SELECT * FROM account_balance WHERE id = 1') as AccountBalance | null;
-      return result;
+      // Get total balance from current month's account balances
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      
+      const result = this.db.getFirstSync(
+        'SELECT SUM(closingBalance) as totalBalance FROM account_balance WHERE year = ? AND month = ?',
+        [currentYear, currentMonth]
+      ) as { totalBalance: number | null };
+      
+      if (result && result.totalBalance !== null) {
+        return {
+          id: 1,
+          totalBalance: result.totalBalance,
+          lastUpdated: new Date().toISOString()
+        } as AccountBalance;
+      }
+      
+      // Fallback to sum of current account balances if no monthly data
+      const fallbackResult = this.db.getFirstSync(
+        'SELECT SUM(balance) as totalBalance FROM accounts WHERE isActive = 1'
+      ) as { totalBalance: number | null };
+      
+      return {
+        id: 1,
+        totalBalance: fallbackResult?.totalBalance || 0,
+        lastUpdated: new Date().toISOString()
+      } as AccountBalance;
     } catch (error) {
       console.error('Error getting account balance:', error);
       return null;
@@ -427,13 +469,25 @@ class DatabaseService {
 
   private updateAccountBalance = (amount: number, type: 'income' | 'expense') => {
     try {
-      const balanceChange = type === 'income' ? amount : -amount;
-      this.db.runSync(
-        'UPDATE account_balance SET totalBalance = totalBalance + ?, lastUpdated = ? WHERE id = 1',
-        [balanceChange, new Date().toISOString()]
-      );
+      // This method is now deprecated as we use per-account balances
+      // Individual account balances are updated in updateAccountBalanceForTransaction
+      console.log('Global account balance update skipped - using per-account tracking');
     } catch (error) {
       console.error('Error updating account balance:', error);
+    }
+  };
+
+  // Update or insert monthly account balance for a specific account
+  updateMonthlyAccountBalance = (accountId: number, year: number, month: number, closingBalance: number): void => {
+    try {
+      const now = new Date().toISOString();
+      this.db.runSync(
+        `INSERT OR REPLACE INTO account_balance (accountId, year, month, closingBalance, lastUpdated)
+         VALUES (?, ?, ?, ?, ?)`,
+        [accountId, year, month, closingBalance, now]
+      );
+    } catch (error) {
+      console.error('Error updating monthly account balance:', error);
     }
   };
 
@@ -751,6 +805,263 @@ class DatabaseService {
     } catch (error) {
       console.error('Error getting need/want by category:', error);
       return [];
+    }
+  };
+
+  // Returns array of { accountId, name, closingBalance } for the given year/month
+  getMonthlyAccountBalances = (year: number, month: number): Array<{ accountId: number, name: string, closingBalance: number }> => {
+    try {
+      return this.db.getAllSync(
+        `SELECT a.id as accountId, a.name, COALESCE(ab.closingBalance, a.balance) as closingBalance
+         FROM accounts a
+         LEFT JOIN account_balance ab ON a.id = ab.accountId AND ab.year = ? AND ab.month = ?
+         WHERE a.isActive = 1
+         ORDER BY a.name`,
+        [year, month]
+      ) as Array<{ accountId: number, name: string, closingBalance: number }>;
+    } catch (error) {
+      console.error('Error getting monthly account balances:', error);
+      return [];
+    }
+  };
+
+  // Loan management methods
+  addLoan = (loan: {
+    borrowerName: string;
+    borrowerContact?: string;
+    amount: number;
+    lentDate: string;
+    expectedReturnDate?: string;
+    description?: string;
+    accountId?: number;
+  }): number => {
+    try {
+      const now = new Date().toISOString();
+      const result = this.db.runSync(
+        `INSERT INTO loans (borrowerName, borrowerContact, amount, lentDate, expectedReturnDate, description, accountId, createdAt, updatedAt) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          loan.borrowerName,
+          loan.borrowerContact || null,
+          loan.amount,
+          loan.lentDate,
+          loan.expectedReturnDate || null,
+          loan.description || null,
+          loan.accountId || null,
+          now,
+          now
+        ]
+      );
+
+      // Update account balance if account is specified (subtract the lent amount)
+      if (loan.accountId) {
+        this.updateAccountBalanceForTransaction(loan.accountId, loan.amount, 'expense');
+      }
+
+      console.log('Loan added:', { id: result.lastInsertRowId, borrower: loan.borrowerName, amount: loan.amount });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error adding loan:', error);
+      throw error;
+    }
+  };
+
+  getLoans = (status?: 'active' | 'partially_paid' | 'fully_paid' | 'overdue'): Loan[] => {
+    try {
+      let query = 'SELECT * FROM loans';
+      const params: any[] = [];
+      
+      if (status) {
+        query += ' WHERE status = ?';
+        params.push(status);
+      }
+      
+      query += ' ORDER BY lentDate DESC';
+      
+      return this.db.getAllSync(query, params) as Loan[];
+    } catch (error) {
+      console.error('Error getting loans:', error);
+      return [];
+    }
+  };
+
+  getLoanById = (id: number): Loan | null => {
+    try {
+      return this.db.getFirstSync('SELECT * FROM loans WHERE id = ?', [id]) as Loan | null;
+    } catch (error) {
+      console.error('Error getting loan by id:', error);
+      return null;
+    }
+  };
+
+  recordLoanPayment = (loanId: number, paymentAmount: number, paymentDate: string): void => {
+    try {
+      const loan = this.getLoanById(loanId);
+      if (!loan) {
+        throw new Error('Loan not found');
+      }
+
+      const newReturnedAmount = loan.returnedAmount + paymentAmount;
+      const now = new Date().toISOString();
+      
+      // Determine new status
+      let newStatus = 'active';
+      if (newReturnedAmount >= loan.amount) {
+        newStatus = 'fully_paid';
+      } else if (newReturnedAmount > 0) {
+        newStatus = 'partially_paid';
+      }
+
+      // Update loan
+      this.db.runSync(
+        `UPDATE loans SET 
+         returnedAmount = ?, 
+         status = ?, 
+         actualReturnDate = ?, 
+         updatedAt = ? 
+         WHERE id = ?`,
+        [
+          newReturnedAmount,
+          newStatus,
+          newStatus === 'fully_paid' ? paymentDate : (loan.actualReturnDate || null),
+          now,
+          loanId
+        ]
+      );
+
+      // Add income transaction if account is specified
+      if (loan.accountId) {
+        this.addTransaction({
+          amount: paymentAmount,
+          type: 'income',
+          category: 'Loan Repayment',
+          description: `Loan repayment from ${loan.borrowerName}`,
+          date: paymentDate,
+          paymentMethod: 'cash',
+          accountId: loan.accountId
+        });
+      }
+
+      console.log('Loan payment recorded:', { loanId, paymentAmount, newStatus });
+    } catch (error) {
+      console.error('Error recording loan payment:', error);
+      throw error;
+    }
+  };
+
+  updateLoan = (id: number, updates: {
+    borrowerName?: string;
+    borrowerContact?: string;
+    expectedReturnDate?: string;
+    description?: string;
+    status?: 'active' | 'partially_paid' | 'fully_paid' | 'overdue';
+  }): void => {
+    try {
+      const fields = [];
+      const values = [];
+      
+      if (updates.borrowerName !== undefined) {
+        fields.push('borrowerName = ?');
+        values.push(updates.borrowerName);
+      }
+      if (updates.borrowerContact !== undefined) {
+        fields.push('borrowerContact = ?');
+        values.push(updates.borrowerContact);
+      }
+      if (updates.expectedReturnDate !== undefined) {
+        fields.push('expectedReturnDate = ?');
+        values.push(updates.expectedReturnDate);
+      }
+      if (updates.description !== undefined) {
+        fields.push('description = ?');
+        values.push(updates.description);
+      }
+      if (updates.status !== undefined) {
+        fields.push('status = ?');
+        values.push(updates.status);
+      }
+
+      fields.push('updatedAt = ?');
+      values.push(new Date().toISOString());
+      values.push(id);
+
+      this.db.runSync(
+        `UPDATE loans SET ${fields.join(', ')} WHERE id = ?`,
+        values
+      );
+
+      console.log('Loan updated:', id);
+    } catch (error) {
+      console.error('Error updating loan:', error);
+      throw error;
+    }
+  };
+
+  deleteLoan = (id: number): void => {
+    try {
+      // Get loan details before deletion
+      const loan = this.getLoanById(id);
+      if (!loan) {
+        throw new Error('Loan not found');
+      }
+
+      // If loan had payments, we might want to reverse the account balance
+      // For now, we'll just delete the loan record
+      this.db.runSync('DELETE FROM loans WHERE id = ?', [id]);
+      
+      console.log('Loan deleted:', id);
+    } catch (error) {
+      console.error('Error deleting loan:', error);
+      throw error;
+    }
+  };
+
+  getLoanSummary = (): LoanSummary => {
+    try {
+      const summary = this.db.getFirstSync(`
+        SELECT 
+          COALESCE(SUM(amount), 0) as totalLoaned,
+          COALESCE(SUM(returnedAmount), 0) as totalReturned,
+          COALESCE(SUM(amount - returnedAmount), 0) as totalOutstanding,
+          COUNT(CASE WHEN status IN ('active', 'partially_paid') THEN 1 END) as activeLoans,
+          COUNT(CASE WHEN status = 'overdue' THEN 1 END) as overdueLoans
+        FROM loans
+      `) as any;
+
+      return {
+        totalLoaned: summary.totalLoaned || 0,
+        totalReturned: summary.totalReturned || 0,
+        totalOutstanding: summary.totalOutstanding || 0,
+        activeLoans: summary.activeLoans || 0,
+        overdueLoans: summary.overdueLoans || 0,
+      };
+    } catch (error) {
+      console.error('Error getting loan summary:', error);
+      return {
+        totalLoaned: 0,
+        totalReturned: 0,
+        totalOutstanding: 0,
+        activeLoans: 0,
+        overdueLoans: 0,
+      };
+    }
+  };
+
+  markOverdueLoans = (): void => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      this.db.runSync(
+        `UPDATE loans 
+         SET status = 'overdue', updatedAt = ? 
+         WHERE status IN ('active', 'partially_paid') 
+         AND expectedReturnDate IS NOT NULL 
+         AND DATE(expectedReturnDate) < DATE(?)`,
+        [new Date().toISOString(), today]
+      );
+      
+      console.log('Overdue loans marked');
+    } catch (error) {
+      console.error('Error marking overdue loans:', error);
     }
   };
 }

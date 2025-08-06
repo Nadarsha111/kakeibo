@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { useTheme } from "../context/ThemeContext";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ScrollView } from "react-native";
 import { useSettings } from "../context/SettingsContext";
 
 interface CategorySummary {
@@ -22,19 +20,13 @@ interface CategoryBreakdownProps {
 function createStyles(theme: any) {
   return StyleSheet.create({
     container: {
-      backgroundColor: theme.colors.surface,
-      marginHorizontal: 16,
-      marginVertical: 8,
-      padding: 20,
-      borderRadius: 12,
-      elevation: 2,
-      shadowColor: theme.colors.border,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 3.84,
+      flex: 1,
+      backgroundColor: theme.colors.background,
     },
     header: {
       marginBottom: 16,
+      paddingHorizontal: 16,
+      paddingTop: 16,
     },
     headerSubtext: {
       color: theme.colors.textSecondary,
@@ -55,6 +47,7 @@ function createStyles(theme: any) {
     periodSelector: {
       flexDirection: "row",
       paddingVertical: 12,
+      paddingHorizontal: 16,
       marginBottom: 8,
     },
     periodButton: {
@@ -103,6 +96,7 @@ function createStyles(theme: any) {
     legendContainer: {
       gap: 8,
       marginBottom: 16,
+      paddingHorizontal: 16,
     },
     legendItem: {
       flexDirection: "row",
@@ -135,6 +129,7 @@ function createStyles(theme: any) {
       flexDirection: "row",
       flexWrap: "wrap",
       justifyContent: "space-between",
+      paddingHorizontal: 16,
     },
     categoryCard: {
       width: "48%",
@@ -189,15 +184,14 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
   const styles = createStyles(theme);
   const {formatCurrency} =useSettings();
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.headerSubtext}>Account balance</Text>
-          <Text style={styles.headerAmount}>
-            {formatCurrency(totals.balance)}
-          </Text>
-          <Text style={styles.headerPeriod}>📅 {selectedPeriod}</Text>
-        </View>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <View style={styles.header}>
+        <Text style={styles.headerSubtext}>Account balance</Text>
+        <Text style={styles.headerAmount}>
+          {formatCurrency(totals.balance)}
+        </Text>
+        <Text style={styles.headerPeriod}>📅 {selectedPeriod}</Text>
+      </View>
         <View style={styles.periodSelector}>
           {["This Week", "This Month", "Last 3 Months"].map((period) => (
             <TouchableOpacity
@@ -246,7 +240,7 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
             </View>
           ))}
         </View>
-        <View>
+        <View style={{ paddingHorizontal: 16 }}>
           <Text
             style={{
               fontSize: 18,
@@ -299,8 +293,7 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
             ))}
           </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+    </ScrollView>
   );
 };
 
