@@ -3,7 +3,7 @@
  * This file helps create and manage pre-seeded database content
  */
 
-import { getAccountService, getTransactionService, getLoanService } from '../database';
+import { getAccountService, getTransactionService, getLoanService,DatabaseUtils } from '../database';
 
 export class DatabaseSeeder {
   
@@ -54,7 +54,7 @@ export class DatabaseSeeder {
         { amount: 45, type: 'expense' as const, category: 'Transport', description: 'Gas refill', date: this.getDateDaysAgo(19), paymentMethod: 'credit_card' as const, accountId: cashAccount?.id, priority: 'need' as const },
         { amount: 25, type: 'expense' as const, category: 'Transport', description: 'Parking fee', date: this.getDateDaysAgo(8), paymentMethod: 'cash' as const, accountId: cashAccount?.id, priority: 'need' as const },
       ];
-      
+      DatabaseUtils.initialize();
       // Insert transactions
       const transactionService = getTransactionService();
       productionTransactions.forEach(transaction => {
