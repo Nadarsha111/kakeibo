@@ -76,8 +76,8 @@ export default function ManageCategoriesScreen({ visible, onClose }: ManageCateg
   };
 
   const handleAddCategory = () => {
-    setFormType(selectedTab);
     resetForm();
+    setFormType(selectedTab); // Set type to current tab
     setShowAddModal(true);
   };
 
@@ -234,7 +234,9 @@ export default function ManageCategoriesScreen({ visible, onClose }: ManageCateg
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>
-                {editingCategory ? 'Edit Category' : 'Add Category'}
+                {editingCategory
+                  ? `Edit ${formType === 'income' ? 'Income' : 'Expense'} Category`
+                  : `Add ${formType === 'income' ? 'Income' : 'Expense'} Category`}
               </Text>
 
               <View style={styles.formGroup}>

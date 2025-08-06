@@ -97,7 +97,7 @@ class DatabaseService {
       this.insertDefaultCategories();
       
       // Insert default accounts
-      this.insertDefaultAccounts();
+      // this.insertDefaultAccounts();
     } catch (error) {
       console.error('Error initializing database:', error);
     }
@@ -177,95 +177,34 @@ class DatabaseService {
     }
 
     // Add sample transactions for testing
-    this.addSampleTransactions();
   };
 
-  private insertDefaultAccounts = () => {
-    const defaultAccounts = [
-      { name: 'Cash Wallet', type: 'cash', balance: 500.00, currency: 'USD' },
-      { name: 'Main Checking', type: 'checking', balance: 2500.85, currency: 'USD', bankName: 'Bank of America' },
-      { name: 'Savings Account', type: 'savings', balance: 5000.00, currency: 'USD', bankName: 'Bank of America' },
-      { name: 'Credit Card', type: 'credit_card', balance: -25.00, currency: 'USD', bankName: 'Chase' },
-    ];
+  // private insertDefaultAccounts = () => {
+  //   // Only insert default accounts if none exist
+  //   const existingAccounts = this.db.getAllSync('SELECT id FROM accounts');
+  //   if (existingAccounts.length === 0) {
+  //     const defaultAccounts = [
+  //       { name: 'Cash Wallet', type: 'cash', balance: 0, currency: 'USD' },
+  //       { name: 'Main Checking', type: 'checking', balance: 0, currency: 'USD', bankName: 'Bank of America' },
+  //       { name: 'Savings Account', type: 'savings', balance: 0, currency: 'USD', bankName: 'Bank of America' },
+  //       { name: 'Credit Card', type: 'credit_card', balance: 0, currency: 'USD', bankName: 'Chase' },
+  //     ];
 
-    defaultAccounts.forEach((account) => {
-      try {
-        const now = new Date().toISOString();
-        this.db.runSync(
-          'INSERT OR IGNORE INTO accounts (name, type, balance, currency, bankName, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
-          [account.name, account.type, account.balance, account.currency, account.bankName || null, now, now]
-        );
-      } catch (error) {
-        console.log('Account already exists:', account.name);
-      }
-    });
-  };
+  //     defaultAccounts.forEach((account) => {
+  //       try {
+  //         const now = new Date().toISOString();
+  //         this.db.runSync(
+  //           'INSERT INTO accounts (name, type, balance, currency, bankName, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+  //           [account.name, account.type, account.balance, account.currency, account.bankName || null, now, now]
+  //         );
+  //       } catch (error) {
+  //         console.log('Account already exists:', account.name);
+  //       }
+  //     });
+  //   }
+  // };
 
-  private addSampleTransactions = () => {
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const twoDaysAgo = new Date(today);
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const thisWeek = new Date(today);
-    thisWeek.setDate(thisWeek.getDate() - 3);
-    
-    const sampleTransactions = [
-      {
-        amount: 3000,
-        type: 'income' as const,
-        category: 'Salary',
-        description: 'Monthly salary',
-        date: today.toISOString().split('T')[0],
-        paymentMethod: 'credit_card' as const
-      },
-      {
-        amount: 45.50,
-        type: 'expense' as const,
-        category: 'Food',
-        description: 'Grocery shopping',
-        date: yesterday.toISOString().split('T')[0],
-        paymentMethod: 'cash' as const
-      },
-      {
-        amount: 25.00,
-        type: 'expense' as const,
-        category: 'Transport',
-        description: 'Gas',
-        date: twoDaysAgo.toISOString().split('T')[0],
-        paymentMethod: 'debit_card' as const
-      },
-      {
-        amount: 80.00,
-        type: 'expense' as const,
-        category: 'Restaurant',
-        description: 'Dinner with friends',
-        date: thisWeek.toISOString().split('T')[0],
-        paymentMethod: 'credit_card' as const
-      }
-    ];
-
-    sampleTransactions.forEach((transaction) => {
-      try {
-        const existing = this.db.getFirstSync(
-          'SELECT id FROM transactions WHERE description = ? AND date = ?',
-          [transaction.description, transaction.date]
-        );
-        
-        if (!existing) {
-          const now = new Date().toISOString();
-          this.db.runSync(
-            `INSERT INTO transactions (amount, type, category, description, date, paymentMethod, createdAt, updatedAt) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [transaction.amount, transaction.type, transaction.category, transaction.description, 
-             transaction.date, transaction.paymentMethod, now, now]
-          );
-        }
-      } catch (error) {
-        console.log('Sample transaction already exists:', transaction.description);
-      }
-    });
-  };
+  
 
   // Transaction methods
   addTransaction = (transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): number => {
