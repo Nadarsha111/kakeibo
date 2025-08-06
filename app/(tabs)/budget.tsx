@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
 
 export default function BudgetScreen() {
   const { theme } = useTheme();
+  const { currency } = useSettings();
   const styles = createStyles(theme);
   const [selectedPeriod, setSelectedPeriod] = useState('JUNE 2023');
 
@@ -26,7 +28,7 @@ export default function BudgetScreen() {
   };
 
   const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
+    return `${currency}${amount.toFixed(2)}`;
   };
 
   const getProgressPercentage = (spent: number, limit: number) => {
