@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
-import DatabaseService from '../database/database';
+import { getSettingsService } from '../database';
 
 export interface ThemeColors {
   primary: string;
@@ -89,7 +89,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   // Apply system theme changes when no explicit preference is set
   useEffect(() => {
-    const savedTheme = DatabaseService.getSetting('theme_preference');
+    const settingsService = getSettingsService();
+    const savedTheme = settingsService.getSetting('theme_preference');
     if (!savedTheme || savedTheme === 'system') {
       setIsDark(systemColorScheme === 'dark');
     }
@@ -97,7 +98,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const loadThemePreference = async () => {
     try {
-      const savedTheme = DatabaseService.getSetting('theme_preference');
+      const settingsService = getSettingsService();
+      const savedTheme = settingsService.getSetting('theme_preference');
       
       if (savedTheme) {
         setThemePreference(savedTheme as 'system' | 'light' | 'dark');
@@ -110,7 +112,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         // First time - use system preference and save it
         setThemePreference('system');
         setIsDark(systemColorScheme === 'dark');
-        DatabaseService.setSetting('theme_preference', 'system');
+        settingsService.setSetting('theme_preference', 'system');
       }
     } catch (error) {
       console.error('Error loading theme preference:', error);
@@ -127,7 +129,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     setThemePreference(newTheme);
     
     try {
-      DatabaseService.setSetting('theme_preference', newTheme);
+      const settingsService = getSettingsService();
+      settingsService.setSetting('theme_preference', newTheme);
     } catch (error) {
       console.error('Error saving theme preference:', error);
     }
@@ -143,7 +146,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     }
     
     try {
-      DatabaseService.setSetting('theme_preference', theme);
+      const settingsService = getSettingsService();
+      settingsService.setSetting('theme_preference', theme);
     } catch (error) {
       console.error('Error saving theme preference:', error);
     }

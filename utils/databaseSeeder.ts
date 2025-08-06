@@ -3,7 +3,7 @@
  * This file helps create and manage pre-seeded database content
  */
 
-import DatabaseService from '../database/database';
+import { getAccountService, getTransactionService, getLoanService } from '../database';
 
 export class DatabaseSeeder {
   
@@ -19,7 +19,8 @@ export class DatabaseSeeder {
       // DatabaseService.clearAllData();
       
       // Insert realistic sample data
-      const accounts = DatabaseService.getAccounts();
+      const accountService = getAccountService();
+      const accounts = accountService.getAccounts();
       const cashAccount = accounts.find(acc => acc.type === 'cash');
       const checkingAccount = accounts.find(acc => acc.type === 'checking');
       
@@ -55,9 +56,10 @@ export class DatabaseSeeder {
       ];
       
       // Insert transactions
+      const transactionService = getTransactionService();
       productionTransactions.forEach(transaction => {
         if (transaction.accountId) {
-          DatabaseService.addTransaction(transaction);
+          transactionService.addTransaction(transaction);
         }
       });
       
@@ -73,8 +75,9 @@ export class DatabaseSeeder {
         },
       ];
       
+      const loanService = getLoanService();
       productionLoans.forEach(loan => {
-        DatabaseService.addLoan(loan);
+        loanService.addLoan(loan);
       });
       
       console.log('✅ Production data seeded successfully');
@@ -102,8 +105,9 @@ export class DatabaseSeeder {
         { name: 'Bank Account', type: 'checking' as const, balance: 0, currency: 'USD' },
       ];
       
+      const accountService = getAccountService();
       minimalAccounts.forEach(account => {
-        DatabaseService.addAccount({
+        accountService.addAccount({
           ...account,
           isActive: true,
         });

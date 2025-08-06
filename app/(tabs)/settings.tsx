@@ -12,7 +12,6 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
-import DatabaseService from "../../database/database";
 import OptionSelector from "../../components/OptionSelector";
 import ManageCategoriesScreen from "../../components/ManageCategoriesScreen";
 import ExportDataScreen from "../../components/ExportDataScreen";

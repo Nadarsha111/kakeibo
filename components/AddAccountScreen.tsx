@@ -9,7 +9,7 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import DatabaseService from '../database/database';
+import { getAccountService } from '../database';
 import { Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 
@@ -66,7 +66,8 @@ export default function AddAccountScreen({
         isActive: true,
       };
 
-      DatabaseService.addAccount(accountData);
+      const accountService = getAccountService();
+      accountService.addAccount(accountData);
       resetForm();
       onAccountAdded();
       onClose();

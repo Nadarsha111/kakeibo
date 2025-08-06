@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import DatabaseService from '../database/database';
+import { getSettingsService } from '../database';
 
 interface SettingsContextType {
   currency: string;
@@ -41,21 +41,22 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
   const loadSettings = async () => {
     try {
       setIsLoading(true);
+      const settingsService = getSettingsService();
       
       // Load currency setting
-      const savedCurrency = DatabaseService.getSetting('currency');
+      const savedCurrency = settingsService.getSetting('currency');
       if (savedCurrency) {
         setCurrency(savedCurrency);
       }
 
       // Load decimal places
-      const savedDecimalPlaces = DatabaseService.getSetting('decimal_places');
+      const savedDecimalPlaces = settingsService.getSetting('decimal_places');
       if (savedDecimalPlaces) {
         setDecimalPlaces(parseInt(savedDecimalPlaces, 10));
       }
 
       // Load app lock setting
-      const savedAppLock = DatabaseService.getSetting('app_lock_enabled');
+      const savedAppLock = settingsService.getSetting('app_lock_enabled');
       if (savedAppLock) {
         setAppLockEnabled(savedAppLock === 'true');
       }
@@ -74,19 +75,22 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
   // Update currency
   const updateCurrency = (newCurrency: string) => {
     setCurrency(newCurrency);
-    DatabaseService.setSetting('currency', newCurrency);
+    const settingsService = getSettingsService();
+    settingsService.setSetting('currency', newCurrency);
   };
 
   // Update decimal places
   const updateDecimalPlaces = (places: number) => {
     setDecimalPlaces(places);
-    DatabaseService.setSetting('decimal_places', places.toString());
+    const settingsService = getSettingsService();
+    settingsService.setSetting('decimal_places', places.toString());
   };
 
   // Update app lock
   const updateAppLock = (enabled: boolean) => {
     setAppLockEnabled(enabled);
-    DatabaseService.setSetting('app_lock_enabled', enabled.toString());
+    const settingsService = getSettingsService();
+    settingsService.setSetting('app_lock_enabled', enabled.toString());
   };
 
   // Format currency with current settings

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../context/ThemeContext';
-import DatabaseService from '../database/database';
+import { getTransactionService } from '../database';
 import { DataExporter, ExportOptions } from '../utils/dataExporter';
 import OptionSelector from './OptionSelector';
 
@@ -50,7 +50,8 @@ export default function ExportDataScreen({ visible, onClose }: ExportDataScreenP
   }, [visible]);
 
   const loadExportSummary = () => {
-    const summary = DatabaseService.getExportSummary();
+    const transactionService = getTransactionService();
+    const summary = transactionService.getExportSummary();
     setExportSummary(summary);
   };
 
@@ -90,20 +91,21 @@ export default function ExportDataScreen({ visible, onClose }: ExportDataScreenP
       };
 
       // Get transactions based on date range
+      const transactionService = getTransactionService();
       if (selectedDateRange === 'all') {
-        transactions = DatabaseService.getAllTransactionsForExport();
+        transactions = transactionService.getAllTransactionsForExport();
       } else if (selectedDateRange === 'custom') {
-        transactions = DatabaseService.getTransactionsByDateRange(customStartDate, customEndDate, true);
+        transactions = transactionService.getTransactionsByDateRange(customStartDate, customEndDate, true);
         exportOptions.startDate = customStartDate;
         exportOptions.endDate = customEndDate;
       } else {
         const range = DataExporter.getDateRangeForOption(selectedDateRange);
         if (range) {
-          transactions = DatabaseService.getTransactionsByDateRange(range.startDate, range.endDate, true);
+          transactions = transactionService.getTransactionsByDateRange(range.startDate, range.endDate, true);
           exportOptions.startDate = range.startDate;
           exportOptions.endDate = range.endDate;
         } else {
-          transactions = DatabaseService.getAllTransactionsForExport();
+          transactions = transactionService.getAllTransactionsForExport();
         }
       }
 

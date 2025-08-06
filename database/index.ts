@@ -14,10 +14,6 @@ export { default as CategoryService } from './CategoryService';
 export { default as LoanService } from './LoanService';
 export { default as SettingsService } from './SettingsService';
 
-// Legacy database service for backward compatibility
-// This maintains the existing interface while using the new services internally
-export { default as DatabaseService } from './database';
-
 /**
  * Service Factory - provides easy access to all services with a single instance
  * This ensures all services share the same database connection

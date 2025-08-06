@@ -9,7 +9,7 @@ import {
   Alert,
   Modal 
 } from 'react-native';
-import DatabaseService from '../database/database';
+import { getCategoryService, getAccountService, getTransactionService } from '../database';
 import { Category, Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 
@@ -46,7 +46,8 @@ export default function AddTransactionScreen({
 
   const loadCategories = () => {
     try {
-      const allCategories = DatabaseService.getCategories();
+      const categoryService = getCategoryService();
+      const allCategories = categoryService.getCategories();
       setCategories(allCategories);
       
       // Set default category based on type
@@ -61,7 +62,8 @@ export default function AddTransactionScreen({
 
   const loadAccounts = () => {
     try {
-      const allAccounts = DatabaseService.getAccounts();
+      const accountService = getAccountService();
+      const allAccounts = accountService.getAccounts();
       setAccounts(allAccounts);
       
       // Set default account (first active account)
@@ -127,7 +129,8 @@ export default function AddTransactionScreen({
       };
 
       console.log('Adding transaction:', transactionData);
-      const transactionId = DatabaseService.addTransaction(transactionData);
+      const transactionService = getTransactionService();
+      const transactionId = transactionService.addTransaction(transactionData);
       console.log('Transaction added with ID:', transactionId);
       
       resetForm();

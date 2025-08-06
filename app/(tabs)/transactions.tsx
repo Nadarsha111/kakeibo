@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DatabaseService from '../../database/database';
+// Using new service architecture for better separation of concerns
+import { getTransactionService, getAccountService } from '../../database';
 import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
@@ -39,7 +40,8 @@ export default function TransactionsScreen() {
 
   const loadTransactions = async () => {
     try {
-      const data = DatabaseService.getTransactions();
+      const transactionService = getTransactionService();
+      const data = transactionService.getTransactions();
       setTransactions(data);
     } catch (error) {
       console.error('Error loading transactions:', error);
@@ -70,13 +72,16 @@ export default function TransactionsScreen() {
         endDate = monthEnd.toISOString().split('T')[0];
       }
 
-      const expenses = DatabaseService.getTotalExpenses(startDate, endDate);
-      const income = DatabaseService.getTotalIncome(startDate, endDate);
-      const balance = DatabaseService.getAccountBalance();
-      const summary = DatabaseService.getCategorySummary(startDate, endDate);
+      const transactionService = getTransactionService();
+      const accountService = getAccountService();
+      
+      const expenses = transactionService.getTotalExpenses(startDate, endDate);
+      const income = transactionService.getTotalIncome(startDate, endDate);
+      const balance = accountService.getAccountBalance();
+      const summary = transactionService.getCategorySummary(startDate, endDate);
 
       const totalExpenses = expenses;
-      const summaryWithPercentage = summary.map(item => ({
+      const summaryWithPercentage = summary.map((item: any) => ({
         ...item,
         percentage: totalExpenses > 0 ? (item.amount / totalExpenses) * 100 : 0
       }));

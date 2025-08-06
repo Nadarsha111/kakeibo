@@ -1,9 +1,9 @@
 import { useDrizzleStudio } from "expo-drizzle-studio-plugin";
-import DatabaseService from "../database/database";
+import { DatabaseConnector } from "../database";
 
 export const DrizzleStudioProvider = ({ children }: { children: React.ReactNode }) => {
   // Access the database instance
-  const db = (DatabaseService as any).db;
+  const db = DatabaseConnector.getInstance().getDatabase();
   
   useDrizzleStudio(db);
 

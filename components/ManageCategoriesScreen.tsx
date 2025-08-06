@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../context/ThemeContext';
-import DatabaseService from '../database/database';
+import { getCategoryService } from '../database';
 import { Category } from '../types';
 import OptionSelector from './OptionSelector';
 
@@ -60,7 +60,8 @@ export default function ManageCategoriesScreen({ visible, onClose }: ManageCateg
   }, [visible]);
 
   const loadCategories = () => {
-    const allCategories = DatabaseService.getCategories();
+    const categoryService = getCategoryService();
+    const allCategories = categoryService.getCategories();
     setCategories(allCategories);
   };
 
@@ -106,10 +107,11 @@ export default function ManageCategoriesScreen({ visible, onClose }: ManageCateg
     };
 
     let success = false;
+    const categoryService = getCategoryService();
     if (editingCategory) {
-      success = DatabaseService.updateCategory(editingCategory.id, categoryData);
+      success = categoryService.updateCategory(editingCategory.id, categoryData);
     } else {
-      success = DatabaseService.addCategory(categoryData);
+      success = categoryService.addCategory(categoryData);
     }
 
     if (success) {
@@ -131,7 +133,8 @@ export default function ManageCategoriesScreen({ visible, onClose }: ManageCateg
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            const success = DatabaseService.deleteCategory(category.id);
+            const categoryService = getCategoryService();
+            const success = categoryService.deleteCategory(category.id);
             if (success) {
               loadCategories();
             } else {

@@ -9,7 +9,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import DatabaseService from '../database/database';
+import { getAccountService, getLoanService } from '../database';
 import { Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,7 +41,8 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
 
   const loadAccounts = () => {
     try {
-      const accountsList = DatabaseService.getAccounts();
+      const accountService = getAccountService();
+      const accountsList = accountService.getAccounts();
       setAccounts(accountsList);
     } catch (error) {
       console.error('Error loading accounts:', error);
@@ -79,7 +80,8 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
         accountId: selectedAccount,
       };
 
-      DatabaseService.addLoan(loanData);
+      const loanService = getLoanService();
+      loanService.addLoan(loanData);
       
       Alert.alert('Success', 'Loan added successfully');
       resetForm();

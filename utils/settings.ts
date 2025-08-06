@@ -1,4 +1,4 @@
-import DatabaseService from '../database/database';
+import { getSettingsService } from '../database';
 
 export interface AppSettings {
   currency: string;
@@ -10,11 +10,12 @@ export interface AppSettings {
 export class SettingsManager {
   // Get all app settings
   static getSettings(): AppSettings {
+    const settingsService = getSettingsService();
     return {
-      currency: DatabaseService.getSetting('currency') || '₹',
-      decimalPlaces: parseInt(DatabaseService.getSetting('decimal_places') || '2'),
-      themePreference: (DatabaseService.getSetting('theme_preference') as 'system' | 'light' | 'dark') || 'system',
-      appLockEnabled: DatabaseService.getSetting('app_lock_enabled') === 'true',
+      currency: settingsService.getSetting('currency') || '₹',
+      decimalPlaces: parseInt(settingsService.getSetting('decimal_places') || '2'),
+      themePreference: (settingsService.getSetting('theme_preference') as 'system' | 'light' | 'dark') || 'system',
+      appLockEnabled: settingsService.getSetting('app_lock_enabled') === 'true',
     };
   }
 
@@ -26,31 +27,37 @@ export class SettingsManager {
 
   // Get currency symbol
   static getCurrency(): string {
-    return DatabaseService.getSetting('currency') || '₹';
+    const settingsService = getSettingsService();
+    return settingsService.getSetting('currency') || '₹';
   }
 
   // Get decimal places
   static getDecimalPlaces(): number {
-    return parseInt(DatabaseService.getSetting('decimal_places') || '2');
+    const settingsService = getSettingsService();
+    return parseInt(settingsService.getSetting('decimal_places') || '2');
   }
 
   // Get theme preference
   static getThemePreference(): 'system' | 'light' | 'dark' {
-    return (DatabaseService.getSetting('theme_preference') as 'system' | 'light' | 'dark') || 'system';
+    const settingsService = getSettingsService();
+    return (settingsService.getSetting('theme_preference') as 'system' | 'light' | 'dark') || 'system';
   }
 
   // Check if app lock is enabled
   static isAppLockEnabled(): boolean {
-    return DatabaseService.getSetting('app_lock_enabled') === 'true';
+    const settingsService = getSettingsService();
+    return settingsService.getSetting('app_lock_enabled') === 'true';
   }
 
   // Update specific setting
   static updateSetting(key: keyof AppSettings, value: string | number | boolean): void {
-    DatabaseService.setSetting(key, value.toString());
+    const settingsService = getSettingsService();
+    settingsService.setSetting(key, value.toString());
   }
 
   // Reset all settings to defaults
   static resetToDefaults(): void {
+    const settingsService = getSettingsService();
     const defaults = {
       currency: '₹',
       decimal_places: '2',
@@ -59,7 +66,7 @@ export class SettingsManager {
     };
 
     Object.entries(defaults).forEach(([key, value]) => {
-      DatabaseService.setSetting(key, value);
+      settingsService.setSetting(key, value);
     });
   }
 }

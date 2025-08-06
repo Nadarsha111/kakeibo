@@ -9,7 +9,8 @@ import {
   Alert,
   RefreshControl,
 } from "react-native";
-import DatabaseService from "../../database/database";
+// Using new service architecture for better separation of concerns
+import { getAccountService, getLoanService } from "../../database";
 import { Account, Loan, LoanSummary } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
@@ -49,22 +50,22 @@ export default function AccountsScreen() {
 
   const loadAccounts = () => {
     try {
-      const accountsList = DatabaseService.getAccounts();
+      const accountService = getAccountService();
+      const accountsList = accountService.getAccounts();
       setAccounts(accountsList);
-
-      const total = DatabaseService.getTotalAccountsBalance();
+      
+      const total = accountService.getTotalAccountsBalance();
       setTotalBalance(total);
     } catch (error) {
       console.error("Error loading accounts:", error);
     }
-  };
-
-  const loadLoans = () => {
+  };  const loadLoans = () => {
     try {
-      const loansData = DatabaseService.getLoans();
+      const loanService = getLoanService();
+      const loansData = loanService.getLoans();
       setLoans(loansData);
       
-      const summaryData = DatabaseService.getLoanSummary();
+      const summaryData = loanService.getLoanSummary();
       setLoanSummary(summaryData);
     } catch (error) {
       console.error("Error loading loans:", error);
@@ -80,7 +81,8 @@ export default function AccountsScreen() {
         loadAccounts();
       } else {
         // Mark overdue loans before loading
-        DatabaseService.markOverdueLoans();
+        const loanService = getLoanService();
+        loanService.markOverdueLoans();
         loadLoans();
       }
     } catch (error) {
@@ -114,7 +116,8 @@ export default function AccountsScreen() {
               const amount = Number(paymentAmount);
               if (amount > 0 && amount <= outstandingAmount) {
                 try {
-                  DatabaseService.recordLoanPayment(loan.id, amount, new Date().toISOString().split('T')[0]);
+                  const loanService = getLoanService();
+                  loanService.recordLoanPayment(loan.id, amount, new Date().toISOString().split('T')[0]);
                   loadLoans();
                 } catch (error) {
                   Alert.alert('Error', 'Failed to record payment');
@@ -141,7 +144,8 @@ export default function AccountsScreen() {
           style: "destructive",
           onPress: () => {
             try {
-              DatabaseService.deleteAccount(account.id);
+              const accountService = getAccountService();
+              accountService.deleteAccount(account.id);
               loadAccounts();
             } catch (error) {
               console.error("Error deleting account:", error);

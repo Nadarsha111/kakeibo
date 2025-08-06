@@ -9,7 +9,7 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
-import DatabaseService from '../database/database';
+import { getAccountService } from '../database';
 import { Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import AddAccountScreen from './AddAccountScreen';
@@ -27,10 +27,11 @@ export default function AccountsScreen() {
 
   const loadAccounts = () => {
     try {
-      const accountsList = DatabaseService.getAccounts();
+      const accountService = getAccountService();
+      const accountsList = accountService.getAccounts();
       setAccounts(accountsList);
       
-      const total = DatabaseService.getTotalAccountsBalance();
+      const total = accountService.getTotalAccountsBalance();
       setTotalBalance(total);
     } catch (error) {
       console.error('Error loading accounts:', error);
@@ -53,7 +54,8 @@ export default function AccountsScreen() {
           style: 'destructive',
           onPress: () => {
             try {
-              DatabaseService.deleteAccount(account.id);
+              const accountService = getAccountService();
+              accountService.deleteAccount(account.id);
               loadAccounts();
             } catch (error) {
               console.error('Error deleting account:', error);
