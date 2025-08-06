@@ -6,7 +6,6 @@ import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
@@ -245,7 +244,8 @@ function createStyles(theme: any) {
       justifyContent: "space-between",
       alignItems: "center",
       paddingHorizontal: 20,
-      paddingVertical: 16,
+      paddingTop: 40,
+      paddingBottom: 16,
       backgroundColor: theme.colors.surface,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,

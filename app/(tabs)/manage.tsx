@@ -159,7 +159,8 @@ const createStyles = (theme: any) =>
     },
     header: {
       paddingHorizontal: 20,
-      paddingVertical: 20,
+      paddingTop: 40,
+      paddingBottom: 16,
       backgroundColor: theme.colors.surface,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,

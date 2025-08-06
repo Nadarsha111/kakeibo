@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { Transaction, Category, Budget, AccountBalance, Account, Loan, LoanSummary } from '../types';
+import DatabaseSeeder from '../utils/databaseSeeder';
 
 class DatabaseService {
   private db: SQLite.SQLiteDatabase;
@@ -120,7 +121,7 @@ class DatabaseService {
 
       // Insert default categories
       this.insertDefaultCategories();
-      
+      // DatabaseSeeder.seedProductionData();
       // Insert default accounts
       // this.insertDefaultAccounts();
     } catch (error) {
