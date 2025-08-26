@@ -8,6 +8,7 @@ import {
   StatusBar,
   Alert,
   RefreshControl,
+  ScrollView,
 } from "react-native";
 // Using new service architecture for better separation of concerns
 import { getAccountService, getLoanService } from "../../database";
@@ -31,16 +32,22 @@ export default function AccountsScreen() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanSummary, setLoanSummary] = useState<LoanSummary>({
     totalLoaned: 0,
-    totalReturned: 0,
-    totalOutstanding: 0,
+    totalBorrowed: 0,
+    totalLoanedReturned: 0,
+    totalBorrowedReturned: 0,
+    outstandingLoans: 0,
+    outstandingBorrowings: 0,
     activeLoans: 0,
+    activeBorrowings: 0,
     overdueLoans: 0,
+    overdueBorrowings: 0,
   });
   const [showAddLoan, setShowAddLoan] = useState(false);
   
   // Shared state
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
+  const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
 
   useEffect(() => {
     loadAccounts();
@@ -62,6 +69,7 @@ export default function AccountsScreen() {
     try {
       const loanService = getLoanService();
       const loansData = loanService.getLoans();
+      console.log("Loaded loans:", loansData);
       setLoans(loansData);
       
       const summaryData = loanService.getLoanSummary();
@@ -257,9 +265,13 @@ export default function AccountsScreen() {
           <View style={styles.accountInfo}>
             <Text style={styles.accountEmoji}>💸</Text>
             <View style={styles.accountDetails}>
-              <Text style={styles.accountName}>{loan.borrowerName}</Text>
+              <Text style={styles.accountName}>
+                {loan.isLending ? loan.borrowerName : loan.lenderName}
+              </Text>
               <Text style={styles.accountType}>
-                {loan.borrowerContact || 'No contact'}
+                {loan.isLending ? 
+                  (loan.borrowerContact || 'No contact') :
+                  (loan.lenderContact || 'No contact')}
               </Text>
               {loan.description && (
                 <Text style={styles.bankName}>{loan.description}</Text>
@@ -275,7 +287,7 @@ export default function AccountsScreen() {
 
         <View style={styles.loanAmountSection}>
           <View style={styles.loanAmountRow}>
-            <Text style={styles.loanAmountLabel}>Loaned:</Text>
+            <Text style={styles.loanAmountLabel}>{loan.isLending  ? "Lent:" : "Borrowed:"}</Text>
             <Text style={styles.loanAmountValue}>{formatCurrency(loan.amount)}</Text>
           </View>
           <View style={styles.loanAmountRow}>
@@ -324,7 +336,7 @@ export default function AccountsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
 
       {/* Header */}
@@ -391,21 +403,68 @@ export default function AccountsScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.summaryLabel}>Total Outstanding</Text>
+            <Text style={styles.summaryLabel}>
+              {loanType === "lendings" ? "Total Money Lent" : "Total Money Borrowed"}
+            </Text>
             <Text
               style={[
                 styles.summaryAmount,
                 { color: '#ef4444' }
               ]}
             >
-              {formatCurrency(loanSummary.totalOutstanding)}
+              {formatCurrency(loanType === "lendings" ? loanSummary.totalLoaned : loanSummary.totalBorrowed)}
             </Text>
-            <Text style={styles.accountCount}>
-              {loanSummary.activeLoans} Active • {loanSummary.overdueLoans} Overdue
-            </Text>
+            <View style={styles.loanStats}>
+              <View style={styles.loanStatItem}>
+                <Text style={styles.loanStatLabel}>
+                  {loanType === "lendings" ? "Outstanding Loans" : "Outstanding Debt"}
+                </Text>
+                <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>
+                  {formatCurrency(loanType === "lendings" ? loanSummary.outstandingLoans : loanSummary.outstandingBorrowings)}
+                </Text>
+              </View>
+              <View style={styles.loanStatItem}>
+                <Text style={styles.loanStatLabel}>
+                  {loanType === "lendings" ? "Repaid" : "Repaid"}
+                </Text>
+                <Text style={[styles.loanStatValue, { color: '#10b981' }]}>
+                  {formatCurrency(loanType === "lendings" ? loanSummary.totalLoanedReturned : loanSummary.totalBorrowedReturned)}
+                </Text>
+              </View>
+              <View style={styles.loanStatItem}>
+                <Text style={styles.loanStatLabel}>
+                  {loanType === "lendings" ? "Overdue" : "Overdue"}
+                </Text>
+                <Text style={[styles.loanStatValue, { color: '#f59e0b' }]}>
+                  {loanType === "lendings" ? loanSummary.overdueLoans : loanSummary.overdueBorrowings}
+                </Text>
+              </View>
+            </View>
           </>
         )}
       </View>
+
+      {/* Loan Type Switcher */}
+      {activeTab === "loans" && (
+        <View style={styles.loanTypeContainer}>
+          <TouchableOpacity
+            style={[styles.loanTypeTab, loanType === "lendings" && styles.activeLoanType]}
+            onPress={() => setLoanType("lendings")}
+          >
+            <Text style={[styles.loanTypeText, loanType === "lendings" && styles.activeLoanTypeText]}>
+              Money Lent
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.loanTypeTab, loanType === "borrowings" && styles.activeLoanType]}
+            onPress={() => setLoanType("borrowings")}
+          >
+            <Text style={[styles.loanTypeText, loanType === "borrowings" && styles.activeLoanTypeText]}>
+              Money Borrowed
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Content List */}
       {activeTab === "accounts" ? (
@@ -435,7 +494,9 @@ export default function AccountsScreen() {
         />
       ) : (
         <FlatList
-          data={loans}
+          data={loans.filter(loan => {
+            return loan.isLending === 1;
+          })}
           renderItem={renderLoanItem}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContainer}
@@ -451,9 +512,14 @@ export default function AccountsScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyEmoji}>💸</Text>
-              <Text style={styles.emptyTitle}>No Loans</Text>
+              <Text style={styles.emptyTitle}>
+                {loanType === "lendings" ? "No Money Lent" : "No Money Borrowed"}
+              </Text>
               <Text style={styles.emptyText}>
-                Track money you lend to friends and family
+                {loanType === "lendings"
+                  ? "Track money you lend to friends and family"
+                  : "Track money you borrow from others"
+                }
               </Text>
             </View>
           }
@@ -471,7 +537,7 @@ export default function AccountsScreen() {
         onClose={() => setShowAddLoan(false)}
         onLoanAdded={handleLoanAdded}
       />
-    </View>
+    </ScrollView>
   );
 }
 
@@ -563,7 +629,7 @@ const createStyles = (theme: any) =>
     },
     listContainer: {
       padding: 20,
-      paddingTop: 0,
+      paddingTop: 20,
     },
     accountCard: {
       backgroundColor: theme.colors.surface,
@@ -711,5 +777,47 @@ const createStyles = (theme: any) =>
     loanDateLabel: {
       fontSize: 12,
       color: theme.colors.textSecondary,
+    },
+    loanTypeContainer: {
+      flexDirection: 'row',
+      backgroundColor: theme.colors.background,
+      marginHorizontal: 16,
+      marginTop: 16,
+      borderRadius: 8,
+      overflow: 'hidden',
+    },
+    loanTypeTab: {
+      flex: 1,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    activeLoanType: {
+      backgroundColor: theme.colors.primary,
+    },
+    loanTypeText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+    },
+    activeLoanTypeText: {
+      color: 'white',
+    },
+    loanStats: {
+      marginTop: 8,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    loanStatItem: {
+      flex: 1,
+    },
+    loanStatLabel: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      marginBottom: 4,
+    },
+    loanStatValue: {
+      fontSize: 14,
+      fontWeight: '600',
     },
   });

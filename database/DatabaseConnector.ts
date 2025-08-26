@@ -114,6 +114,8 @@ class DatabaseConnector {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           borrowerName TEXT NOT NULL,
           borrowerContact TEXT,
+          lenderName TEXT,
+          lenderContact TEXT,
           amount REAL NOT NULL,
           lentDate TEXT NOT NULL,
           expectedReturnDate TEXT,
@@ -122,6 +124,7 @@ class DatabaseConnector {
           status TEXT NOT NULL CHECK (status IN ('active', 'partially_paid', 'fully_paid', 'overdue')) DEFAULT 'active',
           description TEXT,
           accountId INTEGER,
+          isLending BOOLEAN NOT NULL DEFAULT 1,
           createdAt TEXT NOT NULL,
           updatedAt TEXT NOT NULL,
           FOREIGN KEY (accountId) REFERENCES accounts (id)
@@ -137,6 +140,9 @@ class DatabaseConnector {
           updatedAt TEXT NOT NULL
         );
       `);
+
+      // Add missing columns to loans table
+      this.addMissingLoanColumns();
 
       // Add missing columns if they don't exist
       this.addMissingColumns();
@@ -186,6 +192,48 @@ class DatabaseConnector {
   /**
    * Insert default categories if none exist
    */
+  /**
+   * Add missing columns to loans table for backward compatibility
+   */
+  private addMissingLoanColumns(): void {
+    try {
+      // Check if the necessary columns exist in loans table
+      const loanTableInfo = this.db.getAllSync("PRAGMA table_info(loans)");
+      
+      // Check and add isLending column
+      const hasIsLending = loanTableInfo.some((row: any) => row.name === 'isLending');
+      if (!hasIsLending) {
+        this.db.execSync(`
+          ALTER TABLE loans 
+          ADD COLUMN isLending BOOLEAN NOT NULL DEFAULT 1
+        `);
+        console.log('Added isLending column to loans table');
+      }
+
+      // Check and add lenderName column
+      const hasLenderName = loanTableInfo.some((row: any) => row.name === 'lenderName');
+      if (!hasLenderName) {
+        this.db.execSync(`
+          ALTER TABLE loans 
+          ADD COLUMN lenderName TEXT
+        `);
+        console.log('Added lenderName column to loans table');
+      }
+
+      // Check and add lenderContact column
+      const hasLenderContact = loanTableInfo.some((row: any) => row.name === 'lenderContact');
+      if (!hasLenderContact) {
+        this.db.execSync(`
+          ALTER TABLE loans 
+          ADD COLUMN lenderContact TEXT
+        `);
+        console.log('Added lenderContact column to loans table');
+      }
+    } catch (error) {
+      console.error('Error adding missing loan columns:', error);
+    }
+  }
+
   private insertDefaultCategories(): void {
     try {
       // Check if categories already exist

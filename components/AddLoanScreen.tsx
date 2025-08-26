@@ -24,8 +24,9 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
   const { theme } = useTheme();
   const styles = createStyles(theme);
   
-  const [borrowerName, setBorrowerName] = useState('');
-  const [borrowerContact, setBorrowerContact] = useState('');
+  const [loanType, setLoanType] = useState<'lendings' | 'borrowings'>('lendings');
+  const [personName, setPersonName] = useState('');
+  const [personContact, setPersonContact] = useState('');
   const [amount, setAmount] = useState('');
   const [expectedReturnDate, setExpectedReturnDate] = useState('');
   const [description, setDescription] = useState('');
@@ -50,8 +51,9 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
   };
 
   const resetForm = () => {
-    setBorrowerName('');
-    setBorrowerContact('');
+    setLoanType('lendings');
+    setPersonName('');
+    setPersonContact('');
     setAmount('');
     setExpectedReturnDate('');
     setDescription('');
@@ -59,8 +61,8 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
   };
 
   const handleSubmit = async () => {
-    if (!borrowerName.trim()) {
-      Alert.alert('Error', 'Please enter borrower name');
+    if (!personName.trim()) {
+      Alert.alert('Error', `Please enter ${loanType === 'lendings' ? 'borrower' : 'lender'} name`);
       return;
     }
 
@@ -70,26 +72,30 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
     }
 
     try {
+      console.log(loanType === 'lendings')
       const loanData = {
-        borrowerName: borrowerName.trim(),
-        borrowerContact: borrowerContact.trim() || undefined,
+        borrowerName: loanType === 'lendings' ? personName.trim() : '',
+        borrowerContact: loanType === 'lendings' ? personContact.trim() || undefined : undefined,
+        lenderName: loanType === 'borrowings' ? personName.trim() : undefined,
+        lenderContact: loanType === 'borrowings' ? personContact.trim() || undefined : undefined,
         amount: Number(amount),
         lentDate: new Date().toISOString().split('T')[0],
         expectedReturnDate: expectedReturnDate || undefined,
         description: description.trim() || undefined,
         accountId: selectedAccount,
+        isLending: loanType === 'lendings',
       };
 
       const loanService = getLoanService();
       loanService.addLoan(loanData);
       
-      Alert.alert('Success', 'Loan added successfully');
+      Alert.alert('Success', `${loanType === 'lendings' ? 'Loan' : 'Borrowing'} added successfully`);
       resetForm();
       onLoanAdded();
       onClose();
     } catch (error) {
       console.error('Error adding loan:', error);
-      Alert.alert('Error', 'Failed to add loan');
+      Alert.alert('Error', `Failed to add ${loanType === 'lendings' ? 'loan' : 'borrowing'}`);
     }
   };
 
@@ -105,7 +111,7 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
           <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add Loan</Text>
+          <Text style={styles.headerTitle}>{loanType === 'lendings' ? 'Add Loan' : 'Add Borrowing'}</Text>
           <TouchableOpacity onPress={handleSubmit} style={styles.saveButton}>
             <Text style={styles.saveText}>Save</Text>
           </TouchableOpacity>
@@ -113,15 +119,39 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Borrower Information</Text>
+            <Text style={styles.sectionTitle}>Loan Type</Text>
+            <View style={styles.loanTypeContainer}>
+              <TouchableOpacity
+                style={[styles.loanTypeTab, loanType === 'lendings' && styles.activeLoanType]}
+                onPress={() => setLoanType('lendings')}
+              >
+                <Text style={[styles.loanTypeText, loanType === 'lendings' && styles.activeLoanTypeText]}>
+                  Money Lent
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.loanTypeTab, loanType === 'borrowings' && styles.activeLoanType]}
+                onPress={() => setLoanType('borrowings')}
+              >
+                <Text style={[styles.loanTypeText, loanType === 'borrowings' && styles.activeLoanTypeText]}>
+                  Money Borrowed
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {loanType === 'lendings' ? "Borrower Information" : "Lender Information"}
+            </Text>
             
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Name *</Text>
               <TextInput
                 style={styles.textInput}
-                value={borrowerName}
-                onChangeText={setBorrowerName}
-                placeholder="Enter borrower's name"
+                value={personName}
+                onChangeText={setPersonName}
+                placeholder={`Enter ${loanType === 'lendings' ? "borrower's" : "lender's"} name`}
                 placeholderTextColor={theme.colors.textSecondary}
               />
             </View>
@@ -130,8 +160,8 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
               <Text style={styles.inputLabel}>Contact (Optional)</Text>
               <TextInput
                 style={styles.textInput}
-                value={borrowerContact}
-                onChangeText={setBorrowerContact}
+                value={personContact}
+                onChangeText={setPersonContact}
                 placeholder="Phone, email, or other contact info"
                 placeholderTextColor={theme.colors.textSecondary}
               />
@@ -228,7 +258,9 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
           <View style={styles.infoCard}>
             <Text style={styles.infoTitle}>💡 Tip</Text>
             <Text style={styles.infoText}>
-              Selecting an account will automatically deduct the loan amount from that account's balance.
+              {loanType === 'lendings' 
+                ? "Selecting an account will automatically deduct the loan amount from that account's balance."
+                : "Selecting an account will automatically add the borrowed amount to that account's balance."}
             </Text>
           </View>
         </ScrollView>
@@ -378,5 +410,28 @@ const createStyles = (theme: any) =>
       fontSize: 14,
       color: theme.colors.textSecondary,
       lineHeight: 20,
+    },
+    loanTypeContainer: {
+      flexDirection: 'row',
+      backgroundColor: theme.colors.surface,
+      borderRadius: 8,
+      overflow: 'hidden',
+      marginBottom: 16,
+    },
+    loanTypeTab: {
+      flex: 1,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    activeLoanType: {
+      backgroundColor: theme.colors.primary,
+    },
+    loanTypeText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+    },
+    activeLoanTypeText: {
+      color: 'white',
     },
   });

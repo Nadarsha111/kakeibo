@@ -57,8 +57,10 @@ export interface AccountBalance {
 
 export interface Loan {
   id: number;
-  borrowerName: string;
+  borrowerName: string; // Person who borrowed the money when isLending = true
   borrowerContact?: string;
+  lenderName?: string; // Person who lent the money when isLending = false
+  lenderContact?: string;
   amount: number;
   lentDate: string;
   expectedReturnDate?: string;
@@ -67,14 +69,20 @@ export interface Loan {
   status: 'active' | 'partially_paid' | 'fully_paid' | 'overdue';
   description?: string;
   accountId?: number;
+  isLending: boolean; // true for money lent out, false for borrowings
   createdAt: string;
   updatedAt: string;
 }
 
 export interface LoanSummary {
   totalLoaned: number;
-  totalReturned: number;
-  totalOutstanding: number;
+  totalBorrowed: number;
+  totalLoanedReturned: number;
+  totalBorrowedReturned: number;
+  outstandingLoans: number;
+  outstandingBorrowings: number;
   activeLoans: number;
+  activeBorrowings: number;
   overdueLoans: number;
+  overdueBorrowings: number;
 }

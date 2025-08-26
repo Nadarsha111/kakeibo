@@ -23,11 +23,14 @@ class LoanService {
   addLoan(loan: {
     borrowerName: string;
     borrowerContact?: string;
+    lenderName?: string;
+    lenderContact?: string;
     amount: number;
     lentDate: string;
     expectedReturnDate?: string;
     description?: string;
     accountId?: number;
+    isLending: boolean;
   }): number {
     try {
       return DatabaseConnector.getInstance().withTransaction(() => {
@@ -35,27 +38,33 @@ class LoanService {
         
         // Insert loan record
         const result = this.db.runSync(
-          `INSERT INTO loans (borrowerName, borrowerContact, amount, lentDate, expectedReturnDate, description, accountId, createdAt, updatedAt) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO loans (
+              borrowerName, borrowerContact, lenderName, lenderContact, 
+              amount, lentDate, expectedReturnDate, description, accountId, 
+              isLending, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             loan.borrowerName,
             loan.borrowerContact || null,
+            loan.lenderName || null,
+            loan.lenderContact || null,
             loan.amount,
             loan.lentDate,
             loan.expectedReturnDate || null,
             loan.description || null,
             loan.accountId || null,
+            loan.isLending,
             now,
             now
           ]
         );
 
-        // Update account balance if account is specified (subtract the lent amount)
-        if (loan.accountId) {
-          this.accountService.updateAccountBalanceForTransaction(loan.accountId, loan.amount, 'expense');
-        }
-
-        console.log('Loan added:', { id: result.lastInsertRowId, borrower: loan.borrowerName, amount: loan.amount });
+          // Update account balance if account is specified
+          if (loan.accountId) {
+            // For lending, subtract the amount. For borrowing, add the amount.
+            const transactionType = loan.isLending ? 'expense' : 'income';
+            this.accountService.updateAccountBalanceForTransaction(loan.accountId, loan.amount, transactionType);
+          }        console.log('Loan added:', { id: result.lastInsertRowId, borrower: loan.borrowerName, amount: loan.amount });
         return result.lastInsertRowId;
       });
     } catch (error) {
@@ -289,29 +298,44 @@ class LoanService {
     try {
       const summary = this.db.getFirstSync(`
         SELECT 
-          COALESCE(SUM(amount), 0) as totalLoaned,
-          COALESCE(SUM(returnedAmount), 0) as totalReturned,
-          COALESCE(SUM(amount - returnedAmount), 0) as totalOutstanding,
-          COUNT(CASE WHEN status IN ('active', 'partially_paid') THEN 1 END) as activeLoans,
-          COUNT(CASE WHEN status = 'overdue' THEN 1 END) as overdueLoans
+          COALESCE(SUM(CASE WHEN isLending THEN amount ELSE 0 END), 0) as totalLoaned,
+          COALESCE(SUM(CASE WHEN NOT isLending THEN amount ELSE 0 END), 0) as totalBorrowed,
+          COALESCE(SUM(CASE WHEN isLending THEN returnedAmount ELSE 0 END), 0) as totalLoanedReturned,
+          COALESCE(SUM(CASE WHEN NOT isLending THEN returnedAmount ELSE 0 END), 0) as totalBorrowedReturned,
+          COALESCE(SUM(CASE WHEN isLending THEN amount - returnedAmount ELSE 0 END), 0) as outstandingLoans,
+          COALESCE(SUM(CASE WHEN NOT isLending THEN amount - returnedAmount ELSE 0 END), 0) as outstandingBorrowings,
+          COUNT(CASE WHEN isLending AND status IN ('active', 'partially_paid') THEN 1 END) as activeLoans,
+          COUNT(CASE WHEN NOT isLending AND status IN ('active', 'partially_paid') THEN 1 END) as activeBorrowings,
+          COUNT(CASE WHEN isLending AND status = 'overdue' THEN 1 END) as overdueLoans,
+          COUNT(CASE WHEN NOT isLending AND status = 'overdue' THEN 1 END) as overdueBorrowings
         FROM loans
       `) as any;
 
       return {
         totalLoaned: summary.totalLoaned || 0,
-        totalReturned: summary.totalReturned || 0,
-        totalOutstanding: summary.totalOutstanding || 0,
+        totalBorrowed: summary.totalBorrowed || 0,
+        totalLoanedReturned: summary.totalLoanedReturned || 0,
+        totalBorrowedReturned: summary.totalBorrowedReturned || 0,
+        outstandingLoans: summary.outstandingLoans || 0,
+        outstandingBorrowings: summary.outstandingBorrowings || 0,
         activeLoans: summary.activeLoans || 0,
+        activeBorrowings: summary.activeBorrowings || 0,
         overdueLoans: summary.overdueLoans || 0,
+        overdueBorrowings: summary.overdueBorrowings || 0,
       };
     } catch (error) {
       console.error('Error getting loan summary:', error);
       return {
         totalLoaned: 0,
-        totalReturned: 0,
-        totalOutstanding: 0,
+        totalBorrowed: 0,
+        totalLoanedReturned: 0,
+        totalBorrowedReturned: 0,
+        outstandingLoans: 0,
+        outstandingBorrowings: 0,
         activeLoans: 0,
+        activeBorrowings: 0,
         overdueLoans: 0,
+        overdueBorrowings: 0,
       };
     }
   }
