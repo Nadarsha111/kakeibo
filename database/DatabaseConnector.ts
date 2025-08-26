@@ -199,6 +199,8 @@ class DatabaseConnector {
           icon: "💸",
           type: "income",
         },
+        { name: "Transfer In", color: "#6b7280", icon: "➡️", type: "income" },
+        { name: "Transfer Out", color: "#6b7280", icon: "⬅️", type: "expense" },
       ];
 
       defaultCategories.forEach((category) => {

@@ -170,7 +170,7 @@ export default function AddTransactionScreen({
   };
 
   const getFilteredCategories = () => {
-    return categories.filter(cat => cat.type === type);
+    return categories.filter(cat => cat.type === type && !cat.name.startsWith('Transfer'));
   };
 
   const getCategoryEmoji = (categoryName: string) => {

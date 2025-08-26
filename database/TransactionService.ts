@@ -67,6 +67,54 @@ class TransactionService {
   }
 
   /**
+   * Adds a transfer between two accounts. This involves two transactions.
+   */
+  addTransfer(data: {
+    fromAccountId: number;
+    toAccountId: number;
+    amount: number;
+    date: string;
+    description?: string;
+    profileId: number;
+  }): void {
+    try {
+      DatabaseConnector.getInstance().withTransaction(() => {
+        const fromAccount = this.accountService.getAccountById(data.fromAccountId);
+        const toAccount = this.accountService.getAccountById(data.toAccountId);
+
+        // Expense from the source account
+        this.addTransaction({
+          profileId: data.profileId,
+          amount: data.amount,
+          type: 'expense',
+          category: 'Transfer Out',
+          description: `Transfer to ${toAccount?.name}. ${data.description || ''}`.trim(),
+          date: data.date,
+          paymentMethod: 'cash', // Internal transfer, method is nominal
+          accountId: data.fromAccountId,
+        });
+
+        // Income to the destination account
+        this.addTransaction({
+          profileId: data.profileId,
+          amount: data.amount,
+          type: 'income',
+          category: 'Transfer In',
+          description: `Transfer from ${fromAccount?.name}. ${data.description || ''}`.trim(),
+          date: data.date,
+          paymentMethod: 'cash', // Internal transfer, method is nominal
+          accountId: data.toAccountId,
+        });
+
+        console.log(`Transfer of ${data.amount} from account ${data.fromAccountId} to ${data.toAccountId} successful.`);
+      });
+    } catch (error) {
+      console.error('Error processing transfer:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get all transactions with pagination
    */
   getTransactions(profileId?: number, limit?: number, offset?: number): Transaction[] {
@@ -307,7 +355,7 @@ class TransactionService {
    */
   getTotalExpenses(startDate: string, endDate: string, profileId?: number): number {
     try {
-      let query = "SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND DATE(date) BETWEEN DATE(?) AND DATE(?)";
+      let query = "SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND category != 'Transfer Out' AND DATE(date) BETWEEN DATE(?) AND DATE(?)";
       const params: any[] = [startDate, endDate];
 
       if (profileId) {
@@ -331,7 +379,7 @@ class TransactionService {
    */
   getTotalIncome(startDate: string, endDate: string, profileId?: number): number {
     try {
-      let query = "SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND DATE(date) BETWEEN DATE(?) AND DATE(?)";
+      let query = "SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND category != 'Transfer In' AND DATE(date) BETWEEN DATE(?) AND DATE(?)";
       const params: any[] = [startDate, endDate];
 
       if (profileId) {
@@ -358,7 +406,7 @@ class TransactionService {
       let query = `SELECT t.category, SUM(t.amount) as amount, c.color 
          FROM transactions t 
          JOIN categories c ON t.category = c.name 
-         WHERE t.type = 'expense' AND DATE(t.date) BETWEEN DATE(?) AND DATE(?)`;
+         WHERE t.type = 'expense' AND t.category != 'Transfer Out' AND DATE(t.date) BETWEEN DATE(?) AND DATE(?)`;
       const params: any[] = [startDate, endDate];
 
       if (profileId) {

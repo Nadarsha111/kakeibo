@@ -8,7 +8,6 @@ import {
   StatusBar,
   Alert,
   RefreshControl,
-  ScrollView,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -19,6 +18,7 @@ import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import AddLoanScreen from "../../components/AddLoanScreen";
 import OptionSelector from "../../components/OptionSelector";
+import TransferFundsScreen from "../../components/TransferFundsScreen";
 
 export default function AccountsScreen() {
   const { theme } = useTheme();
@@ -29,6 +29,7 @@ export default function AccountsScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const [showTransferFunds, setShowTransferFunds] = useState(false);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -119,6 +120,11 @@ export default function AccountsScreen() {
   const handleLoanAdded = () => {
     loadData();
     setShowAddLoan(false);
+  };
+
+  const handleTransferComplete = () => {
+    loadData();
+    setShowTransferFunds(false);
   };
 
   const handleRecordPayment = (loan: Loan) => {
@@ -379,18 +385,26 @@ export default function AccountsScreen() {
           <Text style={styles.headerTitle}>{getSelectedProfileName()}</Text>
           <MaterialCommunityIcons name="chevron-down" size={24} color={theme.colors.text} />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => {
-            if (activeTab === "accounts") {
-              setShowAddAccount(true);
-            } else {
-              setShowAddLoan(true);
-            }
-          }}
-        >
-          <Text style={styles.addButtonText}>+ Add</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setShowTransferFunds(true)}
+          >
+            <MaterialCommunityIcons name="swap-horizontal" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => {
+              if (activeTab === "accounts") {
+                setShowAddAccount(true);
+              } else {
+                setShowAddLoan(true);
+              }
+            }}
+          >
+            <Text style={styles.addButtonText}>+ Add</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       {/* Tab Switcher */}
       <View style={styles.tabContainer}>
@@ -574,6 +588,12 @@ export default function AccountsScreen() {
         onLoanAdded={handleLoanAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
       />
+      <TransferFundsScreen
+        visible={showTransferFunds}
+        onClose={() => setShowTransferFunds(false)}
+        onTransferComplete={handleTransferComplete}
+        accounts={accounts}
+      />
 
       {/* Profile Selection Modal */}
       <OptionSelector
@@ -643,6 +663,14 @@ const createStyles = (theme: any) =>
       fontSize: 24,
       fontWeight: "bold",
       color: theme.colors.text,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    actionButton: {
+      padding: 8,
     },
     addButton: {
       backgroundColor: theme.colors.primary,
