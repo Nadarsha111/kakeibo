@@ -6,15 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
-  useColorScheme,
-  SafeAreaView,
+  Alert,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import OptionSelector from "../../components/OptionSelector";
 import ManageCategoriesScreen from "../../components/ManageCategoriesScreen";
 import ExportDataScreen from "../../components/ExportDataScreen";
+import { getGoogleSyncService } from "../../services/GoogleSyncService";
+import type { User } from "@react-native-google-signin/google-signin";
 
 export default function SettingsScreen() {
   const {
@@ -40,6 +42,27 @@ export default function SettingsScreen() {
   const [decimalModalVisible, setDecimalModalVisible] = useState(false);
   const [manageCategoriesVisible, setManageCategoriesVisible] = useState(false);
   const [exportDataVisible, setExportDataVisible] = useState(false);
+
+  // Google Sync state
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+
+  const checkGoogleSignInStatus = async () => {
+    const syncService = getGoogleSyncService();
+    const isSignedIn = await syncService.isSignedIn();
+    if (isSignedIn) {
+      const user = await syncService.getCurrentUser();
+      setGoogleUser(user);
+    } else {
+      setGoogleUser(null);
+    }
+  };
+
+  // Check status when the screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      checkGoogleSignInStatus();
+    }, []),
+  );
 
   const handleThemeChange = (newTheme: "system" | "light" | "dark") => {
     updateThemePreference(newTheme);
@@ -110,8 +133,8 @@ export default function SettingsScreen() {
       <StatusBar style={isDark ? "light" : "dark"} />
       <ScrollView style={{ flex: 1 }}>
         <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
-      </View>
+          <Text style={styles.headerTitle}>Settings</Text>
+        </View>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Appearance</Text>
           <SettingItem
@@ -142,6 +165,38 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data</Text>
+          {googleUser ? (
+            <>
+              <SettingItem
+                title="Sync with Google Sheets"
+                subtitle={`Signed in as ${googleUser.user.email}`}
+                rightComponent={<Text style={styles.chevron}>›</Text>}
+                onPress={async () => {
+                  const syncService = getGoogleSyncService();
+                  await syncService.sync();
+                }}
+              />
+              <SettingItem
+                title="Sign Out from Google"
+                onPress={async () => {
+                  const syncService = getGoogleSyncService();
+                  await syncService.signOut();
+                  checkGoogleSignInStatus(); // Refresh UI
+                }}
+              />
+            </>
+          ) : (
+            <SettingItem
+              title="Sign In with Google to Sync"
+              subtitle="Backup and sync your data"
+              rightComponent={<Text style={styles.chevron}>›</Text>}
+              onPress={async () => {
+                const syncService = getGoogleSyncService();
+                await syncService.sync();
+                checkGoogleSignInStatus(); // Refresh UI after sync attempt
+              }}
+            />
+          )}
           <SettingItem
             title="Export Data"
             subtitle="Export transactions to CSV"
@@ -274,10 +329,9 @@ const createStyles = (theme: any) =>
     },
     headerTitle: {
       fontSize: 24,
-      fontWeight: 'bold',
+      fontWeight: "bold",
       color: theme.colors.text,
       marginHorizontal: 16,
-
     },
     section: {
       marginBottom: 32,
