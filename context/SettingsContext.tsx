@@ -5,11 +5,13 @@ interface SettingsContextType {
   currency: string;
   decimalPlaces: number;
   appLockEnabled: boolean;
+  selectedProfileId: number | 'all';
   isLoading: boolean;
   updateCurrency: (currency: string) => void;
   updateDecimalPlaces: (places: number) => void;
   updateAppLock: (enabled: boolean) => void;
   formatCurrency: (amount: number) => string;
+  updateSelectedProfileId: (profileId: number | 'all') => void;
   refreshSettings: () => void;
 }
 
@@ -17,11 +19,13 @@ const defaultSettings: SettingsContextType = {
   currency: '$',
   decimalPlaces: 2,
   appLockEnabled: false,
+  selectedProfileId: 'all',
   isLoading: true,
   updateCurrency: () => {},
   updateDecimalPlaces: () => {},
   updateAppLock: () => {},
   formatCurrency: (amount: number) => `$${amount.toFixed(2)}`,
+  updateSelectedProfileId: () => {},
   refreshSettings: () => {},
 };
 
@@ -35,6 +39,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
   const [currency, setCurrency] = useState<string>('$');
   const [decimalPlaces, setDecimalPlaces] = useState<number>(2);
   const [appLockEnabled, setAppLockEnabled] = useState<boolean>(false);
+  const [selectedProfileId, setSelectedProfileId] = useState<number | 'all'>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Load settings from database
@@ -59,6 +64,12 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       const savedAppLock = settingsService.getSetting('app_lock_enabled');
       if (savedAppLock) {
         setAppLockEnabled(savedAppLock === 'true');
+      }
+
+      // Load selected profile ID
+      const savedProfileId = settingsService.getSetting('selected_profile_id');
+      if (savedProfileId) {
+        setSelectedProfileId(savedProfileId === 'all' ? 'all' : parseInt(savedProfileId, 10));
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -93,6 +104,13 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     settingsService.setSetting('app_lock_enabled', enabled.toString());
   };
 
+  // Update selected profile ID
+  const updateSelectedProfileId = (profileId: number | 'all') => {
+    setSelectedProfileId(profileId);
+    const settingsService = getSettingsService();
+    settingsService.setSetting('selected_profile_id', profileId.toString());
+  };
+
   // Format currency with current settings
   const formatCurrency = (amount: number) => {
     return `${currency} ${amount.toFixed(decimalPlaces)}`;
@@ -107,11 +125,13 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     currency,
     decimalPlaces,
     appLockEnabled,
+    selectedProfileId,
     isLoading,
     updateCurrency,
     updateDecimalPlaces,
     updateAppLock,
     formatCurrency,
+    updateSelectedProfileId,
     refreshSettings,
   };
 

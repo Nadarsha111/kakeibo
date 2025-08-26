@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,24 +10,30 @@ import {
   RefreshControl,
   ScrollView,
 } from "react-native";
-// Using new service architecture for better separation of concerns
-import { getAccountService, getLoanService } from "../../database";
-import { Account, Loan, LoanSummary } from "../../types";
+import { useFocusEffect } from "@react-navigation/native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { getAccountService, getLoanService, getProfileService } from "../../database";
+import { Account, Loan, LoanSummary, Profile } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import AddLoanScreen from "../../components/AddLoanScreen";
+import OptionSelector from "../../components/OptionSelector";
 
 export default function AccountsScreen() {
   const { theme } = useTheme();
-  const { formatCurrency } = useSettings();
+  const { formatCurrency, selectedProfileId, updateSelectedProfileId } = useSettings();
   const styles = createStyles(theme);
-  
+
   // Accounts state
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
-  
+
+  // Profiles state
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
+
   // Loans state
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanSummary, setLoanSummary] = useState<LoanSummary>({
@@ -43,36 +49,50 @@ export default function AccountsScreen() {
     overdueBorrowings: 0,
   });
   const [showAddLoan, setShowAddLoan] = useState(false);
-  
+
   // Shared state
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
   const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
 
-  useEffect(() => {
-    loadAccounts();
-    loadLoans();
-  }, []);
+  const loadData = useCallback(() => {
+    const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
+    loadAccounts(profileId);
+    loadLoans(profileId);
+  }, [selectedProfileId]);
 
-  const loadAccounts = () => {
+  useFocusEffect(
+    useCallback(() => {
+      // Load profiles first
+      const profileService = getProfileService();
+      const profileList = profileService.getProfiles();
+      setProfiles(profileList);
+
+      // Then load accounts and loans based on selected profile
+      loadData();
+    }, [loadData]) // Rerun when selected profile changes
+  );
+
+  const loadAccounts = (profileId?: number) => {
     try {
       const accountService = getAccountService();
-      const accountsList = accountService.getAccounts();
+      const accountsList = accountService.getAccounts(profileId);
       setAccounts(accountsList);
-      
-      const total = accountService.getTotalAccountsBalance();
+
+      const total = accountService.getTotalAccountsBalance(profileId);
       setTotalBalance(total);
     } catch (error) {
       console.error("Error loading accounts:", error);
     }
-  };  const loadLoans = () => {
+  };
+  const loadLoans = (profileId?: number) => {
     try {
       const loanService = getLoanService();
-      const loansData = loanService.getLoans();
+      const loansData = loanService.getLoans(profileId);
       console.log("Loaded loans:", loansData);
       setLoans(loansData);
-      
-      const summaryData = loanService.getLoanSummary();
+
+      const summaryData = loanService.getLoanSummary(profileId);
       setLoanSummary(summaryData);
     } catch (error) {
       console.error("Error loading loans:", error);
@@ -82,16 +102,8 @@ export default function AccountsScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      // Add a small delay to show the refresh animation
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      if (activeTab === "accounts") {
-        loadAccounts();
-      } else {
-        // Mark overdue loans before loading
-        const loanService = getLoanService();
-        loanService.markOverdueLoans();
-        loadLoans();
-      }
+      getLoanService().markOverdueLoans();
+      loadData();
     } catch (error) {
       console.error("Error refreshing:", error);
     } finally {
@@ -100,12 +112,12 @@ export default function AccountsScreen() {
   };
 
   const handleAccountAdded = () => {
-    loadAccounts();
+    loadData();
     setShowAddAccount(false);
   };
 
   const handleLoanAdded = () => {
-    loadLoans();
+    loadData();
     setShowAddLoan(false);
   };
 
@@ -125,7 +137,7 @@ export default function AccountsScreen() {
                 try {
                   const loanService = getLoanService();
                   loanService.recordLoanPayment(loan.id, amount, new Date().toISOString().split('T')[0]);
-                  loadLoans();
+                  loadData();
                 } catch (error) {
                   Alert.alert('Error', 'Failed to record payment');
                 }
@@ -153,7 +165,7 @@ export default function AccountsScreen() {
             try {
               const accountService = getAccountService();
               accountService.deleteAccount(account.id);
-              loadAccounts();
+              loadData();
             } catch (error) {
               console.error("Error deleting account:", error);
               Alert.alert("Error", "Failed to delete account");
@@ -163,6 +175,23 @@ export default function AccountsScreen() {
       ]
     );
   };
+
+  const getSelectedProfileName = () => {
+    if (selectedProfileId === 'all') {
+      return 'All Profiles';
+    }
+    const profile = profiles.find(p => p.id === selectedProfileId);
+    return profile?.name || 'Select Profile';
+  };
+
+  const profileOptions = [
+    { label: 'All Profiles', value: 'all' },
+    ...profiles.map(p => ({
+      label: p.name,
+      value: p.id.toString(),
+      subtitle: p.description || undefined
+    }))
+  ];
 
   const getAccountTypeEmoji = (type: Account["type"]) => {
     const emojiMap = {
@@ -335,13 +364,21 @@ export default function AccountsScreen() {
     );
   };
 
+  const filteredLoans = loans.filter(loan => {
+    const isLending = loan.isLending === 1 || loan.isLending === true;
+    return loanType === 'lendings' ? isLending : !isLending;
+  });
+
   return (
     <ScrollView style={styles.container}>
       <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Accounts & Loans</Text>
+        <TouchableOpacity style={styles.headerTitleContainer} onPress={() => setProfileModalVisible(true)}>
+          <Text style={styles.headerTitle}>{getSelectedProfileName()}</Text>
+          <MaterialCommunityIcons name="chevron-down" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => {
@@ -494,9 +531,7 @@ export default function AccountsScreen() {
         />
       ) : (
         <FlatList
-          data={loans.filter(loan => {
-            return loan.isLending === 1;
-          })}
+          data={filteredLoans}
           renderItem={renderLoanItem}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContainer}
@@ -531,11 +566,26 @@ export default function AccountsScreen() {
         visible={showAddAccount}
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
+        profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
       />
       <AddLoanScreen
         visible={showAddLoan}
         onClose={() => setShowAddLoan(false)}
         onLoanAdded={handleLoanAdded}
+        profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
+      />
+
+      {/* Profile Selection Modal */}
+      <OptionSelector
+        visible={profileModalVisible}
+        onClose={() => setProfileModalVisible(false)}
+        title="Select a Profile"
+        options={profileOptions}
+        selectedValue={selectedProfileId.toString()}
+        onSelect={(value) => {
+          setProfileModalVisible(false);
+          updateSelectedProfileId(value === 'all' ? 'all' : parseInt(value, 10));
+        }}
       />
     </ScrollView>
   );
@@ -583,6 +633,11 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.surface,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
+    },
+    headerTitleContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     headerTitle: {
       fontSize: 24,

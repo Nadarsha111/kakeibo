@@ -21,6 +21,7 @@ class LoanService {
    * Add a new loan
    */
   addLoan(loan: {
+    profileId: number;
     borrowerName: string;
     borrowerContact?: string;
     lenderName?: string;
@@ -39,11 +40,12 @@ class LoanService {
         // Insert loan record
         const result = this.db.runSync(
           `INSERT INTO loans (
-              borrowerName, borrowerContact, lenderName, lenderContact, 
+              profileId, borrowerName, borrowerContact, lenderName, lenderContact, 
               amount, lentDate, expectedReturnDate, description, accountId, 
               isLending, createdAt, updatedAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
+            loan.profileId,
             loan.borrowerName,
             loan.borrowerContact || null,
             loan.lenderName || null,
@@ -76,18 +78,29 @@ class LoanService {
   /**
    * Get all loans with optional status filter
    */
-  getLoans(status?: 'active' | 'partially_paid' | 'fully_paid' | 'overdue'): Loan[] {
+  getLoans(
+    profileId?: number,
+    status?: 'active' | 'partially_paid' | 'fully_paid' | 'overdue'
+  ): Loan[] {
     try {
-      let query = 'SELECT * FROM loans';
+      let query = 'SELECT * FROM loans ';
       const params: any[] = [];
-      
+      const conditions: string[] = [];
+
+      if (profileId) {
+        conditions.push('profileId = ?');
+        params.push(profileId);
+      }
       if (status) {
-        query += ' WHERE status = ?';
+        conditions.push('status = ?');
         params.push(status);
       }
-      
+
+      if (conditions.length > 0) {
+        query += 'WHERE ' + conditions.join(' AND ');
+      }
+
       query += ' ORDER BY lentDate DESC';
-      
       return this.db.getAllSync(query, params) as Loan[];
     } catch (error) {
       console.error('Error getting loans:', error);
@@ -294,22 +307,30 @@ class LoanService {
   /**
    * Get comprehensive loan summary
    */
-  getLoanSummary(): LoanSummary {
+  getLoanSummary(profileId?: number): LoanSummary {
     try {
+      let whereClause = '';
+      const params: any[] = [];
+      if (profileId) {
+        whereClause = 'WHERE profileId = ?';
+        params.push(profileId);
+      }
+
       const summary = this.db.getFirstSync(`
         SELECT 
           COALESCE(SUM(CASE WHEN isLending THEN amount ELSE 0 END), 0) as totalLoaned,
           COALESCE(SUM(CASE WHEN NOT isLending THEN amount ELSE 0 END), 0) as totalBorrowed,
           COALESCE(SUM(CASE WHEN isLending THEN returnedAmount ELSE 0 END), 0) as totalLoanedReturned,
           COALESCE(SUM(CASE WHEN NOT isLending THEN returnedAmount ELSE 0 END), 0) as totalBorrowedReturned,
-          COALESCE(SUM(CASE WHEN isLending THEN amount - returnedAmount ELSE 0 END), 0) as outstandingLoans,
-          COALESCE(SUM(CASE WHEN NOT isLending THEN amount - returnedAmount ELSE 0 END), 0) as outstandingBorrowings,
+          COALESCE(SUM(CASE WHEN isLending AND status != 'fully_paid' THEN amount - returnedAmount ELSE 0 END), 0) as outstandingLoans,
+          COALESCE(SUM(CASE WHEN NOT isLending AND status != 'fully_paid' THEN amount - returnedAmount ELSE 0 END), 0) as outstandingBorrowings,
           COUNT(CASE WHEN isLending AND status IN ('active', 'partially_paid') THEN 1 END) as activeLoans,
           COUNT(CASE WHEN NOT isLending AND status IN ('active', 'partially_paid') THEN 1 END) as activeBorrowings,
           COUNT(CASE WHEN isLending AND status = 'overdue' THEN 1 END) as overdueLoans,
           COUNT(CASE WHEN NOT isLending AND status = 'overdue' THEN 1 END) as overdueBorrowings
         FROM loans
-      `) as any;
+        ${whereClause}
+      `, params) as any;
 
       return {
         totalLoaned: summary.totalLoaned || 0,

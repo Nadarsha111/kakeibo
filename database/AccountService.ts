@@ -14,9 +14,19 @@ class AccountService {
   /**
    * Get all active accounts
    */
-  getAccounts(): Account[] {
+  getAccounts(profileId?: number): Account[] {
     try {
-      const accounts = this.db.getAllSync('SELECT * FROM accounts WHERE isActive = 1 ORDER BY name');
+      let query = 'SELECT * FROM accounts WHERE isActive = 1';
+      const params: any[] = [];
+
+      if (profileId) {
+        query += ' AND profileId = ?';
+        params.push(profileId);
+      }
+
+      query += ' ORDER BY name';
+
+      const accounts = this.db.getAllSync(query, params);
       return accounts as Account[];
     } catch (error) {
       console.error('Error getting accounts:', error);
@@ -44,9 +54,10 @@ class AccountService {
     try {
       const now = new Date().toISOString();
       const result = this.db.runSync(
-        `INSERT INTO accounts (name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts (profileId, name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          account.profileId,
           account.name,
           account.type,
           account.balance,
@@ -137,9 +148,17 @@ class AccountService {
   /**
    * Get total balance across all active accounts
    */
-  getTotalAccountsBalance(): number {
+  getTotalAccountsBalance(profileId?: number): number {
     try {
-      const result = this.db.getFirstSync('SELECT SUM(balance) as total FROM accounts WHERE isActive = 1');
+      let query = 'SELECT SUM(balance) as total FROM accounts WHERE isActive = 1';
+      const params: any[] = [];
+
+      if (profileId) {
+        query += ' AND profileId = ?';
+        params.push(profileId);
+      }
+
+      const result = this.db.getFirstSync(query, params);
       return (result as any)?.total || 0;
     } catch (error) {
       console.error('Error getting total accounts balance:', error);
@@ -300,11 +319,24 @@ class AccountService {
       // Only insert default accounts if none exist
       const existingAccounts = this.db.getAllSync('SELECT id FROM accounts');
       if (existingAccounts.length === 0) {
+        // Get the default "Personal" profile, or the first profile available
+        const profile = this.db.getFirstSync(
+          'SELECT id FROM profiles WHERE name = ? OR id = 1 ORDER BY id LIMIT 1',
+          ['Personal']
+        ) as { id: number } | null;
+
+        const profileId = profile?.id;
+
+        if (!profileId) {
+          console.warn('No default profile found. Cannot initialize default accounts.');
+          return;
+        }
+
         const defaultAccounts = [
-          { name: 'Cash Wallet', type: 'cash' as const, balance: 0, currency: 'USD', isActive: true },
-          { name: 'Main Checking', type: 'checking' as const, balance: 0, currency: 'USD', bankName: 'Bank of America', isActive: true },
-          { name: 'Savings Account', type: 'savings' as const, balance: 0, currency: 'USD', bankName: 'Bank of America', isActive: true },
-          { name: 'Credit Card', type: 'credit_card' as const, balance: 0, currency: 'USD', bankName: 'Chase', isActive: true },
+          { profileId, name: 'Cash Wallet', type: 'cash' as const, balance: 0, currency: 'USD', isActive: true },
+          { profileId, name: 'Main Checking', type: 'checking' as const, balance: 0, currency: 'USD', bankName: 'Bank of America', isActive: true },
+          { profileId, name: 'Savings Account', type: 'savings' as const, balance: 0, currency: 'USD', bankName: 'Bank of America', isActive: true },
+          { profileId, name: 'Credit Card', type: 'credit_card' as const, balance: 0, currency: 'USD', bankName: 'Chase', isActive: true },
         ];
 
         defaultAccounts.forEach((account) => {
@@ -315,7 +347,7 @@ class AccountService {
           }
         });
 
-        console.log('Default accounts initialized');
+        console.log('Default accounts initialized for profile:', profileId);
       }
     } catch (error) {
       console.error('Error initializing default accounts:', error);
