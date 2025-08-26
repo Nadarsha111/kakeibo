@@ -1,4 +1,4 @@
-import * as SQLite from 'expo-sqlite';
+import * as SQLite from "expo-sqlite";
 
 /**
  * Central database connector that provides a shared SQLite instance
@@ -9,7 +9,9 @@ class DatabaseConnector {
   private db: SQLite.SQLiteDatabase;
 
   private constructor() {
-    this.db = SQLite.openDatabaseSync('kakeibo.db');
+    this.db = SQLite.openDatabaseSync("kakeibo.db");
+    // Enable foreign key constraint enforcement
+    this.db.execSync("PRAGMA foreign_keys = ON;");
     this.initializeTables();
   }
 
@@ -36,9 +38,21 @@ class DatabaseConnector {
   private initializeTables(): void {
     try {
       // Create accounts table
+
+      this.db.execAsync(`
+        CREATE TABLE IF NOT EXISTS profiles (
+         id INTEGER PRIMARY KEY AUTOINCREMENT ,
+         name TEXT NOT NULL,
+         description TEXT,
+         createdAt TEXT NOT NULL,
+         updatedAt TEXT NOT NULL
+        );
+    `);
+
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS accounts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          profileId INTEGER REFERENCES profiles(id),
           name TEXT NOT NULL,
           type TEXT NOT NULL CHECK (type IN ('savings', 'checking', 'credit_card', 'loan', 'investment', 'cash')),
           balance REAL NOT NULL DEFAULT 0,
@@ -141,136 +155,85 @@ class DatabaseConnector {
         );
       `);
 
-      // Add missing columns to loans table
-      this.addMissingLoanColumns();
 
-      // Add missing columns if they don't exist
-      this.addMissingColumns();
 
       // Insert default categories if none exist
       this.insertDefaultCategories();
-
-      console.log('Database tables initialized successfully');
+      this.insertDefaultProfiles();
+      
+      console.log("Database tables initialized successfully");
     } catch (error) {
-      console.error('Error initializing database tables:', error);
+      console.error("Error initializing database tables:", error);
       throw error;
     }
   }
 
-  /**
-   * Add missing columns to existing tables for backward compatibility
-   */
-  private addMissingColumns(): void {
-    try {
-      // Check if accountId column exists in transactions
-      const transactionTableInfo = this.db.getAllSync("PRAGMA table_info(transactions)");
-      const hasAccountId = transactionTableInfo.some((row: any) => row.name === 'accountId');
-      
-      if (!hasAccountId) {
-        this.db.execSync(`
-          ALTER TABLE transactions 
-          ADD COLUMN accountId INTEGER REFERENCES accounts(id)
-        `);
-        console.log('Added accountId column to transactions table');
-      }
-
-      // Check if priority column exists in transactions
-      const hasPriority = transactionTableInfo.some((row: any) => row.name === 'priority');
-      
-      if (!hasPriority) {
-        this.db.execSync(`
-          ALTER TABLE transactions 
-          ADD COLUMN priority TEXT CHECK (priority IN ('need', 'want'))
-        `);
-        console.log('Added priority column to transactions table');
-      }
-    } catch (error) {
-      console.error('Error adding missing columns:', error);
-    }
-  }
-
-  /**
-   * Insert default categories if none exist
-   */
-  /**
-   * Add missing columns to loans table for backward compatibility
-   */
-  private addMissingLoanColumns(): void {
-    try {
-      // Check if the necessary columns exist in loans table
-      const loanTableInfo = this.db.getAllSync("PRAGMA table_info(loans)");
-      
-      // Check and add isLending column
-      const hasIsLending = loanTableInfo.some((row: any) => row.name === 'isLending');
-      if (!hasIsLending) {
-        this.db.execSync(`
-          ALTER TABLE loans 
-          ADD COLUMN isLending BOOLEAN NOT NULL DEFAULT 1
-        `);
-        console.log('Added isLending column to loans table');
-      }
-
-      // Check and add lenderName column
-      const hasLenderName = loanTableInfo.some((row: any) => row.name === 'lenderName');
-      if (!hasLenderName) {
-        this.db.execSync(`
-          ALTER TABLE loans 
-          ADD COLUMN lenderName TEXT
-        `);
-        console.log('Added lenderName column to loans table');
-      }
-
-      // Check and add lenderContact column
-      const hasLenderContact = loanTableInfo.some((row: any) => row.name === 'lenderContact');
-      if (!hasLenderContact) {
-        this.db.execSync(`
-          ALTER TABLE loans 
-          ADD COLUMN lenderContact TEXT
-        `);
-        console.log('Added lenderContact column to loans table');
-      }
-    } catch (error) {
-      console.error('Error adding missing loan columns:', error);
-    }
-  }
+ 
+  
 
   private insertDefaultCategories(): void {
     try {
       // Check if categories already exist
-      const existingCategories = this.db.getAllSync('SELECT COUNT(*) as count FROM categories');
+      const existingCategories = this.db.getAllSync(
+        "SELECT COUNT(*) as count FROM categories",
+      );
       if ((existingCategories[0] as any).count > 0) {
         return; // Categories already exist
       }
 
       const defaultCategories = [
-        { name: 'Transport', color: '#10b981', icon: '🚗', type: 'expense' },
-        { name: 'Restaurant', color: '#ef4444', icon: '🍽️', type: 'expense' },
-        { name: 'Shopping', color: '#f97316', icon: '🛍️', type: 'expense' },
-        { name: 'Food', color: '#3b82f6', icon: '🍎', type: 'expense' },
-        { name: 'Gift', color: '#06b6d4', icon: '🎁', type: 'expense' },
-        { name: 'Free time', color: '#8b5cf6', icon: '🎮', type: 'expense' },
-        { name: 'Family', color: '#ec4899', icon: '👨‍👩‍👧‍👦', type: 'expense' },
-        { name: 'Health', color: '#14b8a6', icon: '🏥', type: 'expense' },
-        { name: 'Salary', color: '#22c55e', icon: '💰', type: 'income' },
-        { name: 'Investment', color: '#6366f1', icon: '📈', type: 'income' },
-        { name: 'Loan Repayment', color: '#059669', icon: '💸', type: 'income' },
+        { name: "Transport", color: "#10b981", icon: "🚗", type: "expense" },
+        { name: "Restaurant", color: "#ef4444", icon: "🍽️", type: "expense" },
+        { name: "Shopping", color: "#f97316", icon: "🛍️", type: "expense" },
+        { name: "Food", color: "#3b82f6", icon: "🍎", type: "expense" },
+        { name: "Gift", color: "#06b6d4", icon: "🎁", type: "expense" },
+        { name: "Free time", color: "#8b5cf6", icon: "🎮", type: "expense" },
+        { name: "Family", color: "#ec4899", icon: "👨‍👩‍👧‍👦", type: "expense" },
+        { name: "Health", color: "#14b8a6", icon: "🏥", type: "expense" },
+        { name: "Salary", color: "#22c55e", icon: "💰", type: "income" },
+        { name: "Investment", color: "#6366f1", icon: "📈", type: "income" },
+        {
+          name: "Loan Repayment",
+          color: "#059669",
+          icon: "💸",
+          type: "income",
+        },
       ];
 
       defaultCategories.forEach((category) => {
         try {
           this.db.runSync(
-            'INSERT INTO categories (name, color, icon, type) VALUES (?, ?, ?, ?)',
-            [category.name, category.color, category.icon, category.type]
+            "INSERT INTO categories (name, color, icon, type) VALUES (?, ?, ?, ?)",
+            [category.name, category.color, category.icon, category.type],
           );
         } catch (error) {
           // Ignore if category already exists
-          console.log('Category already exists:', category.name);
+          console.log("Category already exists:", category.name);
         }
       });
 
-      console.log('Default categories inserted successfully');
+      console.log("Default categories inserted successfully");
     } catch (error) {
-      console.error('Error inserting default categories:', error);
+      console.error("Error inserting default categories:", error);
+    }
+  }
+
+  private insertDefaultProfiles(): void {
+    try {
+      const existingProfiles = this.db.getAllSync(
+        "SELECT COUNT(*) as count FROM profiles",
+      );
+      if ((existingProfiles[0] as any).count > 0) {
+        return; // Profiles already exist
+      }
+      const now = new Date().toISOString();
+      this.db.runSync(
+        "INSERT INTO profiles (name, description, createdAt, updatedAt) VALUES (?, ?, ?, ?)",
+        ["Personal", "Personal accounts", now, now],
+      );
+      console.log("Default profile inserted successfully.");
+    } catch (error) {
+      console.error("Error inserting default profiles:", error);
     }
   }
 
@@ -281,7 +244,7 @@ class DatabaseConnector {
     try {
       return this.db.getAllSync(sql, params);
     } catch (error) {
-      console.error('Error executing query:', error);
+      console.error("Error executing query:", error);
       throw error;
     }
   }
@@ -293,7 +256,7 @@ class DatabaseConnector {
     try {
       return this.db.runSync(sql, params);
     } catch (error) {
-      console.error('Error executing statement:', error);
+      console.error("Error executing statement:", error);
       throw error;
     }
   }
@@ -305,7 +268,7 @@ class DatabaseConnector {
     try {
       return this.db.getFirstSync(sql, params);
     } catch (error) {
-      console.error('Error getting first result:', error);
+      console.error("Error getting first result:", error);
       throw error;
     }
   }
@@ -314,21 +277,21 @@ class DatabaseConnector {
    * Begin a database transaction
    */
   public beginTransaction(): void {
-    this.db.execSync('BEGIN TRANSACTION');
+    this.db.execSync("BEGIN TRANSACTION");
   }
 
   /**
    * Commit a database transaction
    */
   public commitTransaction(): void {
-    this.db.execSync('COMMIT');
+    this.db.execSync("COMMIT");
   }
 
   /**
    * Rollback a database transaction
    */
   public rollbackTransaction(): void {
-    this.db.execSync('ROLLBACK');
+    this.db.execSync("ROLLBACK");
   }
 
   /**
