@@ -170,7 +170,7 @@ class TransactionService {
         `;
         return this.db.getAllSync(query, params) as Array<Transaction & { categoryName?: string }>;
       } else {
-        const query = `SELECT * FROM transactions WHERE ${conditions.join(' AND ')} ORDER BY date DESC, createdAt DESC`;
+        const query = `SELECT * FROM transactions t WHERE ${conditions.join(' AND ')} ORDER BY t.date DESC, t.createdAt DESC`;
         return this.db.getAllSync(query, params) as Transaction[];
       }
     } catch (error) {
