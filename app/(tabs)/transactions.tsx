@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 // Using new service architecture for better separation of concerns
 import { getTransactionService, getAccountService } from '../../database';
@@ -152,6 +152,18 @@ export default function TransactionsScreen() {
     );
   }
 
+  const onRefresh = async () => {
+    setLoading(true);
+    try {
+      await loadTransactions();
+      await loadCategoryData();
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
@@ -195,7 +207,18 @@ export default function TransactionsScreen() {
 
       {/* Content */}
       {activeTab === "transactions" ? (
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={styles.scrollView} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
+        >
           <View style={styles.filterContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {['All', 'Income', 'Expense'].map((filter) => (
@@ -228,6 +251,14 @@ export default function TransactionsScreen() {
           totals={totals}
           selectedPeriod={selectedPeriod}
           onPeriodChange={setSelectedPeriod}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={onRefresh}
+              colors={[theme.colors.primary]}
+              tintColor={theme.colors.primary}
+            />
+          }
         />
       )}
     </View>

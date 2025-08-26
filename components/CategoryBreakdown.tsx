@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useSettings } from "../context/SettingsContext";
 
@@ -15,6 +15,7 @@ interface CategoryBreakdownProps {
   totals: { expenses: number; balance: number; income: number };
   selectedPeriod: string;
   onPeriodChange: (period: string) => void;
+  refreshControl?: React.ReactElement<any>;
 }
 
 function createStyles(theme: any) {
@@ -179,12 +180,16 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
   totals,
   selectedPeriod,
   onPeriodChange,
+  refreshControl
 }) => {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const {formatCurrency} =useSettings();
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={styles.container} 
+      showsVerticalScrollIndicator={false}
+      refreshControl={refreshControl}>
       <View style={styles.header}>
         <Text style={styles.headerSubtext}>Account balance</Text>
         <Text style={styles.headerAmount}>
