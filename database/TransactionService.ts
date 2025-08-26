@@ -245,6 +245,10 @@ class TransactionService {
         const fields = [];
         const values = [];
 
+        if (updates.profileId !== undefined) {
+          fields.push('profileId = ?');
+          values.push(updates.profileId);
+        }
         if (updates.amount !== undefined) {
           fields.push('amount = ?');
           values.push(updates.amount);

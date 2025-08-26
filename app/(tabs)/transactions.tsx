@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getTransactionService, getAccountService } from '../../database';
 import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
+import AddTransactionScreen from '../../components/AddTransactionScreen';
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
@@ -19,6 +20,8 @@ export default function TransactionsScreen() {
   
   // Transactions state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('All');
   
   // Categories state
@@ -103,43 +106,75 @@ export default function TransactionsScreen() {
     if (selectedFilter === 'All') return transactions;
     return transactions.filter(t => t.type === selectedFilter.toLowerCase());
   };
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setTransactionToEdit(transaction);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteTransaction = (transaction: Transaction) => {
+    Alert.alert(
+      'Delete Transaction',
+      'Are you sure you want to delete this transaction?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            try {
+              const transactionService = getTransactionService();
+              transactionService.deleteTransaction(transaction.id);
+              onRefresh(); // Reload data
+            } catch (error) {
+              console.error('Error deleting transaction:', error);
+              Alert.alert('Error', 'Failed to delete transaction.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderTransaction = ({ item }: { item: Transaction }) => (
-    <View style={styles.transactionCard}>
-      <View style={styles.transactionHeader}>
-        <View style={styles.transactionLeft}>
-          <View style={styles.categoryIcon}>
-            <Text style={styles.categoryEmoji}>
-              {item.category === 'Transport' ? '🚗' : 
-               item.category === 'Restaurant' ? '🍽️' :
-               item.category === 'Shopping' ? '🛍️' :
-               item.category === 'Food' ? '🍎' :
-               item.category === 'Gift' ? '🎁' :
-               item.category === 'Free time' ? '🎮' :
-               item.category === 'Family' ? '👨‍👩‍👧‍👦' :
-               item.category === 'Health' ? '🏥' :
-               item.category === 'Salary' ? '💰' : '📈'}
+    <TouchableOpacity 
+      style={styles.transactionCard} 
+      onPress={() => handleEditTransaction(item)}
+      onLongPress={() => handleDeleteTransaction(item)}
+    >
+      <View style={styles.transactionContent}>
+        <View style={styles.categoryIcon}>
+          <Text style={styles.categoryEmoji}>
+            {item.category === 'Transport' ? '🚗' : 
+              item.category === 'Restaurant' ? '🍽️' :
+              item.category === 'Shopping' ? '🛍️' :
+              item.category === 'Food' ? '🍎' :
+              item.category === 'Gift' ? '🎁' :
+              item.category === 'Free time' ? '🎮' :
+              item.category === 'Family' ? '👨‍👩‍👧‍👦' :
+              item.category === 'Health' ? '🏥' :
+              item.category === 'Salary' ? '💰' : '📈'}
+          </Text>
+        </View>
+        <View style={styles.transactionDetails}>
+          <View style={styles.transactionRow}>
+            <Text style={styles.transactionCategory}>{item.category}</Text>
+            <Text style={[
+              styles.transactionAmount,
+              { color: item.type === 'income' ? theme.colors.success : theme.colors.error }
+            ]}>
+              {item.type === 'expense' ? '-' : '+'}{formatCurrency(item.amount)}
             </Text>
           </View>
-          <View>
-            <Text style={styles.transactionCategory}>{item.category}</Text>
-            <Text style={styles.transactionPayment}>
-              {item.paymentMethod === 'credit_card' ? '💳 Credit card' : 
-               item.paymentMethod === 'debit_card' ? '💳 Debit card' : '💵 Cash'}
+          <View style={styles.transactionRow}>
+            <Text style={styles.transactionDescription}>
+              {item.description || item.paymentMethod.replace('_', ' ')}
             </Text>
+            <Text style={styles.transactionDate}>{formatDate(item.date)}</Text>
           </View>
         </View>
-        <Text style={[
-          styles.transactionAmount,
-          { color: item.type === 'income' ? theme.colors.success : theme.colors.error }
-        ]}>
-          {item.type === 'expense' ? '-' : '+'}{formatCurrency(item.amount)}
-        </Text>
       </View>
-      {item.description && (
-        <Text style={styles.transactionDescription}>{item.description}</Text>
-      )}
-      <Text style={styles.transactionDate}>{formatDate(item.date)}</Text>
-    </View>
+    </TouchableOpacity>
   );
 
   if (loading) {
@@ -259,6 +294,17 @@ export default function TransactionsScreen() {
           }
         />
       )}
+
+      {/* Edit Transaction Modal */}
+      <AddTransactionScreen
+        visible={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        onTransactionAdded={() => {
+          setShowEditModal(false);
+          onRefresh();
+        }}
+        transactionToEdit={transactionToEdit}
+      />
     </View>
   );
 }
@@ -387,22 +433,15 @@ function createStyles(theme: any) {
       borderLeftWidth: 4,
       borderLeftColor: theme.colors.primary,
     },
-    transactionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    transactionLeft: {
+    transactionContent: {
       flexDirection: 'row',
       alignItems: 'center',
-      flex: 1,
     },
     categoryIcon: {
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: theme.colors.card,
+      backgroundColor: theme.colors.background,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 12,
@@ -410,24 +449,28 @@ function createStyles(theme: any) {
     categoryEmoji: {
       fontSize: 20,
     },
+    transactionDetails: {
+      flex: 1,
+    },
+    transactionRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
     transactionCategory: {
       fontSize: 16,
       fontWeight: '600',
       color: theme.colors.text,
     },
-    transactionPayment: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      marginTop: 2,
-    },
     transactionAmount: {
-      fontSize: 18,
+      fontSize: 16,
       fontWeight: 'bold',
     },
     transactionDescription: {
       color: theme.colors.textSecondary,
-      fontSize: 14,
-      marginBottom: 4,
+      fontSize: 12,
+      textTransform: 'capitalize',
     },
     transactionDate: {
       color: theme.colors.textSecondary,
