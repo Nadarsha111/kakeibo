@@ -44,7 +44,7 @@ export default function AddTransactionScreen({
       loadCategories();
       loadAccounts();
     }
-  }, [visible]);
+  }, [visible, selectedProfileId]);
 
   const loadCategories = () => {
     try {
@@ -65,12 +65,20 @@ export default function AddTransactionScreen({
   const loadAccounts = () => {
     try {
       const accountService = getAccountService();
-      const allAccounts = accountService.getAccounts();
-      setAccounts(allAccounts);
+      const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
+      const profileAccounts = accountService.getAccounts(profileId);
+      setAccounts(profileAccounts);
       
-      // Set default account (first active account)
-      if (allAccounts.length > 0 && !selectedAccount) {
-        setSelectedAccount(allAccounts[0].id);
+      // Set default account if one isn't selected or if the selected one is no longer valid
+      if (profileAccounts.length > 0) {
+        const currentAccountIsValid = profileAccounts.some(acc => acc.id === selectedAccount);
+        // If no account is selected, or the current one is not in the new list, select the first one.
+        if (!selectedAccount || !currentAccountIsValid) {
+            setSelectedAccount(profileAccounts[0].id);
+        }
+      } else {
+        // If there are no accounts for this profile, clear selection.
+        setSelectedAccount(undefined);
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
@@ -119,21 +127,20 @@ export default function AddTransactionScreen({
 
   const submitTransaction = () => {
     try {
-      let profileIdToUse: number | 'all' = selectedProfileId;
-      if (profileIdToUse === 'all') {
-        const accountProfileId = accounts.find(acc => acc.id === selectedAccount)?.profileId;
-        if (!accountProfileId) {
-          Alert.alert('Error', 'Cannot determine a profile. Please select a specific profile from the Accounts screen or select an account.');
-          return;
-        }
-        profileIdToUse = accountProfileId;
+      const selectedAccountDetails = accounts.find(acc => acc.id === selectedAccount);
+      if (!selectedAccountDetails) {
+        Alert.alert('Error', 'Please select a valid account.');
+        return;
       }
+
+      const profileIdToUse = selectedAccountDetails.profileId;
+
       const transactionData = {
-        profileId: profileIdToUse as number,
+        profileId: profileIdToUse,
         amount: parseFloat(amount),
         type,
         category: selectedCategory,
-        description: description.trim() || '',
+        description: description.trim() || null,
         date,
         paymentMethod,
         accountId: selectedAccount,
@@ -270,8 +277,8 @@ export default function AddTransactionScreen({
 
           {/* Category Selector */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Category</Text>
-            <ScrollView 
+            <Text style={styles.sectionTitle}>Category & Description</Text>
+            <ScrollView
               horizontal 
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.categoryScrollContent}
@@ -297,6 +304,13 @@ export default function AddTransactionScreen({
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            <TextInput
+              style={[styles.textInput, { marginTop: 16 }]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Add a note (optional)"
+              placeholderTextColor={theme.colors.textSecondary}
+            />
           </View>
 
           {/* Account Selector */}
@@ -396,24 +410,11 @@ export default function AddTransactionScreen({
             )}
           </View>
 
-          {/* Description */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Description (Optional)</Text>
-            <TextInput
-              style={styles.descriptionInput}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Add a note..."
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-
           {/* Date */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Date</Text>
             <TextInput
-              style={styles.dateInput}
+              style={styles.textInput}
               value={date}
               onChangeText={setDate}
               placeholder="YYYY-MM-DD"
