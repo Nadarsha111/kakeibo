@@ -370,7 +370,7 @@ export default function AccountsScreen() {
   });
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
 
       {/* Header */}
@@ -587,7 +587,7 @@ export default function AccountsScreen() {
           updateSelectedProfileId(value === 'all' ? 'all' : parseInt(value, 10));
         }}
       />
-    </ScrollView>
+    </View>
   );
 }
 

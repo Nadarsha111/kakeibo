@@ -202,6 +202,7 @@ class LoanService {
         // Add income transaction if account is specified
         if (loan.accountId) {
           this.transactionService.addTransaction({
+            profileId: loan.profileId,
             amount: paymentAmount,
             type: 'income',
             category: 'Loan Repayment',

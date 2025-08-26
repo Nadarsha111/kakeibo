@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-// Using new service architecture for better separation of concerns
 import { getTransactionService, getAccountService } from '../../database';
 import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
@@ -10,7 +9,7 @@ import CategoryBreakdown from '../../components/CategoryBreakdown';
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
-  const { formatCurrency } = useSettings();
+  const { formatCurrency, selectedProfileId } = useSettings();
   const styles = createStyles(theme);
   
   // Shared state
@@ -29,19 +28,20 @@ export default function TransactionsScreen() {
   useEffect(() => {
     loadTransactions();
     loadCategoryData();
-  }, [selectedPeriod]);
+  }, [selectedPeriod, selectedProfileId]);
 
   useFocusEffect(
     React.useCallback(() => {
       loadTransactions();
       loadCategoryData();
-    }, [selectedPeriod])
+    }, [selectedPeriod, selectedProfileId])
   );
 
   const loadTransactions = async () => {
     try {
+      const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
       const transactionService = getTransactionService();
-      const data = transactionService.getTransactions();
+      const data = transactionService.getTransactions(profileId);
       setTransactions(data);
     } catch (error) {
       console.error('Error loading transactions:', error);
@@ -52,6 +52,7 @@ export default function TransactionsScreen() {
 
   const loadCategoryData = async () => {
     try {
+      const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
       let startDate: string, endDate: string;
       const now = new Date();
 
@@ -75,10 +76,10 @@ export default function TransactionsScreen() {
       const transactionService = getTransactionService();
       const accountService = getAccountService();
       
-      const expenses = transactionService.getTotalExpenses(startDate, endDate);
-      const income = transactionService.getTotalIncome(startDate, endDate);
-      const balance = accountService.getAccountBalance();
-      const summary = transactionService.getCategorySummary(startDate, endDate);
+      const expenses = transactionService.getTotalExpenses(startDate, endDate, profileId);
+      const income = transactionService.getTotalIncome(startDate, endDate, profileId);
+      const balance = accountService.getTotalAccountsBalance(profileId);
+      const summary = transactionService.getCategorySummary(startDate, endDate, profileId);
 
       const totalExpenses = expenses;
       const summaryWithPercentage = summary.map((item: any) => ({
@@ -89,7 +90,7 @@ export default function TransactionsScreen() {
       setTotals({
         expenses,
         income,
-        balance: balance?.totalBalance || 0
+        balance: balance || 0
       });
       setCategorySummary(summaryWithPercentage);
     } catch (error) {

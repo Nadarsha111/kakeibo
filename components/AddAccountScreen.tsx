@@ -17,12 +17,14 @@ interface AddAccountScreenProps {
   visible: boolean;
   onClose: () => void;
   onAccountAdded: () => void;
+  profileId?: number | 'all';
 }
 
 export default function AddAccountScreen({
   visible,
   onClose,
   onAccountAdded,
+  profileId,
 }: AddAccountScreenProps) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -56,7 +58,13 @@ export default function AddAccountScreen({
     }
 
     try {
+      if (!profileId || profileId === 'all') {
+        Alert.alert('Error', 'A profile must be selected to add an account.');
+        return;
+      }
+
       const accountData = {
+        profileId,
         name: name.trim(),
         type,
         balance: parseFloat(balance),

@@ -18,9 +18,15 @@ interface AddLoanScreenProps {
   visible: boolean;
   onClose: () => void;
   onLoanAdded: () => void;
+  profileId?: number | 'all';
 }
 
-export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoanScreenProps) {
+export default function AddLoanScreen({ 
+  visible, 
+  onClose, 
+  onLoanAdded, 
+  profileId 
+}: AddLoanScreenProps) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   
@@ -72,8 +78,14 @@ export default function AddLoanScreen({ visible, onClose, onLoanAdded }: AddLoan
     }
 
     try {
+      if (!profileId || profileId === 'all') {
+        Alert.alert('Error', 'A profile must be selected to add a loan.');
+        return;
+      }
+
       console.log(loanType === 'lendings')
       const loanData = {
+        profileId,
         borrowerName: loanType === 'lendings' ? personName.trim() : '',
         borrowerContact: loanType === 'lendings' ? personContact.trim() || undefined : undefined,
         lenderName: loanType === 'borrowings' ? personName.trim() : undefined,

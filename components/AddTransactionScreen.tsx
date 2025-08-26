@@ -12,6 +12,7 @@ import {
 import { getCategoryService, getAccountService, getTransactionService } from '../database';
 import { Category, Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { useSettings } from '../context/SettingsContext';
 
 interface AddTransactionScreenProps {
   visible: boolean;
@@ -25,6 +26,7 @@ export default function AddTransactionScreen({
   onTransactionAdded 
 }: AddTransactionScreenProps) {
   const { theme } = useTheme();
+  const { selectedProfileId } = useSettings();
   const styles = createStyles(theme);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -117,7 +119,17 @@ export default function AddTransactionScreen({
 
   const submitTransaction = () => {
     try {
+      let profileIdToUse: number | 'all' = selectedProfileId;
+      if (profileIdToUse === 'all') {
+        const accountProfileId = accounts.find(acc => acc.id === selectedAccount)?.profileId;
+        if (!accountProfileId) {
+          Alert.alert('Error', 'Cannot determine a profile. Please select a specific profile from the Accounts screen or select an account.');
+          return;
+        }
+        profileIdToUse = accountProfileId;
+      }
       const transactionData = {
+        profileId: profileIdToUse as number,
         amount: parseFloat(amount),
         type,
         category: selectedCategory,

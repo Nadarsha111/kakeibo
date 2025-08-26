@@ -241,15 +241,24 @@ class AccountService {
   /**
    * Get monthly account balances for a specific year/month
    */
-  getMonthlyAccountBalances(year: number, month: number): Array<{ accountId: number, name: string, closingBalance: number }> {
+  getMonthlyAccountBalances(year: number, month: number, profileId?: number): Array<{ accountId: number, name: string, closingBalance: number }> {
     try {
-      return this.db.getAllSync(
-        `SELECT a.id as accountId, a.name, COALESCE(ab.closingBalance, a.balance) as closingBalance
+      let query = `SELECT a.id as accountId, a.name, COALESCE(ab.closingBalance, a.balance) as closingBalance
          FROM accounts a
          LEFT JOIN account_balance ab ON a.id = ab.accountId AND ab.year = ? AND ab.month = ?
-         WHERE a.isActive = 1
-         ORDER BY a.name`,
-        [year, month]
+         WHERE a.isActive = 1`;
+      const params: any[] = [year, month];
+
+      if (profileId) {
+        query += ' AND a.profileId = ?';
+        params.push(profileId);
+      }
+
+      query += ' ORDER BY a.name';
+
+      return this.db.getAllSync(
+        query,
+        params
       ) as Array<{ accountId: number, name: string, closingBalance: number }>;
     } catch (error) {
       console.error('Error getting monthly account balances:', error);

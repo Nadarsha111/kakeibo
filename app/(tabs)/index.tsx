@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, ScrollView, RefreshControl } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-// Using the new service architecture for better separation of concerns
 import { getAccountService, getTransactionService } from "../../database";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
@@ -25,7 +24,7 @@ interface DashboardData {
 
 export default function OverviewScreen() {
   const { theme } = useTheme();
-  const {formatCurrency} =useSettings();
+  const { formatCurrency, selectedProfileId } = useSettings();
   const [data, setData] = useState<DashboardData>({
     totalBalance: 0,
     monthlyAccountBalances: [],
@@ -49,7 +48,7 @@ export default function OverviewScreen() {
       }, 500); // Reduced delay for faster updates
 
       return () => clearTimeout(timeout);
-    }, [])
+    }, [selectedProfileId])
   );
 
   const loadDashboardData = async (forceRefresh = false) => {
@@ -57,6 +56,7 @@ export default function OverviewScreen() {
     
     setIsLoading(true);
     try {
+      const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
       // Get service instances
       const accountService = getAccountService();
       const transactionService = getTransactionService();
@@ -84,27 +84,31 @@ export default function OverviewScreen() {
 
       // Batch all database calls for better performance
       const [monthlyAccountBalances, weeklyExpenses, weeklyIncome, monthlyExpenses, categorySummary] = await Promise.all([
-        Promise.resolve(accountService.getMonthlyAccountBalances(now.getFullYear(), now.getMonth() + 1)),
+        Promise.resolve(accountService.getMonthlyAccountBalances(now.getFullYear(), now.getMonth() + 1, profileId)),
         Promise.resolve(transactionService.getTotalExpenses(
           weekStart.toISOString().split("T")[0],
-          weekEnd.toISOString().split("T")[0]
+          weekEnd.toISOString().split("T")[0],
+          profileId
         )),
         Promise.resolve(transactionService.getTotalIncome(
           weekStart.toISOString().split("T")[0],
-          weekEnd.toISOString().split("T")[0]
+          weekEnd.toISOString().split("T")[0],
+          profileId
         )),
         Promise.resolve(transactionService.getTotalExpenses(
           monthStart.toISOString().split("T")[0],
-          monthEnd.toISOString().split("T")[0]
+          monthEnd.toISOString().split("T")[0],
+          profileId
         )),
         Promise.resolve(transactionService.getCategorySummary(
           monthStart.toISOString().split("T")[0],
-          monthEnd.toISOString().split("T")[0]
+          monthEnd.toISOString().split("T")[0],
+          profileId
         ))
       ]);
 
-      // Calculate total balance from monthly account balances
-      const totalBalance = monthlyAccountBalances.reduce((sum: number, account: any) => sum + account.closingBalance, 0);
+      // Get total balance for the selected profile
+      const totalBalance = accountService.getTotalAccountsBalance(profileId);
 
       console.log("Loaded data:", {
         totalBalance,

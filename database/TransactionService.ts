@@ -22,11 +22,11 @@ class TransactionService {
       return DatabaseConnector.getInstance().withTransaction(() => {
         const now = new Date().toISOString();
         
-        // Insert transaction
         const result = this.db.runSync(
-          `INSERT INTO transactions (amount, type, category, description, date, paymentMethod, accountId, priority, createdAt, updatedAt) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO transactions (profileId, amount, type, category, description, date, paymentMethod, accountId, priority, createdAt, updatedAt) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
+            transaction.profileId,
             transaction.amount,
             transaction.type,
             transaction.category,
@@ -69,13 +69,22 @@ class TransactionService {
   /**
    * Get all transactions with pagination
    */
-  getTransactions(limit?: number, offset?: number): Transaction[] {
+  getTransactions(profileId?: number, limit?: number, offset?: number): Transaction[] {
     try {
-      const query = limit 
-        ? 'SELECT * FROM transactions ORDER BY date DESC, createdAt DESC LIMIT ? OFFSET ?'
-        : 'SELECT * FROM transactions ORDER BY date DESC, createdAt DESC';
-      const params = limit ? [limit, offset || 0] : [];
+      let query = 'SELECT * FROM transactions';
+      const params: any[] = [];
+      const conditions: string[] = [];
 
+      if (profileId) {
+        conditions.push('profileId = ?');
+        params.push(profileId);
+      }
+
+      if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+      }
+
+      query += ` ORDER BY date DESC, createdAt DESC ${limit ? `LIMIT ${limit} OFFSET ${offset || 0}` : ''}`;
       return this.db.getAllSync(query, params) as Transaction[];
     } catch (error) {
       console.error('Error getting transactions:', error);
@@ -88,10 +97,19 @@ class TransactionService {
    */
   getTransactionsByDateRange(
     startDate: string, 
-    endDate: string, 
+    endDate: string,
+    profileId?: number,
     includeCategory: boolean = false
   ): Array<Transaction & { categoryName?: string }> {
     try {
+      const conditions = ['DATE(t.date) BETWEEN DATE(?) AND DATE(?)'];
+      const params: any[] = [startDate, endDate];
+
+      if (profileId) {
+        conditions.push('t.profileId = ?');
+        params.push(profileId);
+      }
+
       if (includeCategory) {
         const query = `
           SELECT 
@@ -99,15 +117,13 @@ class TransactionService {
             c.name as categoryName
           FROM transactions t
           LEFT JOIN categories c ON t.category = c.name
-          WHERE DATE(t.date) BETWEEN DATE(?) AND DATE(?)
+          WHERE ${conditions.join(' AND ')}
           ORDER BY t.date DESC, t.createdAt DESC
         `;
-        return this.db.getAllSync(query, [startDate, endDate]) as Array<Transaction & { categoryName?: string }>;
+        return this.db.getAllSync(query, params) as Array<Transaction & { categoryName?: string }>;
       } else {
-        return this.db.getAllSync(
-          'SELECT * FROM transactions WHERE DATE(date) BETWEEN DATE(?) AND DATE(?) ORDER BY date DESC, createdAt DESC',
-          [startDate, endDate]
-        ) as Transaction[];
+        const query = `SELECT * FROM transactions WHERE ${conditions.join(' AND ')} ORDER BY date DESC, createdAt DESC`;
+        return this.db.getAllSync(query, params) as Transaction[];
       }
     } catch (error) {
       console.error('Error getting transactions by date range:', error);
@@ -289,11 +305,19 @@ class TransactionService {
   /**
    * Get total expenses for a date range
    */
-  getTotalExpenses(startDate: string, endDate: string): number {
+  getTotalExpenses(startDate: string, endDate: string, profileId?: number): number {
     try {
+      let query = "SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND DATE(date) BETWEEN DATE(?) AND DATE(?)";
+      const params: any[] = [startDate, endDate];
+
+      if (profileId) {
+        query += ' AND profileId = ?';
+        params.push(profileId);
+      }
+
       const result = this.db.getFirstSync(
-        "SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND DATE(date) BETWEEN DATE(?) AND DATE(?)",
-        [startDate, endDate]
+        query,
+        params
       ) as { total: number | null };
       return result?.total || 0;
     } catch (error) {
@@ -305,11 +329,19 @@ class TransactionService {
   /**
    * Get total income for a date range
    */
-  getTotalIncome(startDate: string, endDate: string): number {
+  getTotalIncome(startDate: string, endDate: string, profileId?: number): number {
     try {
+      let query = "SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND DATE(date) BETWEEN DATE(?) AND DATE(?)";
+      const params: any[] = [startDate, endDate];
+
+      if (profileId) {
+        query += ' AND profileId = ?';
+        params.push(profileId);
+      }
+
       const result = this.db.getFirstSync(
-        "SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND DATE(date) BETWEEN DATE(?) AND DATE(?)",
-        [startDate, endDate]
+        query,
+        params
       ) as { total: number | null };
       return result?.total || 0;
     } catch (error) {
@@ -321,16 +353,24 @@ class TransactionService {
   /**
    * Get category summary for expenses in a date range
    */
-  getCategorySummary(startDate: string, endDate: string): { category: string; amount: number; color: string }[] {
+  getCategorySummary(startDate: string, endDate: string, profileId?: number): { category: string; amount: number; color: string }[] {
     try {
-      return this.db.getAllSync(
-        `SELECT t.category, SUM(t.amount) as amount, c.color 
+      let query = `SELECT t.category, SUM(t.amount) as amount, c.color 
          FROM transactions t 
          JOIN categories c ON t.category = c.name 
-         WHERE t.type = 'expense' AND DATE(t.date) BETWEEN DATE(?) AND DATE(?) 
-         GROUP BY t.category, c.color 
-         ORDER BY amount DESC`,
-        [startDate, endDate]
+         WHERE t.type = 'expense' AND DATE(t.date) BETWEEN DATE(?) AND DATE(?)`;
+      const params: any[] = [startDate, endDate];
+
+      if (profileId) {
+        query += ' AND t.profileId = ?';
+        params.push(profileId);
+      }
+
+      query += ' GROUP BY t.category, c.color ORDER BY amount DESC';
+
+      return this.db.getAllSync(
+        query,
+        params
       ) as { category: string; amount: number; color: string }[];
     } catch (error) {
       console.error('Error getting category summary:', error);

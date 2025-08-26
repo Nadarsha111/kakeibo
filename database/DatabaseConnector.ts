@@ -69,6 +69,7 @@ class DatabaseConnector {
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS transactions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          profileId INTEGER REFERENCES profiles(id) NOT NULL,
           amount REAL NOT NULL,
           type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
           category TEXT NOT NULL,
@@ -168,7 +169,6 @@ class DatabaseConnector {
       throw error;
     }
   }
-
  
   
 
