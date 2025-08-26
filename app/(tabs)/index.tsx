@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, ScrollView, RefreshControl } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  RefreshControl,
+  Pressable,
+} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { getAccountService, getTransactionService } from "../../database";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
+import { router } from "expo-router";
 
 interface DashboardData {
   totalBalance: number;
@@ -35,32 +42,31 @@ export default function OverviewScreen() {
   });
   const [isLoading, setIsLoading] = useState(false);
 
- 
-
   // Reload data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       loadDashboardData(true); // Force refresh when tab is focused
-      
+
       // Also refresh after a short delay to catch any recent changes
       const timeout = setTimeout(() => {
         loadDashboardData(true);
       }, 500); // Reduced delay for faster updates
 
       return () => clearTimeout(timeout);
-    }, [selectedProfileId])
+    }, [selectedProfileId]),
   );
 
   const loadDashboardData = async (forceRefresh = false) => {
     if (isLoading && !forceRefresh) return; // Prevent multiple simultaneous loads unless forced
-    
+
     setIsLoading(true);
     try {
-      const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
+      const profileId =
+        selectedProfileId === "all" ? undefined : selectedProfileId;
       // Get service instances
       const accountService = getAccountService();
       const transactionService = getTransactionService();
-      
+
       // Get current date ranges
       const now = new Date();
 
@@ -83,28 +89,48 @@ export default function OverviewScreen() {
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
       // Batch all database calls for better performance
-      const [monthlyAccountBalances, weeklyExpenses, weeklyIncome, monthlyExpenses, categorySummary] = await Promise.all([
-        Promise.resolve(accountService.getMonthlyAccountBalances(now.getFullYear(), now.getMonth() + 1, profileId)),
-        Promise.resolve(transactionService.getTotalExpenses(
-          weekStart.toISOString().split("T")[0],
-          weekEnd.toISOString().split("T")[0],
-          profileId
-        )),
-        Promise.resolve(transactionService.getTotalIncome(
-          weekStart.toISOString().split("T")[0],
-          weekEnd.toISOString().split("T")[0],
-          profileId
-        )),
-        Promise.resolve(transactionService.getTotalExpenses(
-          monthStart.toISOString().split("T")[0],
-          monthEnd.toISOString().split("T")[0],
-          profileId
-        )),
-        Promise.resolve(transactionService.getCategorySummary(
-          monthStart.toISOString().split("T")[0],
-          monthEnd.toISOString().split("T")[0],
-          profileId
-        ))
+      const [
+        monthlyAccountBalances,
+        weeklyExpenses,
+        weeklyIncome,
+        monthlyExpenses,
+        categorySummary,
+      ] = await Promise.all([
+        Promise.resolve(
+          accountService.getMonthlyAccountBalances(
+            now.getFullYear(),
+            now.getMonth() + 1,
+            profileId,
+          ),
+        ),
+        Promise.resolve(
+          transactionService.getTotalExpenses(
+            weekStart.toISOString().split("T")[0],
+            weekEnd.toISOString().split("T")[0],
+            profileId,
+          ),
+        ),
+        Promise.resolve(
+          transactionService.getTotalIncome(
+            weekStart.toISOString().split("T")[0],
+            weekEnd.toISOString().split("T")[0],
+            profileId,
+          ),
+        ),
+        Promise.resolve(
+          transactionService.getTotalExpenses(
+            monthStart.toISOString().split("T")[0],
+            monthEnd.toISOString().split("T")[0],
+            profileId,
+          ),
+        ),
+        Promise.resolve(
+          transactionService.getCategorySummary(
+            monthStart.toISOString().split("T")[0],
+            monthEnd.toISOString().split("T")[0],
+            profileId,
+          ),
+        ),
       ]);
 
       // Get total balance for the selected profile
@@ -155,18 +181,42 @@ export default function OverviewScreen() {
       maxAmount > 0 ? (data.weeklyExpenses / maxAmount) * 80 : 0;
 
     return (
-      <View className="m-5 bg-white rounded-xl p-5 border border-gray-200" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-        <Text className="text-lg font-bold mb-5" style={{ color: theme.colors.text }}>This Week</Text>
+      <View
+        className="m-5 bg-white rounded-xl p-5 border border-gray-200"
+        style={{
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.border,
+        }}
+      >
+        <Text
+          className="text-lg font-bold mb-5"
+          style={{ color: theme.colors.text }}
+        >
+          This Week
+        </Text>
         <View className="flex-row justify-around items-end h-30">
           <View className="items-center flex-1">
             <View className="h-20 w-10 justify-end mb-2.5">
               <View
                 className="w-10 rounded min-h-1"
-                style={[{ height: incomeHeight, backgroundColor: theme.colors.success }]}
+                style={[
+                  {
+                    height: incomeHeight,
+                    backgroundColor: theme.colors.success,
+                  },
+                ]}
               />
             </View>
-            <Text className="text-xs mt-1.25" style={{ color: theme.colors.textSecondary }}>Income</Text>
-            <Text className="text-sm font-bold mt-0.5" style={{ color: theme.colors.text }}>
+            <Text
+              className="text-xs mt-1.25"
+              style={{ color: theme.colors.textSecondary }}
+            >
+              Income
+            </Text>
+            <Text
+              className="text-sm font-bold mt-0.5"
+              style={{ color: theme.colors.text }}
+            >
               {formatCurrency(data.weeklyIncome)}
             </Text>
           </View>
@@ -174,11 +224,24 @@ export default function OverviewScreen() {
             <View className="h-20 w-10 justify-end mb-2.5">
               <View
                 className="w-10 rounded min-h-1"
-                style={[{ height: expenseHeight, backgroundColor: theme.colors.error }]}
+                style={[
+                  {
+                    height: expenseHeight,
+                    backgroundColor: theme.colors.error,
+                  },
+                ]}
               />
             </View>
-            <Text className="text-xs mt-1.25" style={{ color: theme.colors.textSecondary }}>Expenses</Text>
-            <Text className="text-sm font-bold mt-0.5" style={{ color: theme.colors.text }}>
+            <Text
+              className="text-xs mt-1.25"
+              style={{ color: theme.colors.textSecondary }}
+            >
+              Expenses
+            </Text>
+            <Text
+              className="text-sm font-bold mt-0.5"
+              style={{ color: theme.colors.text }}
+            >
               {formatCurrency(data.weeklyExpenses)}
             </Text>
           </View>
@@ -190,19 +253,30 @@ export default function OverviewScreen() {
   const renderCategoriesPieChart = () => {
     const total = data.categorySummary.reduce(
       (sum, cat) => sum + cat.amount,
-      0
+      0,
     );
 
     return (
-      <View className="m-5 rounded-xl p-5 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-        <Text className="text-lg font-bold mb-5" style={{ color: theme.colors.text }}>Top Categories</Text>
+      <View
+        className="m-5 rounded-xl p-5 border"
+        style={{
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.border,
+        }}
+      >
+        <Text
+          className="text-lg font-bold mb-5"
+          style={{ color: theme.colors.text }}
+        >
+          Top Categories
+        </Text>
         <View className="flex-row items-center">
-          <View 
+          <View
             className="justify-center items-center mr-5 rounded-full"
-            style={{ 
-              width: 100, 
-              height: 100, 
-              backgroundColor: theme.colors.primary 
+            style={{
+              width: 100,
+              height: 100,
+              backgroundColor: theme.colors.primary,
             }}
           >
             <Text className="text-base font-bold text-white">
@@ -220,23 +294,29 @@ export default function OverviewScreen() {
                 <View key={index} className="flex-row items-center mb-2">
                   <View
                     className="rounded-full mr-2"
-                    style={{ 
-                      width: 12, 
-                      height: 12, 
-                      backgroundColor: category.color 
+                    style={{
+                      width: 12,
+                      height: 12,
+                      backgroundColor: category.color,
                     }}
                   />
-                  <Text className="flex-1 text-sm" style={{ color: theme.colors.text }}>
+                  <Text
+                    className="flex-1 text-sm"
+                    style={{ color: theme.colors.text }}
+                  >
                     {category.category}
                   </Text>
-                  <Text className="text-sm font-bold mr-2" style={{ color: theme.colors.text }}>
+                  <Text
+                    className="text-sm font-bold mr-2"
+                    style={{ color: theme.colors.text }}
+                  >
                     {formatCurrency(category.amount)}
                   </Text>
-                  <Text 
-                    className="text-xs text-right" 
-                    style={{ 
+                  <Text
+                    className="text-xs text-right"
+                    style={{
                       color: theme.colors.textSecondary,
-                      width: 40 
+                      width: 40,
                     }}
                   >
                     {percentage.toFixed(1)}%
@@ -252,109 +332,262 @@ export default function OverviewScreen() {
 
   const renderAccountBalances = () => {
     return (
-      <View className="m-5 bg-white rounded-xl p-5 border border-gray-200" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-        <Text className="text-lg font-bold mb-5" style={{ color: theme.colors.text }}>Monthly Account Balances</Text>
+      <View
+        className="m-5 bg-white rounded-xl p-5 border border-gray-200"
+        style={{
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.border,
+        }}
+      >
+        <Text
+          className="text-lg font-bold mb-5"
+          style={{ color: theme.colors.text }}
+        >
+          Monthly Account Balances
+        </Text>
         {data.monthlyAccountBalances.length > 0 ? (
           <View className="mt-2.5">
             {data.monthlyAccountBalances.map((account, index) => (
-              <View key={account.accountId} className="flex-row justify-between items-center py-3 border-b border-opacity-30" style={{ borderBottomColor: theme.colors.border }}>
-                <Text className="text-sm flex-1" style={{ color: theme.colors.text }}>{account.name}</Text>
-                <Text className="text-base font-semibold" style={{ color: theme.colors.text }}>
+              <View
+                key={account.accountId}
+                className="flex-row justify-between items-center py-3 border-b border-opacity-30"
+                style={{ borderBottomColor: theme.colors.border }}
+              >
+                <Text
+                  className="text-sm flex-1"
+                  style={{ color: theme.colors.text }}
+                >
+                  {account.name}
+                </Text>
+                <Text
+                  className="text-base font-semibold"
+                  style={{ color: theme.colors.text }}
+                >
                   {formatCurrency(account.closingBalance)}
                 </Text>
               </View>
             ))}
-            <View className="flex-row justify-between items-center pt-4 mt-2 border-t-2" style={{ borderTopColor: theme.colors.primary }}>
-              <Text className="text-base font-bold flex-1" style={{ color: theme.colors.text }}>Total</Text>
-              <Text className="text-lg font-bold" style={{ color: theme.colors.primary }}>
+            <View
+              className="flex-row justify-between items-center pt-4 mt-2 border-t-2"
+              style={{ borderTopColor: theme.colors.primary }}
+            >
+              <Text
+                className="text-base font-bold flex-1"
+                style={{ color: theme.colors.text }}
+              >
+                Total
+              </Text>
+              <Text
+                className="text-lg font-bold"
+                style={{ color: theme.colors.primary }}
+              >
                 {formatCurrency(data.totalBalance)}
               </Text>
             </View>
           </View>
         ) : (
-          <Text className="text-sm text-center mt-5" style={{ color: theme.colors.textSecondary }}>No account data available</Text>
+          <Text
+            className="text-sm text-center mt-5"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            No account data available
+          </Text>
         )}
       </View>
     );
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: theme.colors.background }}>
-    <ScrollView 
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={isLoading}
-          onRefresh={loadDashboardData}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
-        />
-      }
+    <View
+      className="flex-1"
+      style={{ backgroundColor: theme.colors.background }}
     >
-      {/* Account Balance Header */}
-      <View className="px-5 pt-9 pb-5 border-b" style={{ backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }}>
-        <Text className="text-sm mb-1" style={{ color: theme.colors.textSecondary }}>Account balance</Text>
-        <Text className="text-3xl font-bold mb-2.5" style={{ color: theme.colors.text }}>{formatCurrency(data.totalBalance)}</Text>
-        <Text className="text-sm" style={{ color: theme.colors.textSecondary }}>
-          📅 This Month • {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-        </Text>
-      </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={loadDashboardData}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
+      >
+        {/* Account Balance Header */}
+        <View
+          className="px-5 pt-9 pb-5 border-b"
+          style={{
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+          }}
+        >
+          <Text
+            className="text-sm mb-1"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Account balance
+          </Text>
+          <Text
+            className="text-3xl font-bold mb-2.5"
+            style={{ color: theme.colors.text }}
+          >
+            {formatCurrency(data.totalBalance)}
+          </Text>
+          <Text
+            className="text-sm"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            📅 This Month •{" "}
+            {new Date().toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            })}
+          </Text>
+        </View>
 
-      {/* Quick Summary Cards */}
-      <View className="p-5">
-        <View className="flex-row justify-between">
-          <View className="flex-1 bg-white rounded-xl p-4 mx-1 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text className="text-xs mb-2 uppercase" style={{ color: theme.colors.textSecondary }}>Income</Text>
-            <Text className="text-lg font-bold mb-1" style={{ color: theme.colors.success }}>{formatCurrency(data.weeklyIncome)}</Text>
-            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>This week</Text>
-          </View>
-          <View className="flex-1 bg-white rounded-xl p-4 mx-1 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text className="text-xs mb-2 uppercase" style={{ color: theme.colors.textSecondary }}>Expenses</Text>
-            <Text className="text-lg font-bold mb-1" style={{ color: theme.colors.error }}>{formatCurrency(data.weeklyExpenses)}</Text>
-            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>This week</Text>
-          </View>
-          <View className="flex-1 bg-white rounded-xl p-4 mx-1 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text className="text-xs mb-2 uppercase" style={{ color: theme.colors.textSecondary }}>Net</Text>
-            <Text className="text-lg font-bold mb-1" style={{ color: data.weeklyIncome - data.weeklyExpenses >= 0 ? theme.colors.success : theme.colors.error }}>
-              {formatCurrency(data.weeklyIncome - data.weeklyExpenses)}
-            </Text>
-            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>This week</Text>
+        {/* Quick Summary Cards */}
+        <View className="p-5">
+          <View className="flex-row justify-between">
+            <View
+              className="flex-1 bg-white rounded-xl p-4 mx-1 border"
+              style={{
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              }}
+            >
+              <Text
+                className="text-xs mb-2 uppercase"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                Income
+              </Text>
+              <Text
+                className="text-lg font-bold mb-1"
+                style={{ color: theme.colors.success }}
+              >
+                {formatCurrency(data.weeklyIncome)}
+              </Text>
+              <Text
+                className="text-xs"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                This week
+              </Text>
+            </View>
+            <View
+              className="flex-1 bg-white rounded-xl p-4 mx-1 border"
+              style={{
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              }}
+            >
+              <Text
+                className="text-xs mb-2 uppercase"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                Expenses
+              </Text>
+              <Text
+                className="text-lg font-bold mb-1"
+                style={{ color: theme.colors.error }}
+              >
+                {formatCurrency(data.weeklyExpenses)}
+              </Text>
+              <Text
+                className="text-xs"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                This week
+              </Text>
+            </View>
+            <View
+              className="flex-1 bg-white rounded-xl p-4 mx-1 border"
+              style={{
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              }}
+            >
+              <Text
+                className="text-xs mb-2 uppercase"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                Net
+              </Text>
+              <Text
+                className="text-lg font-bold mb-1"
+                style={{
+                  color:
+                    data.weeklyIncome - data.weeklyExpenses >= 0
+                      ? theme.colors.success
+                      : theme.colors.error,
+                }}
+              >
+                {formatCurrency(data.weeklyIncome - data.weeklyExpenses)}
+              </Text>
+              <Text
+                className="text-xs"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                This week
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      {/* Weekly Chart */}
-      {renderWeeklyChart()}
+        {/* Weekly Chart */}
+        {renderWeeklyChart()}
 
-      {/* Account Balances */}
-      {renderAccountBalances()}
+        {/* Account Balances */}
+        {renderAccountBalances()}
 
-      {/* Categories Pie Chart */}
-      {renderCategoriesPieChart()}
+        {/* Categories Pie Chart */}
+        {renderCategoriesPieChart()}
 
-      {/* Quick Actions */}
-      <View className="p-5">
-        <Text className="text-lg font-bold mb-4" style={{ color: theme.colors.text }}>Quick Actions</Text>
-        <View className="flex-row flex-wrap justify-between">
-          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text className="text-2xl mb-2">📊</Text>
-            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>View Reports</Text>
-          </View>
-          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text className="text-2xl mb-2">🎯</Text>
-            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>Set Budget</Text>
-          </View>
-          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text className="text-2xl mb-2">📋</Text>
-            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>Categories</Text>
-          </View>
-          <View className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border" style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}>
-            <Text className="text-2xl mb-2">⚙️</Text>
-            <Text className="text-sm text-center" style={{ color: theme.colors.text }}>Settings</Text>
+        {/* Quick Actions */}
+        <View className="p-5">
+          <Text
+            className="text-lg font-bold mb-4"
+            style={{ color: theme.colors.text }}
+          >
+            Quick Actions
+          </Text>
+          <View className="flex-row flex-wrap justify-between">
+            <Pressable
+              onPress={() => router.push("/(tabs)/budget")}
+              className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border"
+              style={{
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              }}
+            >
+              <Text className="text-2xl mb-2">🎯</Text>
+              <Text
+                className="text-sm text-center"
+                style={{ color: theme.colors.text }}
+              >
+                Set Budget
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/(tabs)/profiles")}
+              className="w-[48%] bg-white rounded-xl p-5 items-center mb-3 border"
+              style={{
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              }}
+            >
+                <Text className="text-2xl mb-2">📋</Text>
+                {/* <Text style={{ color: theme.colors.text }} className="text-xl font-bold my-2">10</Text> */}
+                <Text
+                  style={{ color: theme.colors.text }}
+                  className="text-sm text-center"
+                >
+                  Add Business
+                </Text>
+            </Pressable>
           </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
     </View>
   );
 }

@@ -25,11 +25,6 @@ export default function TransactionsScreen() {
   const [categorySummary, setCategorySummary] = useState<{category: string, amount: number, color: string, percentage: number}[]>([]);
   const [totals, setTotals] = useState({ expenses: 0, balance: 0, income: 0 });
 
-  useEffect(() => {
-    loadTransactions();
-    loadCategoryData();
-  }, [selectedPeriod, selectedProfileId]);
-
   useFocusEffect(
     React.useCallback(() => {
       loadTransactions();
@@ -62,10 +57,12 @@ export default function TransactionsScreen() {
         startDate = monthStart.toISOString().split('T')[0];
         endDate = monthEnd.toISOString().split('T')[0];
       } else if (selectedPeriod === 'This Week') {
-        const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
-        const weekEnd = new Date(now.setDate(now.getDate() - now.getDay() + 6));
-        startDate = weekStart.toISOString().split('T')[0];
-        endDate = weekEnd.toISOString().split('T')[0];
+        const firstDayOfWeek = new Date(now);
+        firstDayOfWeek.setDate(now.getDate() - now.getDay()); // Assuming Sunday is the first day (0)
+        const lastDayOfWeek = new Date(firstDayOfWeek);
+        lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+        startDate = firstDayOfWeek.toISOString().split('T')[0];
+        endDate = lastDayOfWeek.toISOString().split('T')[0];
       } else {
         const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
         const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);

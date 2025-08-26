@@ -57,17 +57,17 @@ export default function ManageTab() {
       color: '#10b981',
       onPress: () => setShowExportData(true),
     },
-    {
-      id: 'analytics',
-      title: 'Analytics',
-      subtitle: 'View spending insights and reports',
-      icon: 'chart-line',
-      color: '#f59e0b',
-      onPress: () => {
-        // TODO: Add analytics functionality
-        console.log('Analytics functionality to be implemented');
-      },
-    },
+    // {
+    //   id: 'analytics',
+    //   title: 'Analytics',
+    //   subtitle: 'View spending insights and reports',
+    //   icon: 'chart-line',
+    //   color: '#f59e0b',
+    //   onPress: () => {
+    //     // TODO: Add analytics functionality
+    //     console.log('Analytics functionality to be implemented');
+    //   },
+    // },
     
   ];
 
@@ -114,7 +114,7 @@ export default function ManageTab() {
         </View>
 
         {/* Quick Stats Section */}
-        <View style={styles.statsSection}>
+        {/* <View style={styles.statsSection}>
           <Text style={styles.statsTitle}>Quick Stats</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
@@ -145,7 +145,7 @@ export default function ManageTab() {
               <Text style={styles.statLabel}>Budgets</Text>
             </View>
           </View>
-        </View>
+        </View> */}
       </ScrollView>
 
       {/* Modal Screens */}
