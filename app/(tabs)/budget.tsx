@@ -1,137 +1,157 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
+import { getBudgetService, getAccountService, BudgetSummary } from '../../database';
 
 export default function BudgetScreen() {
   const { theme } = useTheme();
-  const { currency } = useSettings();
+  const { formatCurrency, selectedProfileId } = useSettings();
   const styles = createStyles(theme);
-  const [selectedPeriod, setSelectedPeriod] = useState('JUNE 2023');
 
-  const budgetData = {
-    available: 1600,
-    expenseLimit: 2900,
-    spent: 2200.37,
-    categories: [
-      { name: 'Transport', spent: 636.84, limit: 600, color: '#10b981' },
-      { name: 'Shopping', spent: 573.12, limit: 600, color: '#f97316' },
-      { name: 'Restaurant', spent: 516.38, limit: 700, color: '#ef4444' },
-      { name: 'Food', spent: 474.03, limit: 1000, color: '#3b82f6' },
-    ],
-    unbudgeted: [
-      { name: 'Fast budget', amount: 149.07, icon: '⚡' },
-      { name: 'Gift', amount: 434.72, icon: '🎁' },
-      { name: 'Family', amount: 589.07, icon: '👨‍👩‍👧‍👦' },
-      { name: 'Free time', amount: 373.12, icon: '🎮' },
-    ]
-  };
+  const [budgetData, setBudgetData] = useState<BudgetSummary | null>(null);
+  const [accountBalance, setAccountBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const formatCurrency = (amount: number) => {
-    return `${currency}${amount.toFixed(2)}`;
-  };
+  const loadBudgetData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
+
+      const budgetService = getBudgetService();
+      const summary = budgetService.getMonthlyBudgetSummary(year, month, profileId);
+      setBudgetData(summary);
+
+      const accountService = getAccountService();
+      const balance = accountService.getTotalAccountsBalance(profileId);
+      setAccountBalance(balance);
+    } catch (error) {
+      console.error("Error loading budget data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedProfileId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadBudgetData();
+    }, [loadBudgetData])
+  );
 
   const getProgressPercentage = (spent: number, limit: number) => {
+    if (limit === 0) return 0;
     return Math.min((spent / limit) * 100, 100);
   };
 
+  const now = new Date();
+  const periodLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const periodRangeLabel = `${monthStart} - ${monthEnd}`;
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={loadBudgetData} tintColor={theme.colors.primary} />
+      }
+    >
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerSubtext}>Account balance</Text>
-        <Text style={styles.headerAmount}>$8,025.85</Text>
-        <Text style={styles.headerPeriod}>📅 {selectedPeriod} • Jun 1, 2023 - Jun 30, 2023</Text>
+        <Text style={styles.headerAmount}>{formatCurrency(accountBalance)}</Text>
+        <Text style={styles.headerPeriod}>📅 {periodLabel} • {periodRangeLabel}</Text>
       </View>
 
-      {/* Budget Overview */}
-      <View style={styles.budgetOverview}>
-        <View style={styles.budgetRow}>
-          <View style={styles.budgetCard}>
-            <Text style={styles.budgetLabel}>Budget</Text>
-            <Text style={styles.budgetTitle}>EXPENSES</Text>
-            <Text style={styles.budgetSubtext}>Available</Text>
-            <Text style={styles.availableAmount}>{formatCurrency(budgetData.available)}</Text>
-          </View>
-          <View style={styles.budgetCard}>
-            <Text style={styles.budgetLabel}>Budget</Text>
-            <Text style={styles.budgetTitle}>INCOME</Text>
-          </View>
-        </View>
-
-        {/* Expense Budget Bar */}
-        <View style={styles.budgetBar}>
-          <Text style={styles.budgetBarLabel}>Expense budget</Text>
-          <Text style={styles.budgetBarAmount}>{formatCurrency(budgetData.spent)}</Text>
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <View 
-                style={[
-                  styles.progressFill, 
-                  { 
-                    width: `${getProgressPercentage(budgetData.spent, budgetData.expenseLimit)}%`,
-                    backgroundColor: budgetData.spent > budgetData.expenseLimit ? '#ef4444' : '#14b8a6'
-                  }
-                ]} 
-              />
+      {loading && !budgetData ? (
+        <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
+      ) : budgetData && (
+        <View style={styles.budgetOverview}>
+          <View style={styles.budgetRow}>
+            <View style={styles.budgetCard}>
+              <Text style={styles.budgetLabel}>Budget</Text>
+              <Text style={styles.budgetTitle}>EXPENSES</Text>
+              <Text style={styles.budgetSubtext}>Available</Text>
+              <Text style={styles.availableAmount}>{formatCurrency(budgetData.available)}</Text>
             </View>
-            <Text style={styles.progressLimit}>Limit: {formatCurrency(budgetData.expenseLimit)}</Text>
-          </View>
-        </View>
-
-        {/* Budgeted Categories */}
-        <View style={styles.categoriesContainer}>
-          <Text style={styles.categoriesTitle}>Budgeted categories</Text>
-          {budgetData.categories.map((category, index) => (
-            <View key={index} style={styles.categoryItem}>
-              <View style={styles.categoryHeader}>
-                <View style={styles.categoryLeft}>
-                  <View style={[styles.categoryIcon, { backgroundColor: category.color }]}>
-                    <Text style={styles.categoryEmoji}>
-                      {category.name === 'Transport' ? '🚗' : 
-                       category.name === 'Shopping' ? '🛍️' :
-                       category.name === 'Restaurant' ? '🍽️' : '🍎'}
-                    </Text>
-                  </View>
-                  <Text style={styles.categoryName}>{category.name}</Text>
-                </View>
-                <Text style={styles.categoryAmount}>{formatCurrency(category.spent)}</Text>
-              </View>
-              <View style={styles.categoryProgress}>
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { 
-                          width: `${getProgressPercentage(category.spent, category.limit)}%`,
-                          backgroundColor: category.color
-                        }
-                      ]} 
-                    />
-                  </View>
-                  <Text style={styles.categoryLimit}>{formatCurrency(category.limit)}</Text>
-                </View>
-                <Text style={styles.categorySpent}>{formatCurrency(category.spent)}</Text>
-              </View>
+            <View style={styles.budgetCard}>
+              <Text style={styles.budgetLabel}>Budget</Text>
+              <Text style={styles.budgetTitle}>INCOME</Text>
+              {/* Income budget can be implemented later */}
             </View>
-          ))}
-        </View>
+          </View>
 
-        {/* Unbudgeted */}
-        <View style={styles.unbudgetedContainer}>
-          <Text style={styles.unbudgetedTitle}>Unbudgeted</Text>
-          <View style={styles.unbudgetedGrid}>
-            {budgetData.unbudgeted.map((item, index) => (
-              <TouchableOpacity key={index} style={styles.unbudgetedItem}>
-                <Text style={styles.unbudgetedIcon}>{item.icon}</Text>
-                <Text style={styles.unbudgetedName}>{item.name}</Text>
-                <Text style={styles.unbudgetedAmount}>{formatCurrency(item.amount)}</Text>
-              </TouchableOpacity>
+          <View style={styles.budgetBar}>
+            <Text style={styles.budgetBarLabel}>Expense budget</Text>
+            <Text style={styles.budgetBarAmount}>{formatCurrency(budgetData.spent)}</Text>
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <View 
+                  style={[
+                    styles.progressFill, 
+                    { 
+                      width: `${getProgressPercentage(budgetData.spent, budgetData.expenseLimit)}%`,
+                      backgroundColor: budgetData.spent > budgetData.expenseLimit ? '#ef4444' : '#14b8a6'
+                    }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.progressLimit}>Limit: {formatCurrency(budgetData.expenseLimit)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.categoriesContainer}>
+            <Text style={styles.categoriesTitle}>Budgeted categories</Text>
+            {budgetData.categories.map((category, index) => (
+              <View key={index} style={styles.categoryItem}>
+                <View style={styles.categoryHeader}>
+                  <View style={styles.categoryLeft}>
+                    <View style={[styles.categoryIcon, { backgroundColor: category.color }]}>
+                      <Text style={styles.categoryEmoji}>{category.icon}</Text>
+                    </View>
+                    <Text style={styles.categoryName}>{category.name}</Text>
+                  </View>
+                  <Text style={styles.categoryAmount}>{formatCurrency(category.spent)}</Text>
+                </View>
+                <View style={styles.categoryProgress}>
+                  <View style={styles.progressContainer}>
+                    <View style={styles.progressBar}>
+                      <View 
+                        style={[
+                          styles.progressFill, 
+                          { 
+                            width: `${getProgressPercentage(category.spent, category.limit)}%`,
+                            backgroundColor: category.color
+                          }
+                        ]} 
+                      />
+                    </View>
+                    <Text style={styles.categoryLimit}>{formatCurrency(category.limit)}</Text>
+                  </View>
+                  <Text style={styles.categorySpent}>{formatCurrency(category.spent)}</Text>
+                </View>
+              </View>
             ))}
           </View>
+
+          <View style={styles.unbudgetedContainer}>
+            <Text style={styles.unbudgetedTitle}>Unbudgeted</Text>
+            <View style={styles.unbudgetedGrid}>
+              {budgetData.unbudgeted.map((item, index) => (
+                <TouchableOpacity key={index} style={styles.unbudgetedItem}>
+                  <Text style={styles.unbudgetedIcon}>{item.icon}</Text>
+                  <Text style={styles.unbudgetedName}>{item.name}</Text>
+                  <Text style={styles.unbudgetedAmount}>{formatCurrency(item.amount)}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
-      </View>
+      )}
     </ScrollView>
   );
 }

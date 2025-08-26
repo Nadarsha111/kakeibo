@@ -5,6 +5,7 @@ import ProfileService from './ProfileService';
 import TransactionService from './TransactionService';
 import CategoryService from './CategoryService';
 import LoanService from './LoanService';
+import BudgetService from './BudgetService';
 import SettingsService from './SettingsService';
 
 // Re-export the DatabaseConnector and all services for easy access
@@ -14,6 +15,7 @@ export { default as ProfileService } from './ProfileService';
 export { default as TransactionService } from './TransactionService';
 export { default as CategoryService } from './CategoryService';
 export { default as LoanService } from './LoanService';
+export { default as BudgetService, type BudgetSummary } from './BudgetService';
 export { default as SettingsService } from './SettingsService';
 
 /**
@@ -26,6 +28,7 @@ export class ServiceFactory {
   private static _transactionService: TransactionService;
   private static _categoryService: CategoryService;
   private static _loanService: LoanService;
+  private static _budgetService: BudgetService;
   private static _settingsService: SettingsService;
 
   /**
@@ -79,6 +82,16 @@ export class ServiceFactory {
   }
 
   /**
+   * Get BudgetService instance
+   */
+  static getBudgetService(): BudgetService {
+    if (!this._budgetService) {
+      this._budgetService = new BudgetService();
+    }
+    return this._budgetService;
+  }
+
+  /**
    * Get SettingsService instance
    */
   static getSettingsService(): SettingsService {
@@ -98,6 +111,7 @@ export class ServiceFactory {
       transactionService: this.getTransactionService(),
       categoryService: this.getCategoryService(),
       loanService: this.getLoanService(),
+      budgetService: this.getBudgetService(),
       settingsService: this.getSettingsService(),
     };
   }
@@ -111,6 +125,7 @@ export class ServiceFactory {
     this._transactionService = undefined as any;
     this._categoryService = undefined as any;
     this._loanService = undefined as any;
+    this._budgetService = undefined as any;
     this._settingsService = undefined as any;
   }
 }
@@ -121,6 +136,7 @@ export const getProfileService = () => ServiceFactory.getProfileService();
 export const getTransactionService = () => ServiceFactory.getTransactionService();
 export const getCategoryService = () => ServiceFactory.getCategoryService();
 export const getLoanService = () => ServiceFactory.getLoanService();
+export const getBudgetService = () => ServiceFactory.getBudgetService();
 export const getSettingsService = () => ServiceFactory.getSettingsService();
 
 /**
@@ -180,6 +196,7 @@ export class DatabaseUtils {
         transactions: false,
         categories: false,
         loans: false,
+        budgets: false,
         settings: false,
       };
 
@@ -225,6 +242,13 @@ export class DatabaseUtils {
       }
 
       try {
+        ServiceFactory.getBudgetService().getBudgets();
+        services.budgets = true;
+      } catch (e) {
+        console.error('Budget service error:', e);
+      }
+
+      try {
         ServiceFactory.getSettingsService().getAllSettings();
         services.settings = true;
       } catch (e) {
@@ -247,6 +271,7 @@ export class DatabaseUtils {
           transactions: false,
           categories: false,
           loans: false,
+          budgets: false,
           settings: false,
         },
         error: error instanceof Error ? error.message : 'Unknown error'
