@@ -203,16 +203,17 @@ export default function SettingsScreen() {
             rightComponent={<Text style={styles.chevron}>›</Text>}
             onPress={() => setExportDataVisible(true)}
           />
-          <SettingItem
+          {/* TODO:ADD SETTINGS */}
+          {/* <SettingItem
             title="Import Data"
             subtitle="Import transactions from CSV"
             rightComponent={<Text style={styles.chevron}>›</Text>}
-          />
-          <SettingItem
+          /> */}
+          {/* <SettingItem
             title="Clear All Data"
             subtitle="Remove all transactions and reset"
             rightComponent={<Text style={styles.chevron}>›</Text>}
-          />
+          /> */}
         </View>
 
         <View style={styles.section}>
@@ -223,14 +224,15 @@ export default function SettingsScreen() {
             rightComponent={<Text style={styles.chevron}>›</Text>}
             onPress={() => setManageCategoriesVisible(true)}
           />
-          <SettingItem
+          {/* TODO: */}
+          {/* <SettingItem
             title="Category Colors"
             subtitle="Customize category colors"
             rightComponent={<Text style={styles.chevron}>›</Text>}
-          />
+          /> */}
         </View>
-
-        <View style={styles.section}>
+        {/* TODO: */}
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>Security</Text>
           <SettingItem
             title="App Lock"
@@ -247,7 +249,7 @@ export default function SettingsScreen() {
               />
             }
           />
-        </View>
+        </View> */}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
