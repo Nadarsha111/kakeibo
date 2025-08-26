@@ -1,5 +1,5 @@
 import DatabaseConnector from "./DatabaseConnector";
-import { Budget, Category } from "../types";
+import { Budget, BudgetWithCategory, Category } from "../types";
 import TransactionService from "./TransactionService";
 
 export interface BudgetSummary {
@@ -29,16 +29,100 @@ class BudgetService {
     this.transactionService = new TransactionService();
   }
 
-  getBudgets(): (Budget & { categoryName: string })[] {
+  getBudgets(): BudgetWithCategory[] {
     try {
       return this.db.getAllSync(`
-        SELECT b.*, c.name as categoryName
+        SELECT b.*, c.name as categoryName, c.color as categoryColor, c.icon as categoryIcon
         FROM budgets b
         JOIN categories c ON b.categoryId = c.id
-      `) as (Budget & { categoryName: string })[];
+        ORDER BY c.name
+      `) as BudgetWithCategory[];
     } catch (error) {
       console.error("Error getting budgets:", error);
       return [];
+    }
+  }
+
+  addBudget(budget: Omit<Budget, "id">): number {
+    try {
+      // For monthly budgets, set start and end to the current month
+      if (budget.period === "monthly" && !budget.startDate) {
+        const now = new Date();
+        budget.startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+          .toISOString()
+          .split("T")[0];
+        budget.endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+          .toISOString()
+          .split("T")[0];
+      }
+
+      const result = this.db.runSync(
+        "INSERT INTO budgets (categoryId, amount, period, startDate, endDate) VALUES (?, ?, ?, ?, ?)",
+        [
+          budget.categoryId,
+          budget.amount,
+          budget.period,
+          budget.startDate,
+          budget.endDate,
+        ],
+      );
+
+      console.log("Budget added:", {
+        id: result.lastInsertRowId,
+        categoryId: budget.categoryId,
+        amount: budget.amount,
+      });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error("Error adding budget:", error);
+      throw error;
+    }
+  }
+
+  updateBudget(
+    id: number,
+    updates: Partial<Omit<Budget, "id" | "period" | "startDate" | "endDate">>,
+  ): boolean {
+    try {
+      const fields = [];
+      const values = [];
+
+      if (updates.categoryId !== undefined) {
+        fields.push("categoryId = ?");
+        values.push(updates.categoryId);
+      }
+      if (updates.amount !== undefined) {
+        fields.push("amount = ?");
+        values.push(updates.amount);
+      }
+
+      if (fields.length === 0) {
+        console.warn("No fields to update for budget:", id);
+        return false;
+      }
+
+      values.push(id);
+      this.db.runSync(
+        `UPDATE budgets SET ${fields.join(", ")} WHERE id = ?`,
+        values,
+      );
+
+      console.log("Budget updated:", id);
+      return true;
+    } catch (error) {
+      console.error("Error updating budget:", error);
+      return false;
+    }
+  }
+
+  deleteBudget(id: number): boolean {
+    try {
+      this.db.runSync("DELETE FROM budgets WHERE id = ?", [id]);
+      console.log("Budget deleted:", id);
+      return true;
+    } catch (error) {
+      console.error("Error deleting budget:", error);
+      return false;
     }
   }
 
@@ -64,11 +148,12 @@ class BudgetService {
         WHERE b.period = 'monthly'
       `);
 
-      const allTransactions = this.transactionService.getTransactionsByDateRange(
-        startDate,
-        endDate,
-        profileId,
-      );
+      const allTransactions =
+        this.transactionService.getTransactionsByDateRange(
+          startDate,
+          endDate,
+          profileId,
+        );
 
       const budgetedCategories = allBudgets.map((budget) => {
         const spent = allTransactions

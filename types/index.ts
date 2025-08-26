@@ -113,6 +113,7 @@ export interface Budget {
 export interface BudgetWithCategory extends Budget {
   categoryName: string;
   categoryColor: string;
+  categoryIcon: string;
 }
 
 /**
