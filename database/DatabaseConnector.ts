@@ -52,7 +52,7 @@ class DatabaseConnector {
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS accounts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          profileId INTEGER REFERENCES profiles(id),
+          profileId INTEGER REFERENCES profiles(id) NOT NULL,
           name TEXT NOT NULL,
           type TEXT NOT NULL CHECK (type IN ('savings', 'checking', 'credit_card', 'loan', 'investment', 'cash')),
           balance REAL NOT NULL DEFAULT 0,
@@ -126,6 +126,7 @@ class DatabaseConnector {
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS loans (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          profileId INTEGER REFERENCES profiles(id) NOT NULL,
           borrowerName TEXT NOT NULL,
           borrowerContact TEXT,
           lenderName TEXT,
@@ -220,12 +221,14 @@ class DatabaseConnector {
 
   private insertDefaultProfiles(): void {
     try {
-      const existingProfiles = this.db.getAllSync(
+      const existingProfile = this.db.getFirstSync(
         "SELECT COUNT(*) as count FROM profiles",
-      );
-      if ((existingProfiles[0] as any).count > 0) {
+      ) as { count: number } | undefined;
+
+      if (existingProfile && existingProfile.count > 0) {
         return; // Profiles already exist
       }
+
       const now = new Date().toISOString();
       this.db.runSync(
         "INSERT INTO profiles (name, description, createdAt, updatedAt) VALUES (?, ?, ?, ?)",
