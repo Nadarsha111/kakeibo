@@ -13,6 +13,7 @@ export default function Layout() {
           <DrizzleStudioProvider>
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+
           </Stack>
         </DrizzleStudioProvider>
         </ThemeProvider>

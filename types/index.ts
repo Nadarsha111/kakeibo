@@ -1,79 +1,86 @@
-export interface Account {
+/**
+ * Profile for separating personal and business finances
+ */
+export interface Profile {
   id: number;
   name: string;
-  type: 'savings' | 'checking' | 'credit_card' | 'loan' | 'investment' | 'cash';
-  balance: number;
-  currency: string;
-  bankName?: string;
-  accountNumber?: string;
-  isActive: boolean;
+  description?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * Represents a financial account (e.g., bank account, credit card, cash)
+ */
+export interface Account {
+  id: number;
+  profileId: number;
+  name: string;
+  type: 'savings' | 'checking' | 'credit_card' | 'loan' | 'investment' | 'cash';
+  balance: number;
+  currency: string;
+  bankName?: string | null;
+  accountNumber?: string | null;
+  isActive: boolean | number; // SQLite uses 1/0 for boolean
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Represents a single income or expense transaction
+ */
 export interface Transaction {
   id: number;
   amount: number;
   type: 'income' | 'expense';
   category: string;
-  description: string;
+  description?: string | null;
   date: string;
   paymentMethod: 'cash' | 'credit_card' | 'debit_card';
-  accountId?: number;
-  priority?: 'need' | 'want';
+  accountId?: number | null;
+  priority?: 'need' | 'want' | null;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * Represents a category for transactions
+ */
 export interface Category {
   id: number;
   name: string;
   color: string;
   icon: string;
   type: 'income' | 'expense';
-  budgetLimit?: number;
+  budgetLimit?: number | null;
 }
 
-export interface Budget {
-  id: number;
-  categoryId: number;
-  amount: number;
-  period: 'weekly' | 'monthly' | 'yearly';
-  startDate: string;
-  endDate: string;
-}
-
-// Extended Budget type with category information from JOIN queries
-export interface BudgetWithCategory extends Budget {
-  categoryName: string;
-  categoryColor: string;
-}
-
-export interface AccountBalance {
-  id: number;
-  totalBalance: number;
-  lastUpdated: string;
-}
-
+/**
+ * Represents a loan or borrowing record
+ */
 export interface Loan {
   id: number;
-  borrowerName: string; // Person who borrowed the money when isLending = true
-  borrowerContact?: string;
-  lenderName?: string; // Person who lent the money when isLending = false
-  lenderContact?: string;
+  profileId: number;
+  borrowerName: string;
+  borrowerContact?: string | null;
+  lenderName?: string | null;
+  lenderContact?: string | null;
   amount: number;
   lentDate: string;
-  expectedReturnDate?: string;
-  actualReturnDate?: string;
+  expectedReturnDate?: string | null;
+  actualReturnDate?: string | null;
   returnedAmount: number;
   status: 'active' | 'partially_paid' | 'fully_paid' | 'overdue';
-  description?: string;
-  accountId?: number;
-  isLending: boolean; // true for money lent out, false for borrowings
+  description?: string | null;
+  accountId?: number | null;
+  isLending: boolean | number; // SQLite uses 1/0 for boolean
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * Summary of all loan activities
+ */
 export interface LoanSummary {
   totalLoaned: number;
   totalBorrowed: number;
@@ -85,4 +92,33 @@ export interface LoanSummary {
   activeBorrowings: number;
   overdueLoans: number;
   overdueBorrowings: number;
+}
+
+/**
+ * Represents a budget for a specific category and period
+ */
+export interface Budget {
+  id: number;
+  categoryId: number;
+  amount: number;
+  period: 'weekly' | 'monthly' | 'yearly';
+  startDate: string;
+  endDate: string;
+}
+
+/**
+ * Budget information joined with its category details
+ */
+export interface BudgetWithCategory extends Budget {
+  categoryName: string;
+  categoryColor: string;
+}
+
+/**
+ * Represents the total balance across all accounts at a point in time
+ */
+export interface AccountBalance {
+  id: number;
+  totalBalance: number;
+  lastUpdated: string;
 }

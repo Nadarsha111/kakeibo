@@ -30,6 +30,16 @@ export default function ManageTab() {
       onPress: () => setShowManageCategories(true),
     },
     {
+      id: 'businesses',
+      title: 'Businesses',
+      subtitle: 'Manage business entities or vendors',
+      icon: 'store-outline', 
+      color: '#20c997', 
+      onPress: () => {
+        router.push('/profiles');
+      },
+    },
+    {
       id: 'budget',
       title: 'Budget Planning',
       subtitle: 'Set and track spending limits',
@@ -58,6 +68,7 @@ export default function ManageTab() {
         console.log('Analytics functionality to be implemented');
       },
     },
+    
   ];
 
   return (

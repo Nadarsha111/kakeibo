@@ -98,6 +98,13 @@ export default function TabLayout() {
               href: null
             }}
           />
+          <Tabs.Screen
+            name="profiles"
+            options={{
+              title: 'Profiles',
+              href: null
+            }}
+          />
         </Tabs>
         <TouchableOpacity
           style={[

@@ -1,6 +1,7 @@
 // Import all services and connectors
 import DatabaseConnector from './DatabaseConnector';
 import AccountService from './AccountService';
+import ProfileService from './ProfileService';
 import TransactionService from './TransactionService';
 import CategoryService from './CategoryService';
 import LoanService from './LoanService';
@@ -9,6 +10,7 @@ import SettingsService from './SettingsService';
 // Re-export the DatabaseConnector and all services for easy access
 export { default as DatabaseConnector } from './DatabaseConnector';
 export { default as AccountService } from './AccountService';
+export { default as ProfileService } from './ProfileService';
 export { default as TransactionService } from './TransactionService';
 export { default as CategoryService } from './CategoryService';
 export { default as LoanService } from './LoanService';
@@ -20,6 +22,7 @@ export { default as SettingsService } from './SettingsService';
  */
 export class ServiceFactory {
   private static _accountService: AccountService;
+  private static _profileService: ProfileService;
   private static _transactionService: TransactionService;
   private static _categoryService: CategoryService;
   private static _loanService: LoanService;
@@ -33,6 +36,16 @@ export class ServiceFactory {
       this._accountService = new AccountService();
     }
     return this._accountService;
+  }
+
+  /**
+   * Get ProfileService instance
+   */
+  static getProfileService(): ProfileService {
+    if (!this._profileService) {
+      this._profileService = new ProfileService();
+    }
+    return this._profileService;
   }
 
   /**
@@ -81,6 +94,7 @@ export class ServiceFactory {
   static getAllServices() {
     return {
       accountService: this.getAccountService(),
+      profileService: this.getProfileService(),
       transactionService: this.getTransactionService(),
       categoryService: this.getCategoryService(),
       loanService: this.getLoanService(),
@@ -93,6 +107,7 @@ export class ServiceFactory {
    */
   static resetServices(): void {
     this._accountService = undefined as any;
+    this._profileService = undefined as any;
     this._transactionService = undefined as any;
     this._categoryService = undefined as any;
     this._loanService = undefined as any;
@@ -102,6 +117,7 @@ export class ServiceFactory {
 
 // Convenience exports for direct service access
 export const getAccountService = () => ServiceFactory.getAccountService();
+export const getProfileService = () => ServiceFactory.getProfileService();
 export const getTransactionService = () => ServiceFactory.getTransactionService();
 export const getCategoryService = () => ServiceFactory.getCategoryService();
 export const getLoanService = () => ServiceFactory.getLoanService();
@@ -159,6 +175,7 @@ export class DatabaseUtils {
     try {
       const services = {
         database: false,
+        profiles: false,
         accounts: false,
         transactions: false,
         categories: false,
@@ -172,6 +189,13 @@ export class DatabaseUtils {
       services.database = true;
 
       // Test each service
+      try {
+        ServiceFactory.getProfileService().getProfiles();
+        services.profiles = true;
+      } catch (e) {
+        console.error('Profile service error:', e);
+      }
+
       try {
         ServiceFactory.getAccountService().getAccounts();
         services.accounts = true;
@@ -218,6 +242,7 @@ export class DatabaseUtils {
         status: 'error',
         services: {
           database: false,
+          profiles: false,
           accounts: false,
           transactions: false,
           categories: false,
