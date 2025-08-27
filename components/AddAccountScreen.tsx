@@ -30,11 +30,19 @@ export default function AddAccountScreen({
   const styles = createStyles(theme);
   
   const [name, setName] = useState('');
-  const [type, setType] = useState<Account['type']>('checking');
+  const [type, setType] = useState<Account['type']>('checking'); // Default to checking
   const [balance, setBalance] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
+
+  // Loan-specific state
+  const [isLending, setIsLending] = useState(true);
+  const [loanCounterpartyName, setLoanCounterpartyName] = useState('');
+  const [loanCounterpartyContact, setLoanCounterpartyContact] = useState('');
+  const [loanPrincipal, setLoanPrincipal] = useState('');
+  const [loanExpectedReturnDate, setLoanExpectedReturnDate] = useState('');
+  const [loanDescription, setLoanDescription] = useState('');
 
   const resetForm = () => {
     setName('');
@@ -43,18 +51,35 @@ export default function AddAccountScreen({
     setCurrency('USD');
     setBankName('');
     setAccountNumber('');
+    // Reset loan fields
+    setIsLending(true);
+    setLoanCounterpartyName('');
+    setLoanCounterpartyContact('');
+    setLoanPrincipal('');
+    setLoanExpectedReturnDate('');
+    setLoanDescription('');
   };
 
   const handleSubmit = () => {
     // Validation
-    if (!name.trim()) {
-      Alert.alert('Error', 'Please enter an account name');
-      return;
-    }
-
-    if (!balance || isNaN(parseFloat(balance))) {
-      Alert.alert('Error', 'Please enter a valid balance');
-      return;
+    if (type === 'loan') {
+      if (!loanCounterpartyName.trim()) {
+        Alert.alert('Error', `Please enter the ${isLending ? 'borrower' : 'lender'}'s name.`);
+        return;
+      }
+      if (!loanPrincipal || isNaN(parseFloat(loanPrincipal)) || parseFloat(loanPrincipal) <= 0) {
+        Alert.alert('Error', 'Please enter a valid loan amount.');
+        return;
+      }
+    } else {
+      if (!name.trim()) {
+        Alert.alert('Error', 'Please enter an account name.');
+        return;
+      }
+      if (!balance || isNaN(parseFloat(balance))) {
+        Alert.alert('Error', 'Please enter a valid initial balance.');
+        return;
+      }
     }
 
     try {
@@ -63,16 +88,36 @@ export default function AddAccountScreen({
         return;
       }
 
-      const accountData = {
-        profileId,
-        name: name.trim(),
-        type,
-        balance: parseFloat(balance),
-        currency: currency.trim() || 'USD',
-        bankName: bankName.trim() || undefined,
-        accountNumber: accountNumber.trim() || undefined,
-        isActive: true,
-      };
+      let accountData: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>;
+
+      if (type === 'loan') {
+        accountData = {
+          profileId,
+          name: `${isLending ? 'Loan to' : 'Loan from'} ${loanCounterpartyName.trim()}`,
+          type: 'loan',
+          balance: 0, // This will be set by the service
+          currency: currency.trim() || 'USD',
+          isActive: true,
+          isLending,
+          loanPrincipal: parseFloat(loanPrincipal),
+          loanCounterpartyName: loanCounterpartyName.trim(),
+          loanCounterpartyContact: loanCounterpartyContact.trim() || undefined,
+          loanLentDate: new Date().toISOString().split('T')[0],
+          loanExpectedReturnDate: loanExpectedReturnDate.trim() || undefined,
+          description: loanDescription.trim() || undefined,
+        };
+      } else {
+        accountData = {
+          profileId,
+          name: name.trim(),
+          type,
+          balance: parseFloat(balance),
+          currency: currency.trim() || 'USD',
+          bankName: bankName.trim() || undefined,
+          accountNumber: accountNumber.trim() || undefined,
+          isActive: true,
+        };
+      }
 
       const accountService = getAccountService();
       accountService.addAccount(accountData);
@@ -137,18 +182,6 @@ export default function AddAccountScreen({
         </View>
 
         <ScrollView style={styles.content}>
-          {/* Account Name */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Account Name</Text>
-            <TextInput
-              style={styles.textInput}
-              value={name}
-              onChangeText={setName}
-              placeholder="e.g., Main Checking, Chase Savings"
-              autoFocus
-            />
-          </View>
-
           {/* Account Type */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Account Type</Text>
@@ -156,73 +189,150 @@ export default function AddAccountScreen({
               {accountTypes.map((accountType) => (
                 <TouchableOpacity
                   key={accountType}
-                  style={[
-                    styles.typeCard,
-                    type === accountType && styles.typeCardActive,
-                  ]}
+                  style={[styles.typeCard, type === accountType && styles.typeCardActive]}
                   onPress={() => setType(accountType)}
                 >
-                  <Text style={styles.typeEmoji}>
-                    {getAccountTypeEmoji(accountType)}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.typeLabel,
-                      type === accountType && styles.typeLabelActive,
-                    ]}
-                  >
+                  <Text style={styles.typeEmoji}>{getAccountTypeEmoji(accountType)}</Text>
+                  <Text style={[styles.typeLabel, type === accountType && styles.typeLabelActive]}>
                     {getAccountTypeLabel(accountType)}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
+          
+          {type === 'loan' ? (
+            <>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Loan Type</Text>
+                <View style={styles.loanTypeContainer}>
+                  <TouchableOpacity
+                    style={[styles.loanTypeTab, isLending && styles.activeLoanType]}
+                    onPress={() => setIsLending(true)}
+                  >
+                    <Text style={[styles.loanTypeText, isLending && styles.activeLoanTypeText]}>
+                      Money Lent
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.loanTypeTab, !isLending && styles.activeLoanType]}
+                    onPress={() => setIsLending(false)}
+                  >
+                    <Text style={[styles.loanTypeText, !isLending && styles.activeLoanTypeText]}>
+                      Money Borrowed
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-          {/* Current Balance */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Current Balance</Text>
-            <View style={styles.balanceRow}>
-              <TextInput
-                style={styles.balanceInput}
-                value={balance}
-                onChangeText={setBalance}
-                placeholder="0.00"
-                keyboardType="decimal-pad"
-              />
-              <TextInput
-                style={styles.currencyInput}
-                value={currency}
-                onChangeText={setCurrency}
-                placeholder="USD"
-              />
-            </View>
-            <Text style={styles.helperText}>
-              Enter negative amount for debt accounts (loans, credit cards)
-            </Text>
-          </View>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  {isLending ? "Borrower Information" : "Lender Information"}
+                </Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={loanCounterpartyName}
+                  onChangeText={setLoanCounterpartyName}
+                  placeholder={`Enter ${isLending ? "borrower's" : "lender's"} name`}
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+                <TextInput
+                  style={[styles.textInput, { marginTop: 12 }]}
+                  value={loanCounterpartyContact}
+                  onChangeText={setLoanCounterpartyContact}
+                  placeholder="Contact (Optional)"
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+              </View>
 
-          {/* Bank Name (Optional) */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Bank Name (Optional)</Text>
-            <TextInput
-              style={styles.textInput}
-              value={bankName}
-              onChangeText={setBankName}
-              placeholder="e.g., Chase, Bank of America"
-            />
-          </View>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Loan Details</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={loanPrincipal}
+                  onChangeText={setLoanPrincipal}
+                  placeholder="Loan Amount"
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+                <TextInput
+                  style={[styles.textInput, { marginTop: 12 }]}
+                  value={loanExpectedReturnDate}
+                  onChangeText={setLoanExpectedReturnDate}
+                  placeholder="Expected Return Date (YYYY-MM-DD)"
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+                <TextInput
+                  style={[styles.textInput, styles.multilineInput, { marginTop: 12 }]}
+                  value={loanDescription}
+                  onChangeText={setLoanDescription}
+                  placeholder="Description (Optional)"
+                  multiline
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+              </View>
+            </>
+          ) : (
+            <>
+              {/* Account Name */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Account Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="e.g., Main Checking, Chase Savings"
+                  autoFocus
+                />
+              </View>
 
-          {/* Account Number (Optional) */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Account Number (Optional)</Text>
-            <TextInput
-              style={styles.textInput}
-              value={accountNumber}
-              onChangeText={setAccountNumber}
-              placeholder="Last 4 digits or identifier"
-              secureTextEntry
-            />
-          </View>
+              {/* Current Balance */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Current Balance</Text>
+                <View style={styles.balanceRow}>
+                  <TextInput
+                    style={styles.balanceInput}
+                    value={balance}
+                    onChangeText={setBalance}
+                    placeholder="0.00"
+                    keyboardType="decimal-pad"
+                  />
+                  <TextInput
+                    style={styles.currencyInput}
+                    value={currency}
+                    onChangeText={setCurrency}
+                    placeholder="USD"
+                  />
+                </View>
+                <Text style={styles.helperText}>
+                  Enter negative amount for debt accounts (e.g., credit cards)
+                </Text>
+              </View>
+
+              {/* Bank Name (Optional) */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Bank Name (Optional)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={bankName}
+                  onChangeText={setBankName}
+                  placeholder="e.g., Chase, Bank of America"
+                />
+              </View>
+
+              {/* Account Number (Optional) */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Account Number (Optional)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={accountNumber}
+                  onChangeText={setAccountNumber}
+                  placeholder="Last 4 digits or identifier"
+                  secureTextEntry
+                />
+              </View>
+            </>
+          )}
         </ScrollView>
       </View>
     </Modal>
@@ -292,6 +402,10 @@ const createStyles = (theme: any) =>
       borderColor: theme.colors.border,
       color: theme.colors.text,
     },
+    multilineInput: {
+      height: 80,
+      textAlignVertical: 'top',
+    },
     typeGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -357,5 +471,28 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
       marginTop: 8,
       fontStyle: 'italic',
+    },
+    loanTypeContainer: {
+      flexDirection: 'row',
+      backgroundColor: theme.colors.surface,
+      borderRadius: 8,
+      overflow: 'hidden',
+      marginBottom: 16,
+    },
+    loanTypeTab: {
+      flex: 1,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    activeLoanType: {
+      backgroundColor: theme.colors.primary,
+    },
+    loanTypeText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.textSecondary,
+    },
+    activeLoanTypeText: {
+      color: 'white',
     },
   });

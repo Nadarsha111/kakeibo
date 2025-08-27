@@ -17,7 +17,6 @@ import { Account, Profile } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
-import AddLoanScreen from "../../components/AddLoanScreen";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 
@@ -63,7 +62,6 @@ export default function AccountsScreen() {
     overdueLoans: 0,
     overdueBorrowings: 0,
   });
-  const [showAddLoan, setShowAddLoan] = useState(false);
 
   // Shared state
   const [refreshing, setRefreshing] = useState(false);
@@ -121,11 +119,6 @@ export default function AccountsScreen() {
   const handleAccountAdded = () => {
     loadData();
     setShowAddAccount(false);
-  };
-
-  const handleLoanAdded = () => {
-    loadData();
-    setShowAddLoan(false);
   };
 
   // Effect to debounce search term
@@ -548,19 +541,13 @@ export default function AccountsScreen() {
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => openModal({ initialType: 'transfer' })}
+            onPress={() => openModal({ initialType: "transfer" })}
           >
             <MaterialCommunityIcons name="swap-horizontal" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => {
-              if (activeTab === "accounts") {
-                setShowAddAccount(true);
-              } else {
-                setShowAddLoan(true);
-              }
-            }}
+            onPress={() => setShowAddAccount(true)}
           >
             <Text style={styles.addButtonText}>+ Add</Text>
           </TouchableOpacity>
@@ -591,12 +578,6 @@ export default function AccountsScreen() {
         visible={showAddAccount}
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
-        profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
-      />
-      <AddLoanScreen
-        visible={showAddLoan}
-        onClose={() => setShowAddLoan(false)}
-        onLoanAdded={handleLoanAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
       />
 
