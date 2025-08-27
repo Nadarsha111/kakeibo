@@ -1,5 +1,5 @@
 import DatabaseConnector from './DatabaseConnector';
-import { Account, AccountBalance } from '../types';
+import { Account } from '../types';
 
 /**
  * Service class for managing accounts and account balances
@@ -240,142 +240,29 @@ class AccountService {
   }
 
   /**
-   * Get current account balance summary
-   */
-  getAccountBalance(): AccountBalance | null {
-    try {
-      // Get total balance from current month's account balances
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-      
-      const result = this.db.getFirstSync(
-        'SELECT SUM(closingBalance) as totalBalance FROM account_balance WHERE year = ? AND month = ?',
-        [currentYear, currentMonth]
-      ) as { totalBalance: number | null };
-      
-      if (result && result.totalBalance !== null) {
-        return {
-          id: 1,
-          totalBalance: result.totalBalance,
-          lastUpdated: new Date().toISOString()
-        } as AccountBalance;
-      }
-      
-      // Fallback to sum of current account balances if no monthly data
-      const fallbackResult = this.db.getFirstSync(
-        'SELECT SUM(balance) as totalBalance FROM accounts WHERE isActive = 1'
-      ) as { totalBalance: number | null };
-      
-      return {
-        id: 1,
-        totalBalance: fallbackResult?.totalBalance || 0,
-        lastUpdated: new Date().toISOString()
-      } as AccountBalance;
-    } catch (error) {
-      console.error('Error getting account balance:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Update or insert monthly account balance for a specific account
-   */
-  updateMonthlyAccountBalance(accountId: number, year: number, month: number, closingBalance: number): void {
-    try {
-      const now = new Date().toISOString();
-      this.db.runSync(
-        `INSERT OR REPLACE INTO account_balance (accountId, year, month, closingBalance, lastUpdated)
-         VALUES (?, ?, ?, ?, ?)`,
-        [accountId, year, month, closingBalance, now]
-      );
-    } catch (error) {
-      console.error('Error updating monthly account balance:', error);
-    }
-  }
-
-  /**
    * Get monthly account balances for a specific year/month
    */
-  getMonthlyAccountBalances(year: number, month: number, profileId?: number): Array<{ accountId: number, name: string, closingBalance: number }> {
+  getMonthlyAccountBalances(profileId?: number): Array<{ accountId: number, name: string, type: Account['type'], closingBalance: number }> {
     try {
-      let query = `SELECT a.id as accountId, a.name, COALESCE(ab.closingBalance, a.balance) as closingBalance
-         FROM accounts a
-         LEFT JOIN account_balance ab ON a.id = ab.accountId AND ab.year = ? AND ab.month = ?
-         WHERE a.isActive = 1`;
-      const params: any[] = [year, month];
+      let query = `SELECT id as accountId, name, type, balance as closingBalance FROM accounts WHERE isActive = 1`;
+      const params: any[] = [];
 
       if (profileId) {
-        query += ' AND a.profileId = ?';
+        query += ' AND profileId = ?';
         params.push(profileId);
       }
 
-      query += ' ORDER BY a.name';
+      query += ' ORDER BY name';
 
       return this.db.getAllSync(
         query,
         params
-      ) as Array<{ accountId: number, name: string, closingBalance: number }>;
+      ) as Array<{ accountId: number, name: string, type: Account['type'], closingBalance: number }>;
     } catch (error) {
       console.error('Error getting monthly account balances:', error);
       return [];
     }
   }
-
-  /**
-   * Get accounts by type
-   */
-  getAccountsByType(type: Account['type']): Account[] {
-    try {
-      const accounts = this.db.getAllSync(
-        'SELECT * FROM accounts WHERE type = ? AND isActive = 1 ORDER BY name',
-        [type]
-      );
-      return accounts as Account[];
-    } catch (error) {
-      console.error('Error getting accounts by type:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Get account balance history for a specific account
-   */
-  getAccountBalanceHistory(accountId: number, startYear?: number, endYear?: number): Array<{
-    year: number;
-    month: number;
-    closingBalance: number;
-    lastUpdated: string;
-  }> {
-    try {
-      let query = 'SELECT year, month, closingBalance, lastUpdated FROM account_balance WHERE accountId = ?';
-      const params: any[] = [accountId];
-
-      if (startYear && endYear) {
-        query += ' AND (year BETWEEN ? AND ?)';
-        params.push(startYear, endYear);
-      } else if (startYear) {
-        query += ' AND year >= ?';
-        params.push(startYear);
-      } else if (endYear) {
-        query += ' AND year <= ?';
-        params.push(endYear);
-      }
-
-      query += ' ORDER BY year DESC, month DESC';
-
-      return this.db.getAllSync(query, params) as Array<{
-        year: number;
-        month: number;
-        closingBalance: number;
-        lastUpdated: string;
-      }>;
-    } catch (error) {
-      console.error('Error getting account balance history:', error);
-      return [];
-    }
-  }
-
   /**
    * Initialize default accounts if none exist
    */

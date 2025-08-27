@@ -16,7 +16,7 @@ export interface Account {
   id: number;
   profileId: number;
   name: string;
-  type: 'savings' | 'checking' | 'credit_card' | 'loan' | 'investment' | 'cash';
+  type: "savings" | "checking" | "credit_card" | "loan" | "investment" | "cash";
   balance: number;
   currency: string;
   bankName?: string | null;
@@ -26,7 +26,7 @@ export interface Account {
   isLending?: boolean | number | null;
   loanPrincipal?: number | null;
   loanReturnedAmount?: number | null;
-  loanStatus?: 'active' | 'partially_paid' | 'fully_paid' | 'overdue' | null;
+  loanStatus?: "active" | "partially_paid" | "fully_paid" | "overdue" | null;
   loanCounterpartyName?: string | null;
   loanCounterpartyContact?: string | null;
   loanLentDate?: string | null;
@@ -44,13 +44,13 @@ export interface Transaction {
   id: number;
   profileId: number;
   amount: number;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   category: string;
   description?: string | null;
   date: string;
-  paymentMethod: 'cash' | 'credit_card' | 'debit_card';
+  paymentMethod: "cash" | "credit_card" | "debit_card";
   accountId?: number | null;
-  priority?: 'need' | 'want' | null;
+  priority?: "need" | "want" | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -63,7 +63,7 @@ export interface Category {
   name: string;
   color: string;
   icon: string;
-  type: 'income' | 'expense';
+  type: "income" | "expense";
   budgetLimit?: number | null;
 }
 
@@ -74,7 +74,7 @@ export interface Budget {
   id: number;
   categoryId: number;
   amount: number;
-  period: 'weekly' | 'monthly' | 'yearly';
+  period: "weekly" | "monthly" | "yearly";
   startDate: string;
   endDate: string;
 }
@@ -86,13 +86,4 @@ export interface BudgetWithCategory extends Budget {
   categoryName: string;
   categoryColor: string;
   categoryIcon: string;
-}
-
-/**
- * Represents the total balance across all accounts at a point in time
- */
-export interface AccountBalance {
-  id: number;
-  totalBalance: number;
-  lastUpdated: string;
 }

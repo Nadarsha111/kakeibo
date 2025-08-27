@@ -11,12 +11,14 @@ import { getAccountService, getTransactionService } from "../../database";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import { router } from "expo-router";
+import { Account } from "../../types";
 
 interface DashboardData {
   totalBalance: number;
   monthlyAccountBalances: Array<{
     accountId: number;
     name: string;
+    type: Account['type'];
     closingBalance: number;
   }>;
   weeklyExpenses: number;
@@ -97,11 +99,7 @@ export default function OverviewScreen() {
         categorySummary,
       ] = await Promise.all([
         Promise.resolve(
-          accountService.getMonthlyAccountBalances(
-            now.getFullYear(),
-            now.getMonth() + 1,
-            profileId,
-          ),
+          accountService.getMonthlyAccountBalances(profileId),
         ),
         Promise.resolve(
           transactionService.getTotalExpenses(
@@ -363,7 +361,7 @@ export default function OverviewScreen() {
                   className="text-base font-semibold"
                   style={{
                     color:
-                      account.name.toLowerCase().includes("loan") || account.closingBalance < 0 ? theme.colors.error : theme.colors.text,
+                      account.type === 'loan' || account.closingBalance < 0 ? theme.colors.error : theme.colors.text,
                   }}
                 >
                   {formatCurrency(account.closingBalance)}

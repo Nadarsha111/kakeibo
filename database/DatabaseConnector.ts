@@ -122,20 +122,6 @@ class DatabaseConnector {
         );
       `);
 
-      // Create account_balance table for monthly balances per account
-      this.db.execSync(`
-        CREATE TABLE IF NOT EXISTS account_balance (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          accountId INTEGER NOT NULL,
-          year INTEGER NOT NULL,
-          month INTEGER NOT NULL,
-          closingBalance REAL NOT NULL,
-          lastUpdated TEXT NOT NULL,
-          UNIQUE(accountId, year, month),
-          FOREIGN KEY (accountId) REFERENCES accounts (id)
-        );
-      `);
-
       // Create app_settings table for persistent user preferences
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS app_settings (
