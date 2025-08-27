@@ -153,7 +153,12 @@ class LoanService {
   /**
    * Record a loan payment
    */
-  recordLoanPayment(loanId: number, paymentAmount: number, paymentDate: string): void {
+  recordLoanPayment(
+    loanId: number,
+    paymentAmount: number,
+    paymentDate: string,
+    paymentAccountId?: number,
+  ): void {
     try {
       DatabaseConnector.getInstance().withTransaction(() => {
         const loan = this.getLoanById(loanId);
@@ -169,7 +174,9 @@ class LoanService {
         
         // Validate that total returned doesn't exceed loan amount
         if (newReturnedAmount > loan.amount) {
-          throw new Error(`Payment amount would exceed loan balance. Maximum payment: ${loan.amount - loan.returnedAmount}`);
+          throw new Error(
+            `Payment amount would exceed loan balance. Maximum payment: ${loan.amount - loan.returnedAmount}`,
+          );
         }
 
         const now = new Date().toISOString();
@@ -199,21 +206,27 @@ class LoanService {
           ]
         );
 
-        // Add income transaction if account is specified
-        if (loan.accountId) {
+        // If a payment account is specified, record a transaction
+        if (paymentAccountId) {
+          const transactionType = loan.isLending ? 'income' : 'expense';
+          const description = loan.isLending
+            ? `Loan repayment from ${loan.borrowerName}`
+            : `Repayment for loan to ${loan.lenderName}`;
+          const category = loan.isLending ? 'Loan Repayment' : 'Debt Repayment';
+
           this.transactionService.addTransaction({
             profileId: loan.profileId,
             amount: paymentAmount,
-            type: 'income',
-            category: 'Loan Repayment',
-            description: `Loan repayment from ${loan.borrowerName}`,
+            type: transactionType,
+            category: category,
+            description: description,
             date: paymentDate,
-            paymentMethod: 'cash',
-            accountId: loan.accountId
+            paymentMethod: 'cash', // This is nominal, as it's an internal adjustment
+            accountId: paymentAccountId,
           });
         }
 
-        console.log('Loan payment recorded:', { loanId, paymentAmount, newStatus });
+        console.log('Loan payment recorded:', { loanId, paymentAmount, newStatus, paymentAccountId });
       });
     } catch (error) {
       console.error('Error recording loan payment:', error);

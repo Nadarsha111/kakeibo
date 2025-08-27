@@ -18,6 +18,7 @@ import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import AddLoanScreen from "../../components/AddLoanScreen";
 import OptionSelector from "../../components/OptionSelector";
+import RecordPaymentModal from "../../components/RecordPaymentModal";
 import TransferFundsScreen from "../../components/TransferFundsScreen";
 
 export default function AccountsScreen() {
@@ -54,6 +55,8 @@ export default function AccountsScreen() {
   // Shared state
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
+  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
+  const [loanForPayment, setLoanForPayment] = useState<Loan | null>(null);
   const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
 
   const loadData = useCallback(() => {
@@ -122,40 +125,20 @@ export default function AccountsScreen() {
     setShowAddLoan(false);
   };
 
+  const handlePaymentRecorded = () => {
+    loadData();
+    setShowRecordPaymentModal(false);
+    setLoanForPayment(null);
+  };
+
   const handleTransferComplete = () => {
     loadData();
     setShowTransferFunds(false);
   };
 
   const handleRecordPayment = (loan: Loan) => {
-    const outstandingAmount = loan.amount - loan.returnedAmount;
-    Alert.prompt(
-      'Record Payment',
-      `Outstanding amount: ${formatCurrency(outstandingAmount)}\nEnter payment amount:`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Record',
-          onPress: (paymentAmount) => {
-            if (paymentAmount && !isNaN(Number(paymentAmount))) {
-              const amount = Number(paymentAmount);
-              if (amount > 0 && amount <= outstandingAmount) {
-                try {
-                  const loanService = getLoanService();
-                  loanService.recordLoanPayment(loan.id, amount, new Date().toISOString().split('T')[0]);
-                  loadData();
-                } catch (error) {
-                  Alert.alert('Error', 'Failed to record payment');
-                }
-              } else {
-                Alert.alert('Invalid Amount', 'Please enter a valid amount not exceeding the outstanding balance');
-              }
-            }
-          },
-        },
-      ],
-      'plain-text'
-    );
+    setLoanForPayment(loan);
+    setShowRecordPaymentModal(true);
   };
 
   const handleDeleteAccount = (account: Account) => {
@@ -593,6 +576,15 @@ export default function AccountsScreen() {
         onClose={() => setShowTransferFunds(false)}
         onTransferComplete={handleTransferComplete}
         accounts={accounts}
+      />
+      <RecordPaymentModal
+        visible={showRecordPaymentModal}
+        onClose={() => {
+          setShowRecordPaymentModal(false);
+          setLoanForPayment(null);
+        }}
+        onPaymentRecorded={handlePaymentRecorded}
+        loan={loanForPayment}
       />
 
       {/* Profile Selection Modal */}

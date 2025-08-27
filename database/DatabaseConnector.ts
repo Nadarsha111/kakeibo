@@ -201,6 +201,12 @@ class DatabaseConnector {
         },
         { name: "Transfer In", color: "#6b7280", icon: "➡️", type: "income" },
         { name: "Transfer Out", color: "#6b7280", icon: "⬅️", type: "expense" },
+        {
+          name: "Debt Repayment",
+          color: "#ef4444",
+          icon: "💸",
+          type: "expense",
+        },
       ];
 
       defaultCategories.forEach((category) => {
