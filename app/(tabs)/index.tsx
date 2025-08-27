@@ -361,7 +361,10 @@ export default function OverviewScreen() {
                 </Text>
                 <Text
                   className="text-base font-semibold"
-                  style={{ color: theme.colors.text }}
+                  style={{
+                    color:
+                      account.name.toLowerCase().includes("loan") || account.closingBalance < 0 ? theme.colors.error : theme.colors.text,
+                  }}
                 >
                   {formatCurrency(account.closingBalance)}
                 </Text>
