@@ -12,6 +12,7 @@ interface ModalProps {
   transactionToEdit?: Transaction | null;
   loanForRepayment?: Account | null;
   initialType?: "income" | "expense" | "transfer";
+  initialFromAccount?: Account | null;
 }
 
 interface TransactionModalContextType {
@@ -51,6 +52,7 @@ export const TransactionModalProvider = ({
         transactionToEdit={modalProps.transactionToEdit}
         loanForRepayment={modalProps.loanForRepayment}
         initialType={modalProps.initialType}
+        initialFromAccount={modalProps.initialFromAccount}
       />
     </TransactionModalContext.Provider>
   );

@@ -68,6 +68,7 @@ export default function AccountsScreen() {
   const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
 
   const loadData = useCallback(() => {
@@ -85,6 +86,11 @@ export default function AccountsScreen() {
       // Then load accounts and loans based on selected profile
       loadData();
     }, [loadData]) // Rerun when selected profile changes
+  );
+
+  useEffect(() => {
+    setSelectedAccountId(null);
+  }, [activeTab, debouncedSearchTerm]
   );
 
   const loadAccounts = (profileId?: number) => {
@@ -240,52 +246,75 @@ export default function AccountsScreen() {
     return new Date(loan.loanExpectedReturnDate) < new Date();
   };
 
-  const renderAccountItem = ({ item: account }: { item: Account }) => (
-    <TouchableOpacity
-      style={styles.accountCard}
-      onLongPress={() => handleDeleteAccount(account)}
-    >
-      <View style={styles.accountHeader}>
-        <View style={styles.accountInfo}>
-          <Text style={styles.accountEmoji}>
-            {getAccountTypeEmoji(account.type)}
-          </Text>
-          <View style={styles.accountDetails}>
-            <Text style={styles.accountName}>{account.name}</Text>
-            <Text style={styles.accountType}>
-              {getAccountTypeLabel(account.type)}
+  const renderAccountItem = ({ item: account }: { item: Account }) => {
+    const isSelected = selectedAccountId === account.id;
+    return (
+      <TouchableOpacity
+        style={styles.accountCard}
+        onPress={() => setSelectedAccountId(isSelected ? null : account.id)}
+        activeOpacity={0.9}
+      >
+        <View style={styles.accountHeader}>
+          <View style={styles.accountInfo}>
+            <Text style={styles.accountEmoji}>
+              {getAccountTypeEmoji(account.type)}
             </Text>
-            {account.bankName && (
-              <Text style={styles.bankName}>{account.bankName}</Text>
-            )}
+            <View style={styles.accountDetails}>
+              <Text style={styles.accountName} numberOfLines={1}>{account.name}</Text>
+              <Text style={styles.accountType} numberOfLines={1}>
+                {getAccountTypeLabel(account.type)}{account.bankName && ` - ${account.bankName}`}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.rightContainer}>
+            <View style={styles.balanceContainer}>
+              <Text
+                style={[
+                  styles.accountBalance,
+                  account.balance < 0 && styles.negativeBalance,
+                ]}
+              >
+                {formatCurrency(account.balance)}
+              </Text>
+              <Text style={styles.currency}>{account.currency}</Text>
+            </View>
           </View>
         </View>
-        <View style={styles.balanceContainer}>
-          <Text
-            style={[
-              styles.accountBalance,
-              account.balance < 0 && styles.negativeBalance,
-            ]}
-          >
-            {formatCurrency(account.balance)}
-          </Text>
-          <Text style={styles.currency}>{account.currency}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+        {isSelected && (
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.cardActionButton}
+              onPress={() => handleDeleteAccount(account)}
+            >
+              <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.error} />
+              <Text style={[styles.cardActionButtonText, { color: theme.colors.error }]}>Delete</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cardActionButton}
+              onPress={() => openModal({ initialFromAccount: account })}
+            >
+              <MaterialCommunityIcons name="swap-horizontal" size={20} color={theme.colors.primary} />
+              <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Transfer</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const renderLoanItem = ({ item: loanAccount }: { item: Account }) => {
     const outstandingAmount = (loanAccount.loanPrincipal || 0) - (loanAccount.loanReturnedAmount || 0);
     const progressPercentage = (loanAccount.loanPrincipal || 0) > 0 ? ((loanAccount.loanReturnedAmount || 0) / (loanAccount.loanPrincipal || 0)) * 100 : 0;
 
+    const isSelected = selectedAccountId === loanAccount.id;
     return (
       <TouchableOpacity
         style={[
           styles.accountCard,
           loanAccount.loanStatus === 'overdue' && styles.overdueCard
         ]}
-        onPress={() => loanAccount.loanStatus !== 'fully_paid' && handleRecordPayment(loanAccount)}
+        onPress={() => setSelectedAccountId(isSelected ? null : loanAccount.id)}
+        activeOpacity={0.9}
       >
         <View style={styles.accountHeader}>
           <View style={styles.accountInfo}>
@@ -355,6 +384,26 @@ export default function AccountsScreen() {
             </Text>
           )}
         </View>
+        {isSelected && (
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.cardActionButton}
+              onPress={() => handleDeleteAccount(loanAccount)}
+            >
+              <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.error} />
+              <Text style={[styles.cardActionButtonText, { color: theme.colors.error }]}>Delete</Text>
+            </TouchableOpacity>
+            {loanAccount.loanStatus !== 'fully_paid' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => handleRecordPayment(loanAccount)}
+              >
+                <MaterialCommunityIcons name="cash-plus" size={20} color={theme.colors.primary} />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Record Payment</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -716,6 +765,28 @@ const createStyles = (theme: any) =>
       shadowRadius: 2,
       elevation: 2,
     },
+    cardActions: {
+      marginTop: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 8,
+    },
+    cardActionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.background,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      borderRadius: 20,
+    },
+    cardActionButtonText: {
+      marginLeft: 6,
+      fontSize: 14,
+      fontWeight: '600',
+    },
     accountHeader: {
       flexDirection: "row",
       justifyContent: "space-between",
@@ -743,11 +814,12 @@ const createStyles = (theme: any) =>
       fontSize: 12,
       color: theme.colors.textSecondary,
       marginBottom: 1,
+      flexShrink: 1,
     },
-    bankName: {
-      fontSize: 11,
-      color: theme.colors.textSecondary,
-      fontStyle: "italic",
+    rightContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     balanceContainer: {
       alignItems: "flex-end",

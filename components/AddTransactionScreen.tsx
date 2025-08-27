@@ -25,6 +25,7 @@ interface AddTransactionScreenProps {
   transactionToEdit?: Transaction | null;
   loanForRepayment?: Account | null;
   initialType?: 'income' | 'expense' | 'transfer';
+  initialFromAccount?: Account | null;
 }
 
 export default function AddTransactionScreen({
@@ -34,6 +35,7 @@ export default function AddTransactionScreen({
   transactionToEdit,
   loanForRepayment,
   initialType,
+  initialFromAccount,
 }: AddTransactionScreenProps) {
   const { theme } = useTheme();
   const { selectedProfileId } = useSettings();
@@ -100,11 +102,14 @@ export default function AddTransactionScreen({
         } else { // We are paying money
           setToAccount(loanForRepayment.id);
         }
+      } else if (initialFromAccount) {
+        setType('transfer');
+        setFromAccount(initialFromAccount.id);
       } else if (initialType) {
         setType(initialType);
       }
     }
-  }, [selectedProfileId, transactionToEdit, loanForRepayment, initialType, resetForm]);
+  }, [selectedProfileId, transactionToEdit, loanForRepayment, initialType, initialFromAccount, resetForm]);
 
   useEffect(() => {
     if (visible) {
