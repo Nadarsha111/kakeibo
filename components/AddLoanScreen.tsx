@@ -9,7 +9,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { getAccountService, getLoanService } from '../database';
+import { getAccountService, getTransactionService, DatabaseUtils } from '../database';
 import { Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -83,28 +83,49 @@ export default function AddLoanScreen({
         return;
       }
 
-      console.log(loanType === 'lendings')
-      const loanData = {
-        profileId,
-        borrowerName: loanType === 'lendings' ? personName.trim() : '',
-        borrowerContact: loanType === 'lendings' ? personContact.trim() || undefined : undefined,
-        lenderName: loanType === 'borrowings' ? personName.trim() : undefined,
-        lenderContact: loanType === 'borrowings' ? personContact.trim() || undefined : undefined,
-        amount: Number(amount),
-        lentDate: new Date().toISOString().split('T')[0],
-        expectedReturnDate: expectedReturnDate || undefined,
-        description: description.trim() || undefined,
-        accountId: selectedAccount,
-        isLending: loanType === 'lendings',
-      };
+      DatabaseUtils.withTransaction(() => {
+        const accountService = getAccountService();
+        const transactionService = getTransactionService();
 
-      const loanService = getLoanService();
-      loanService.addLoan(loanData);
-      
-      Alert.alert('Success', `${loanType === 'lendings' ? 'Loan' : 'Borrowing'} added successfully`);
-      resetForm();
-      onLoanAdded();
-      onClose();
+        const accountData: Partial<Account> = {
+          type: 'loan',
+          profileId,
+          name: `${loanType === 'lendings' ? 'Loan to' : 'Loan from'} ${personName.trim()}`,
+          isLending: loanType === 'lendings',
+          loanCounterpartyName: personName.trim(),
+          loanCounterpartyContact: personContact.trim() || undefined,
+          loanPrincipal: Number(amount),
+          loanLentDate: new Date().toISOString().split('T')[0],
+          loanExpectedReturnDate: expectedReturnDate || undefined,
+          description: description.trim() || undefined,
+          balance: loanType === 'lendings' ? Number(amount) : -Number(amount),
+          loanReturnedAmount: 0,
+          loanStatus: 'active',
+          isActive: true,
+          currency: 'USD', // Or from settings
+        };
+
+        accountService.addAccount(accountData as any);
+
+        // If a source/destination account is selected, create the initial transaction
+        if (selectedAccount) {
+          transactionService.addTransaction({
+            profileId,
+            amount: Number(amount),
+            type: loanType === 'lendings' ? 'expense' : 'income',
+            category: loanType === 'lendings' ? 'Transfer Out' : 'Transfer In',
+            description: `Initial transaction for loan with ${personName.trim()}`,
+            date: new Date().toISOString().split('T')[0],
+            paymentMethod: 'cash', // Nominal
+            accountId: selectedAccount,
+          });
+        }
+        
+        Alert.alert('Success', `${loanType === 'lendings' ? 'Loan' : 'Borrowing'} added successfully`);
+        resetForm();
+        onLoanAdded();
+        onClose();
+      });
     } catch (error) {
       console.error('Error adding loan:', error);
       Alert.alert('Error', `Failed to add ${loanType === 'lendings' ? 'loan' : 'borrowing'}`);

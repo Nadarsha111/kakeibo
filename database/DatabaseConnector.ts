@@ -57,6 +57,19 @@ class DatabaseConnector {
           type TEXT NOT NULL CHECK (type IN ('savings', 'checking', 'credit_card', 'loan', 'investment', 'cash')),
           balance REAL NOT NULL DEFAULT 0,
           currency TEXT NOT NULL DEFAULT 'USD',
+
+          -- Loan-specific fields
+          isLending BOOLEAN, -- True if we lent money (asset), False if we borrowed (liability)
+          loanPrincipal REAL,
+          loanReturnedAmount REAL,
+          loanStatus TEXT CHECK (loanStatus IN ('active', 'partially_paid', 'fully_paid', 'overdue')),
+          loanCounterpartyName TEXT,
+          loanCounterpartyContact TEXT,
+          loanLentDate TEXT,
+          loanExpectedReturnDate TEXT,
+          loanActualReturnDate TEXT,
+          description TEXT,
+
           bankName TEXT,
           accountNumber TEXT,
           isActive INTEGER NOT NULL DEFAULT 1,
@@ -123,30 +136,6 @@ class DatabaseConnector {
         );
       `);
 
-      // Create loans table for tracking money lent to others
-      this.db.execSync(`
-        CREATE TABLE IF NOT EXISTS loans (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          profileId INTEGER REFERENCES profiles(id) NOT NULL,
-          borrowerName TEXT NOT NULL,
-          borrowerContact TEXT,
-          lenderName TEXT,
-          lenderContact TEXT,
-          amount REAL NOT NULL,
-          lentDate TEXT NOT NULL,
-          expectedReturnDate TEXT,
-          actualReturnDate TEXT,
-          returnedAmount REAL NOT NULL DEFAULT 0,
-          status TEXT NOT NULL CHECK (status IN ('active', 'partially_paid', 'fully_paid', 'overdue')) DEFAULT 'active',
-          description TEXT,
-          accountId INTEGER,
-          isLending BOOLEAN NOT NULL DEFAULT 1,
-          createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL,
-          FOREIGN KEY (accountId) REFERENCES accounts (id)
-        );
-      `);
-
       // Create app_settings table for persistent user preferences
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS app_settings (
@@ -194,19 +183,9 @@ class DatabaseConnector {
         { name: "Salary", color: "#22c55e", icon: "💰", type: "income" },
         { name: "Investment", color: "#6366f1", icon: "📈", type: "income" },
         {
-          name: "Loan Repayment",
-          color: "#059669",
-          icon: "💸",
-          type: "income",
+          name: "Transfer In", color: "#6b7280", icon: "➡️", type: "income"
         },
-        { name: "Transfer In", color: "#6b7280", icon: "➡️", type: "income" },
-        { name: "Transfer Out", color: "#6b7280", icon: "⬅️", type: "expense" },
-        {
-          name: "Debt Repayment",
-          color: "#ef4444",
-          icon: "💸",
-          type: "expense",
-        },
+        { name: "Transfer Out", color: "#6b7280", icon: "⬅️", type: "expense" }
       ];
 
       defaultCategories.forEach((category) => {

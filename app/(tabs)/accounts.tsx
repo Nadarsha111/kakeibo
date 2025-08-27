@@ -11,15 +11,27 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { getAccountService, getLoanService, getProfileService } from "../../database";
-import { Account, Loan, LoanSummary, Profile } from "../../types";
+import { getAccountService, getProfileService } from "../../database";
+import { Account, Profile } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import AddLoanScreen from "../../components/AddLoanScreen";
 import OptionSelector from "../../components/OptionSelector";
-import RecordPaymentModal from "../../components/RecordPaymentModal";
 import TransferFundsScreen from "../../components/TransferFundsScreen";
+
+interface LoanSummary {
+  totalLoaned: number;
+  totalBorrowed: number;
+  totalLoanedReturned: number;
+  totalBorrowedReturned: number;
+  outstandingLoans: number;
+  outstandingBorrowings: number;
+  activeLoans: number;
+  activeBorrowings: number;
+  overdueLoans: number;
+  overdueBorrowings: number;
+}
 
 export default function AccountsScreen() {
   const { theme } = useTheme();
@@ -37,7 +49,6 @@ export default function AccountsScreen() {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
 
   // Loans state
-  const [loans, setLoans] = useState<Loan[]>([]);
   const [loanSummary, setLoanSummary] = useState<LoanSummary>({
     totalLoaned: 0,
     totalBorrowed: 0,
@@ -53,16 +64,14 @@ export default function AccountsScreen() {
   const [showAddLoan, setShowAddLoan] = useState(false);
 
   // Shared state
+  const [preselectedTransferAccount, setPreselectedTransferAccount] = useState<Account | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
-  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
-  const [loanForPayment, setLoanForPayment] = useState<Loan | null>(null);
   const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
 
   const loadData = useCallback(() => {
     const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
     loadAccounts(profileId);
-    loadLoans(profileId);
   }, [selectedProfileId]);
 
   useFocusEffect(
@@ -80,33 +89,25 @@ export default function AccountsScreen() {
   const loadAccounts = (profileId?: number) => {
     try {
       const accountService = getAccountService();
-      const accountsList = accountService.getAccounts(profileId);
+      const allAccounts = accountService.getAccounts(profileId);
+      const accountsList = allAccounts.filter(a => a.type !== 'loan');
       setAccounts(accountsList);
 
       const total = accountService.getTotalAccountsBalance(profileId);
       setTotalBalance(total);
-    } catch (error) {
-      console.error("Error loading accounts:", error);
-    }
-  };
-  const loadLoans = (profileId?: number) => {
-    try {
-      const loanService = getLoanService();
-      const loansData = loanService.getLoans(profileId);
-      console.log("Loaded loans:", loansData);
-      setLoans(loansData);
 
-      const summaryData = loanService.getLoanSummary(profileId);
+      // Load loans and summary from account service
+      const summaryData = accountService.getLoanSummary(profileId);
       setLoanSummary(summaryData);
     } catch (error) {
-      console.error("Error loading loans:", error);
+      console.error("Error loading accounts/loans:", error);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      getLoanService().markOverdueLoans();
+      getAccountService().markOverdueLoans();
       loadData();
     } catch (error) {
       console.error("Error refreshing:", error);
@@ -125,20 +126,14 @@ export default function AccountsScreen() {
     setShowAddLoan(false);
   };
 
-  const handlePaymentRecorded = () => {
-    loadData();
-    setShowRecordPaymentModal(false);
-    setLoanForPayment(null);
-  };
-
   const handleTransferComplete = () => {
     loadData();
     setShowTransferFunds(false);
   };
 
-  const handleRecordPayment = (loan: Loan) => {
-    setLoanForPayment(loan);
-    setShowRecordPaymentModal(true);
+  const handleRecordPayment = (loanAccount: Account) => {
+    setPreselectedTransferAccount(loanAccount);
+    setShowTransferFunds(true);
   };
 
   const handleDeleteAccount = (account: Account) => {
@@ -207,7 +202,7 @@ export default function AccountsScreen() {
   };
 
   // Loan helper functions
-  const getStatusColor = (status: Loan['status']) => {
+  const getStatusColor = (status: Account['loanStatus']) => {
     switch (status) {
       case 'active': return theme.colors.primary;
       case 'partially_paid': return '#f59e0b';
@@ -217,7 +212,7 @@ export default function AccountsScreen() {
     }
   };
 
-  const getStatusLabel = (status: Loan['status']) => {
+  const getStatusLabel = (status: Account['loanStatus']) => {
     switch (status) {
       case 'active': return 'Active';
       case 'partially_paid': return 'Partial';
@@ -227,9 +222,9 @@ export default function AccountsScreen() {
     }
   };
 
-  const isOverdue = (loan: Loan): boolean => {
-    if (!loan.expectedReturnDate || loan.status === 'fully_paid') return false;
-    return new Date(loan.expectedReturnDate) < new Date();
+  const isOverdue = (loan: Account): boolean => {
+    if (!loan.loanExpectedReturnDate || loan.loanStatus === 'fully_paid') return false;
+    return new Date(loan.loanExpectedReturnDate) < new Date();
   };
 
   const renderAccountItem = ({ item: account }: { item: Account }) => (
@@ -267,51 +262,49 @@ export default function AccountsScreen() {
     </TouchableOpacity>
   );
 
-  const renderLoanItem = ({ item: loan }: { item: Loan }) => {
-    const outstandingAmount = loan.amount - loan.returnedAmount;
-    const progressPercentage = (loan.returnedAmount / loan.amount) * 100;
+  const renderLoanItem = ({ item: loanAccount }: { item: Account }) => {
+    const outstandingAmount = (loanAccount.loanPrincipal || 0) - (loanAccount.loanReturnedAmount || 0);
+    const progressPercentage = (loanAccount.loanPrincipal || 0) > 0 ? ((loanAccount.loanReturnedAmount || 0) / (loanAccount.loanPrincipal || 0)) * 100 : 0;
 
     return (
       <TouchableOpacity
         style={[
           styles.accountCard,
-          loan.status === 'overdue' && styles.overdueCard
+          loanAccount.loanStatus === 'overdue' && styles.overdueCard
         ]}
-        onPress={() => loan.status !== 'fully_paid' && handleRecordPayment(loan)}
+        onPress={() => loanAccount.loanStatus !== 'fully_paid' && handleRecordPayment(loanAccount)}
       >
         <View style={styles.accountHeader}>
           <View style={styles.accountInfo}>
             <Text style={styles.accountEmoji}>💸</Text>
             <View style={styles.accountDetails}>
               <Text style={styles.accountName}>
-                {loan.isLending ? loan.borrowerName : loan.lenderName}
+                {loanAccount.loanCounterpartyName}
               </Text>
               <Text style={styles.accountType}>
-                {loan.isLending ? 
-                  (loan.borrowerContact || 'No contact') :
-                  (loan.lenderContact || 'No contact')}
+                {loanAccount.loanCounterpartyContact || 'No contact'}
               </Text>
-              {loan.description && (
-                <Text style={styles.bankName}>{loan.description}</Text>
+              {loanAccount.description && (
+                <Text style={styles.bankName}>{loanAccount.description}</Text>
               )}
             </View>
           </View>
           <View style={styles.balanceContainer}>
-            <Text style={[styles.loanStatus, { color: getStatusColor(loan.status) }]}>
-              {getStatusLabel(loan.status)}
+            <Text style={[styles.loanStatus, { color: getStatusColor(loanAccount.loanStatus) }]}>
+              {getStatusLabel(loanAccount.loanStatus)}
             </Text>
           </View>
         </View>
 
         <View style={styles.loanAmountSection}>
           <View style={styles.loanAmountRow}>
-            <Text style={styles.loanAmountLabel}>{loan.isLending  ? "Lent:" : "Borrowed:"}</Text>
-            <Text style={styles.loanAmountValue}>{formatCurrency(loan.amount)}</Text>
+            <Text style={styles.loanAmountLabel}>{loanAccount.isLending  ? "Lent:" : "Borrowed:"}</Text>
+            <Text style={styles.loanAmountValue}>{formatCurrency(loanAccount.loanPrincipal || 0)}</Text>
           </View>
           <View style={styles.loanAmountRow}>
             <Text style={styles.loanAmountLabel}>Returned:</Text>
             <Text style={[styles.loanAmountValue, { color: '#10b981' }]}>
-              {formatCurrency(loan.returnedAmount)}
+              {formatCurrency(loanAccount.loanReturnedAmount || 0)}
             </Text>
           </View>
           <View style={styles.loanAmountRow}>
@@ -322,7 +315,7 @@ export default function AccountsScreen() {
           </View>
         </View>
 
-        {loan.returnedAmount > 0 && (
+        {(loanAccount.loanReturnedAmount || 0) > 0 && (
           <View style={styles.progressContainer}>
             <View style={styles.progressBar}>
               <View 
@@ -338,14 +331,14 @@ export default function AccountsScreen() {
 
         <View style={styles.loanDateSection}>
           <Text style={styles.loanDateLabel}>
-            Lent: {new Date(loan.lentDate).toLocaleDateString()}
+            Date: {new Date(loanAccount.loanLentDate || '').toLocaleDateString()}
           </Text>
-          {loan.expectedReturnDate && (
+          {loanAccount.loanExpectedReturnDate && (
             <Text style={[
               styles.loanDateLabel,
-              isOverdue(loan) && loan.status !== 'fully_paid' && { color: '#ef4444' }
+              isOverdue(loanAccount) && loanAccount.loanStatus !== 'fully_paid' && { color: '#ef4444' }
             ]}>
-              Expected: {new Date(loan.expectedReturnDate).toLocaleDateString()}
+              Expected: {new Date(loanAccount.loanExpectedReturnDate).toLocaleDateString()}
             </Text>
           )}
         </View>
@@ -353,7 +346,7 @@ export default function AccountsScreen() {
     );
   };
 
-  const filteredLoans = loans.filter(loan => {
+  const filteredLoans = accounts.filter(account => account.type === 'loan').filter(loan => {
     const isLending = loan.isLending === 1 || loan.isLending === true;
     return loanType === 'lendings' ? isLending : !isLending;
   });
@@ -575,16 +568,8 @@ export default function AccountsScreen() {
         visible={showTransferFunds}
         onClose={() => setShowTransferFunds(false)}
         onTransferComplete={handleTransferComplete}
-        accounts={accounts}
-      />
-      <RecordPaymentModal
-        visible={showRecordPaymentModal}
-        onClose={() => {
-          setShowRecordPaymentModal(false);
-          setLoanForPayment(null);
-        }}
-        onPaymentRecorded={handlePaymentRecorded}
-        loan={loanForPayment}
+        accounts={[...accounts, ...filteredLoans]}
+        preselectedAccount={preselectedTransferAccount}
       />
 
       {/* Profile Selection Modal */}

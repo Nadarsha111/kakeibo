@@ -22,6 +22,17 @@ export interface Account {
   bankName?: string | null;
   accountNumber?: string | null;
   isActive: boolean | number; // SQLite uses 1/0 for boolean
+  // Loan-specific fields
+  isLending?: boolean | number | null;
+  loanPrincipal?: number | null;
+  loanReturnedAmount?: number | null;
+  loanStatus?: 'active' | 'partially_paid' | 'fully_paid' | 'overdue' | null;
+  loanCounterpartyName?: string | null;
+  loanCounterpartyContact?: string | null;
+  loanLentDate?: string | null;
+  loanExpectedReturnDate?: string | null;
+  loanActualReturnDate?: string | null;
+  description?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,45 +65,6 @@ export interface Category {
   icon: string;
   type: 'income' | 'expense';
   budgetLimit?: number | null;
-}
-
-/**
- * Represents a loan or borrowing record
- */
-export interface Loan {
-  id: number;
-  profileId: number;
-  borrowerName: string;
-  borrowerContact?: string | null;
-  lenderName?: string | null;
-  lenderContact?: string | null;
-  amount: number;
-  lentDate: string;
-  expectedReturnDate?: string | null;
-  actualReturnDate?: string | null;
-  returnedAmount: number;
-  status: 'active' | 'partially_paid' | 'fully_paid' | 'overdue';
-  description?: string | null;
-  accountId?: number | null;
-  isLending: boolean | number; // SQLite uses 1/0 for boolean
-  createdAt: string;
-  updatedAt: string;
-}
-
-/**
- * Summary of all loan activities
- */
-export interface LoanSummary {
-  totalLoaned: number;
-  totalBorrowed: number;
-  totalLoanedReturned: number;
-  totalBorrowedReturned: number;
-  outstandingLoans: number;
-  outstandingBorrowings: number;
-  activeLoans: number;
-  activeBorrowings: number;
-  overdueLoans: number;
-  overdueBorrowings: number;
 }
 
 /**

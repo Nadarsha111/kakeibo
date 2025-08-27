@@ -20,6 +20,7 @@ interface TransferFundsScreenProps {
   onClose: () => void;
   onTransferComplete: () => void;
   accounts: Account[];
+  preselectedAccount?: Account | null;
 }
 
 export default function TransferFundsScreen({
@@ -27,6 +28,7 @@ export default function TransferFundsScreen({
   onClose,
   onTransferComplete,
   accounts,
+  preselectedAccount,
 }: TransferFundsScreenProps) {
   const { theme } = useTheme();
   const { selectedProfileId } = useSettings();
@@ -41,14 +43,26 @@ export default function TransferFundsScreen({
   const [toModalVisible, setToModalVisible] = useState(false);
 
   useEffect(() => {
-    if (!visible) {
-      // Reset form when modal is closed
+    if (visible) {
+      if (preselectedAccount) {
+        // Pre-select account if provided
+        if (preselectedAccount.isLending) { // It's a loan to someone, so it's the 'from' account for repayment
+          setFromAccountId(preselectedAccount.id);
+        } else { // It's a loan from someone, so it's the 'to' account for repayment
+          setToAccountId(preselectedAccount.id);
+        }
+      }
+    } else {
+      resetForm();
+    }
+  }, [visible, preselectedAccount]);
+
+  const resetForm = () => {
       setFromAccountId(undefined);
       setToAccountId(undefined);
       setAmount('');
       setDescription('');
-    }
-  }, [visible]);
+  };
 
   const handleSubmit = () => {
     // Validation

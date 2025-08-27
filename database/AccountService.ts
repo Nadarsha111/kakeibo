@@ -52,10 +52,22 @@ class AccountService {
    */
   addAccount(account: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>): number {
     try {
+      // For loans, the balance should reflect the liability/asset status
+      if (account.type === 'loan') {
+        if (account.isLending) { // Money lent (asset)
+          account.balance = account.loanPrincipal || 0;
+        } else { // Money borrowed (liability)
+          account.balance = -(account.loanPrincipal || 0);
+        }
+        account.loanReturnedAmount = 0;
+        account.loanStatus = 'active';
+      }
+
       const now = new Date().toISOString();
       const result = this.db.runSync(
-        `INSERT INTO accounts (profileId, name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts (profileId, name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt, 
+          isLending, loanPrincipal, loanReturnedAmount, loanStatus, loanCounterpartyName, loanCounterpartyContact, loanLentDate, loanExpectedReturnDate, description) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           account.profileId,
           account.name,
@@ -66,7 +78,16 @@ class AccountService {
           account.accountNumber || null,
           account.isActive ? 1 : 0,
           now,
-          now
+          now,
+          account.isLending,
+          account.loanPrincipal,
+          account.loanReturnedAmount,
+          account.loanStatus,
+          account.loanCounterpartyName,
+          account.loanCounterpartyContact,
+          account.loanLentDate,
+          account.loanExpectedReturnDate,
+          account.description,
         ]
       );
       
@@ -115,6 +136,35 @@ class AccountService {
         fields.push('isActive = ?');
         values.push(account.isActive ? 1 : 0);
       }
+      // Loan fields
+      if (account.loanPrincipal !== undefined) {
+        fields.push('loanPrincipal = ?');
+        values.push(account.loanPrincipal);
+      }
+      if (account.loanReturnedAmount !== undefined) {
+        fields.push('loanReturnedAmount = ?');
+        values.push(account.loanReturnedAmount);
+      }
+      if (account.loanStatus !== undefined) {
+        fields.push('loanStatus = ?');
+        values.push(account.loanStatus);
+      }
+      if (account.loanCounterpartyName !== undefined) {
+        fields.push('loanCounterpartyName = ?');
+        values.push(account.loanCounterpartyName);
+      }
+      if (account.loanCounterpartyContact !== undefined) {
+        fields.push('loanCounterpartyContact = ?');
+        values.push(account.loanCounterpartyContact);
+      }
+      if (account.loanExpectedReturnDate !== undefined) {
+        fields.push('loanExpectedReturnDate = ?');
+        values.push(account.loanExpectedReturnDate);
+      }
+      if (account.description !== undefined) {
+        fields.push('description = ?');
+        values.push(account.description);
+      }
       
       fields.push('updatedAt = ?');
       values.push(now);
@@ -137,7 +187,13 @@ class AccountService {
    */
   deleteAccount(id: number): void {
     try {
-      this.db.runSync('UPDATE accounts SET isActive = 0 WHERE id = ?', [id]);
+      // For now, we soft delete. Hard delete for loans might need to revert transactions.
+      const account = this.getAccountById(id);
+      if (account?.type === 'loan') {
+        // More complex logic might be needed here, like checking for associated transactions.
+        // For now, we just delete it.
+      }
+      this.db.runSync('DELETE FROM accounts WHERE id = ?', [id]);
       console.log('Account deleted (marked inactive):', id);
     } catch (error) {
       console.error('Error deleting account:', error);
@@ -150,7 +206,7 @@ class AccountService {
    */
   getTotalAccountsBalance(profileId?: number): number {
     try {
-      let query = 'SELECT SUM(balance) as total FROM accounts WHERE isActive = 1';
+      let query = "SELECT SUM(balance) as total FROM accounts WHERE isActive = 1 AND type != 'loan'";
       const params: any[] = [];
 
       if (profileId) {
@@ -404,6 +460,121 @@ class AccountService {
       return [];
     }
   }
+
+  // --- Loan-related methods now part of AccountService ---
+
+  /**
+   * Get loan summary
+   */
+  getLoanSummary(profileId?: number): any {
+    try {
+      let whereClause = "WHERE type = 'loan' AND isActive = 1";
+      const params: any[] = [];
+      if (profileId) {
+        whereClause += ' AND profileId = ?';
+        params.push(profileId);
+      }
+
+      const summary = this.db.getFirstSync(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN isLending THEN loanPrincipal ELSE 0 END), 0) as totalLoaned,
+          COALESCE(SUM(CASE WHEN NOT isLending THEN loanPrincipal ELSE 0 END), 0) as totalBorrowed,
+          COALESCE(SUM(CASE WHEN isLending THEN loanReturnedAmount ELSE 0 END), 0) as totalLoanedReturned,
+          COALESCE(SUM(CASE WHEN NOT isLending THEN loanReturnedAmount ELSE 0 END), 0) as totalBorrowedReturned,
+          COALESCE(SUM(CASE WHEN isLending AND loanStatus != 'fully_paid' THEN loanPrincipal - loanReturnedAmount ELSE 0 END), 0) as outstandingLoans,
+          COALESCE(SUM(CASE WHEN NOT isLending AND loanStatus != 'fully_paid' THEN loanPrincipal - loanReturnedAmount ELSE 0 END), 0) as outstandingBorrowings,
+          COUNT(CASE WHEN isLending AND loanStatus IN ('active', 'partially_paid') THEN 1 END) as activeLoans,
+          COUNT(CASE WHEN NOT isLending AND loanStatus IN ('active', 'partially_paid') THEN 1 END) as activeBorrowings,
+          COUNT(CASE WHEN isLending AND loanStatus = 'overdue' THEN 1 END) as overdueLoans,
+          COUNT(CASE WHEN NOT isLending AND loanStatus = 'overdue' THEN 1 END) as overdueBorrowings
+        FROM accounts
+        ${whereClause}
+      `, params) as any;
+
+      return {
+        totalLoaned: summary.totalLoaned || 0,
+        totalBorrowed: summary.totalBorrowed || 0,
+        totalLoanedReturned: summary.totalLoanedReturned || 0,
+        totalBorrowedReturned: summary.totalBorrowedReturned || 0,
+        outstandingLoans: summary.outstandingLoans || 0,
+        outstandingBorrowings: summary.outstandingBorrowings || 0,
+        activeLoans: summary.activeLoans || 0,
+        activeBorrowings: summary.activeBorrowings || 0,
+        overdueLoans: summary.overdueLoans || 0,
+        overdueBorrowings: summary.overdueBorrowings || 0,
+      };
+    } catch (error) {
+      console.error('Error getting loan summary:', error);
+      return {
+        totalLoaned: 0,
+        totalBorrowed: 0,
+        totalLoanedReturned: 0,
+        totalBorrowedReturned: 0,
+        outstandingLoans: 0,
+        outstandingBorrowings: 0,
+        activeLoans: 0,
+        activeBorrowings: 0,
+        overdueLoans: 0,
+        overdueBorrowings: 0,
+      };
+    }
+  }
+
+  /**
+   * Mark overdue loans based on expected return date
+   */
+  markOverdueLoans(): number {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const result = this.db.runSync(
+        `UPDATE accounts 
+         SET loanStatus = 'overdue', updatedAt = ? 
+         WHERE type = 'loan' 
+         AND loanStatus IN ('active', 'partially_paid') 
+         AND loanExpectedReturnDate IS NOT NULL 
+         AND DATE(loanExpectedReturnDate) < DATE(?)`,
+        [new Date().toISOString(), today]
+      );
+      
+      const updatedCount = result.changes || 0;
+      if (updatedCount > 0) {
+        console.log(`Marked ${updatedCount} loans as overdue`);
+      }
+      return updatedCount;
+    } catch (error) {
+      console.error('Error marking overdue loans:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Records a payment on a loan account. This is now handled by the TransactionService's addTransfer method,
+   * but this helper can update the loan-specific fields.
+   */
+  recordPaymentOnLoanAccount(loanAccountId: number, paymentAmount: number): void {
+    const loanAccount = this.getAccountById(loanAccountId);
+    if (!loanAccount || loanAccount.type !== 'loan') {
+      throw new Error('Invalid loan account specified.');
+    }
+
+    const newReturnedAmount = (loanAccount.loanReturnedAmount || 0) + paymentAmount;
+    if (newReturnedAmount > (loanAccount.loanPrincipal || 0)) {
+      throw new Error('Payment exceeds outstanding loan amount.');
+    }
+
+    let newStatus = 'partially_paid';
+    if (newReturnedAmount >= (loanAccount.loanPrincipal || 0)) {
+      newStatus = 'fully_paid';
+    }
+
+    this.updateAccount(loanAccountId, {
+      loanReturnedAmount: newReturnedAmount,
+      loanStatus: newStatus as any,
+      loanActualReturnDate: newStatus === 'fully_paid' ? new Date().toISOString().split('T')[0] : loanAccount.loanActualReturnDate,
+    });
+  }
 }
+
+export default AccountService;
 
 export default AccountService;

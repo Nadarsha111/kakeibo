@@ -4,7 +4,6 @@ import AccountService from './AccountService';
 import ProfileService from './ProfileService';
 import TransactionService from './TransactionService';
 import CategoryService from './CategoryService';
-import LoanService from './LoanService';
 import BudgetService from './BudgetService';
 import SettingsService from './SettingsService';
 
@@ -14,7 +13,6 @@ export { default as AccountService } from './AccountService';
 export { default as ProfileService } from './ProfileService';
 export { default as TransactionService } from './TransactionService';
 export { default as CategoryService } from './CategoryService';
-export { default as LoanService } from './LoanService';
 export { default as BudgetService, type BudgetSummary } from './BudgetService';
 export { default as SettingsService } from './SettingsService';
 
@@ -27,7 +25,6 @@ export class ServiceFactory {
   private static _profileService: ProfileService;
   private static _transactionService: TransactionService;
   private static _categoryService: CategoryService;
-  private static _loanService: LoanService;
   private static _budgetService: BudgetService;
   private static _settingsService: SettingsService;
 
@@ -72,16 +69,6 @@ export class ServiceFactory {
   }
 
   /**
-   * Get LoanService instance
-   */
-  static getLoanService(): LoanService {
-    if (!this._loanService) {
-      this._loanService = new LoanService();
-    }
-    return this._loanService;
-  }
-
-  /**
    * Get BudgetService instance
    */
   static getBudgetService(): BudgetService {
@@ -110,7 +97,6 @@ export class ServiceFactory {
       profileService: this.getProfileService(),
       transactionService: this.getTransactionService(),
       categoryService: this.getCategoryService(),
-      loanService: this.getLoanService(),
       budgetService: this.getBudgetService(),
       settingsService: this.getSettingsService(),
     };
@@ -124,7 +110,6 @@ export class ServiceFactory {
     this._profileService = undefined as any;
     this._transactionService = undefined as any;
     this._categoryService = undefined as any;
-    this._loanService = undefined as any;
     this._budgetService = undefined as any;
     this._settingsService = undefined as any;
   }
@@ -135,7 +120,6 @@ export const getAccountService = () => ServiceFactory.getAccountService();
 export const getProfileService = () => ServiceFactory.getProfileService();
 export const getTransactionService = () => ServiceFactory.getTransactionService();
 export const getCategoryService = () => ServiceFactory.getCategoryService();
-export const getLoanService = () => ServiceFactory.getLoanService();
 export const getBudgetService = () => ServiceFactory.getBudgetService();
 export const getSettingsService = () => ServiceFactory.getSettingsService();
 
@@ -170,8 +154,8 @@ export class DatabaseUtils {
       accountService.initializeDefaultAccounts();
       
       // Mark overdue loans
-      const loanService = ServiceFactory.getLoanService();
-      loanService.markOverdueLoans();
+      const accountServiceWithLoans = ServiceFactory.getAccountService();
+      accountServiceWithLoans.markOverdueLoans();
       
       console.log('Database services initialized successfully');
     } catch (error) {
@@ -195,7 +179,6 @@ export class DatabaseUtils {
         accounts: false,
         transactions: false,
         categories: false,
-        loans: false,
         budgets: false,
         settings: false,
       };
@@ -235,13 +218,6 @@ export class DatabaseUtils {
       }
 
       try {
-        ServiceFactory.getLoanService().getLoans();
-        services.loans = true;
-      } catch (e) {
-        console.error('Loan service error:', e);
-      }
-
-      try {
         ServiceFactory.getBudgetService().getBudgets();
         services.budgets = true;
       } catch (e) {
@@ -270,7 +246,6 @@ export class DatabaseUtils {
           accounts: false,
           transactions: false,
           categories: false,
-          loans: false,
           budgets: false,
           settings: false,
         },

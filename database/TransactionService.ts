@@ -106,6 +106,17 @@ class TransactionService {
           accountId: data.toAccountId,
         });
 
+        // If one of the accounts is a loan, update its returned amount
+        const fromAccountIsLoan = fromAccount?.type === 'loan';
+        const toAccountIsLoan = toAccount?.type === 'loan';
+
+        if (fromAccountIsLoan) {
+          this.accountService.recordPaymentOnLoanAccount(data.fromAccountId, data.amount);
+        }
+        if (toAccountIsLoan) {
+          this.accountService.recordPaymentOnLoanAccount(data.toAccountId, data.amount);
+        }
+
         console.log(`Transfer of ${data.amount} from account ${data.fromAccountId} to ${data.toAccountId} successful.`);
       });
     } catch (error) {
