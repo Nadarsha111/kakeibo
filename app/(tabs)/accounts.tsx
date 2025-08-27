@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   StatusBar,
   Alert,
+  TextInput,
   RefreshControl,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -67,6 +68,8 @@ export default function AccountsScreen() {
   // Shared state
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
   const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
 
   const loadData = useCallback(() => {
@@ -124,6 +127,30 @@ export default function AccountsScreen() {
     loadData();
     setShowAddLoan(false);
   };
+
+  // Effect to debounce search term
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // 300ms delay
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchTerm]);
+
+  const displayedAccounts = useMemo(() => {
+    if (!debouncedSearchTerm.trim()) {
+      return allAccounts;
+    }
+    const lowercasedTerm = debouncedSearchTerm.toLowerCase();
+    return allAccounts.filter(
+      (account) =>
+        account.name.toLowerCase().includes(lowercasedTerm) ||
+        (account.bankName && account.bankName.toLowerCase().includes(lowercasedTerm)) ||
+        (account.loanCounterpartyName && account.loanCounterpartyName.toLowerCase().includes(lowercasedTerm))
+    );
+  }, [allAccounts, debouncedSearchTerm]);
 
   const handleRecordPayment = (loanAccount: Account) => {
     openModal({ loanForRepayment: loanAccount });
@@ -339,43 +366,28 @@ export default function AccountsScreen() {
     );
   };
 
-  const regularAccounts = allAccounts.filter(a => a.type !== 'loan');
+  const regularAccounts = useMemo(() => displayedAccounts.filter((a) => a.type !== "loan"), [displayedAccounts]);
 
-  const filteredLoans = allAccounts.filter(account => account.type === 'loan').filter(loan => {
+  const filteredLoans = useMemo(() => displayedAccounts.filter(account => account.type === 'loan').filter(loan => {
     const isLending = loan.isLending === 1 || loan.isLending === true;
     return loanType === 'lendings' ? isLending : !isLending;
-  });
+  }), [displayedAccounts, loanType]);
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
+  const data = activeTab === "accounts" ? regularAccounts : filteredLoans;
+  const renderItem = activeTab === "accounts" ? renderAccountItem : renderLoanItem;
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerTitleContainer} onPress={() => setProfileModalVisible(true)}>
-          <Text style={styles.headerTitle}>{getSelectedProfileName()}</Text>
-          <MaterialCommunityIcons name="chevron-down" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => openModal({ initialType: 'transfer' })}
-          >
-            <MaterialCommunityIcons name="swap-horizontal" size={24} color={theme.colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => {
-              if (activeTab === "accounts") {
-                setShowAddAccount(true);
-              } else {
-                setShowAddLoan(true);
-              }
-            }}
-          >
-            <Text style={styles.addButtonText}>+ Add</Text>
-          </TouchableOpacity>
-        </View>
+  const listHeaderComponent = useMemo(() => (
+    <>
+      <View style={styles.searchContainer}>
+        <MaterialCommunityIcons name="magnify" size={22} color={theme.colors.textSecondary} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name, bank, or person..."
+          placeholderTextColor={theme.colors.textSecondary}
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          clearButtonMode="while-editing"
+        />
       </View>
       {/* Tab Switcher */}
       <View style={styles.tabContainer}>
@@ -439,24 +451,20 @@ export default function AccountsScreen() {
             <View style={styles.loanStats}>
               <View style={styles.loanStatItem}>
                 <Text style={styles.loanStatLabel}>
-                  {loanType === "lendings" ? "Outstanding Loans" : "Outstanding Debt"}
+                  {loanType === "lendings" ? "Outstanding" : "Debt"}
                 </Text>
                 <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>
                   {formatCurrency(loanType === "lendings" ? loanSummary.outstandingLoans : loanSummary.outstandingBorrowings)}
                 </Text>
               </View>
               <View style={styles.loanStatItem}>
-                <Text style={styles.loanStatLabel}>
-                  {loanType === "lendings" ? "Repaid" : "Repaid"}
-                </Text>
+                <Text style={styles.loanStatLabel}>Repaid</Text>
                 <Text style={[styles.loanStatValue, { color: '#10b981' }]}>
                   {formatCurrency(loanType === "lendings" ? loanSummary.totalLoanedReturned : loanSummary.totalBorrowedReturned)}
                 </Text>
               </View>
               <View style={styles.loanStatItem}>
-                <Text style={styles.loanStatLabel}>
-                  {loanType === "lendings" ? "Overdue" : "Overdue"}
-                </Text>
+                <Text style={styles.loanStatLabel}>Overdue</Text>
                 <Text style={[styles.loanStatValue, { color: '#f59e0b' }]}>
                   {loanType === "lendings" ? loanSummary.overdueLoans : loanSummary.overdueBorrowings}
                 </Text>
@@ -487,64 +495,96 @@ export default function AccountsScreen() {
           </TouchableOpacity>
         </View>
       )}
+    </>
+  ), [
+    theme,
+    searchTerm,
+    activeTab,
+    totalBalance,
+    regularAccounts,
+    loanSummary,
+    loanType,
+    formatCurrency,
+  ]);
 
-      {/* Content List */}
-      {activeTab === "accounts" ? (
-        <FlatList
-          data={regularAccounts}
-          renderItem={renderAccountItem}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={theme.colors.primary}
-              colors={[theme.colors.primary]}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyEmoji}>🏦</Text>
-              <Text style={styles.emptyTitle}>No Accounts</Text>
-              <Text style={styles.emptyText}>
-                Add your bank accounts, credit cards, and cash to track your finances
-              </Text>
-            </View>
-          }
-        />
-      ) : (
-        <FlatList
-          data={filteredLoans}
-          renderItem={renderLoanItem}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={theme.colors.primary}
-              colors={[theme.colors.primary]}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyEmoji}>💸</Text>
-              <Text style={styles.emptyTitle}>
-                {loanType === "lendings" ? "No Money Lent" : "No Money Borrowed"}
-              </Text>
-              <Text style={styles.emptyText}>
-                {loanType === "lendings"
-                  ? "Track money you lend to friends and family"
-                  : "Track money you borrow from others"
-                }
-              </Text>
-            </View>
-          }
-        />
-      )}
+  const emptyComponent = useMemo(() => {
+    if (debouncedSearchTerm) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyEmoji}>🧐</Text>
+          <Text style={styles.emptyTitle}>No Results Found</Text>
+          <Text style={styles.emptyText}>Try searching for something else.</Text>
+        </View>
+      );
+    }
+    if (activeTab === "accounts") {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyEmoji}>🏦</Text>
+          <Text style={styles.emptyTitle}>No Accounts</Text>
+          <Text style={styles.emptyText}>Add your bank accounts, credit cards, and cash to track your finances</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyEmoji}>💸</Text>
+        <Text style={styles.emptyTitle}>{loanType === "lendings" ? "No Money Lent" : "No Money Borrowed"}</Text>
+        <Text style={styles.emptyText}>{loanType === "lendings" ? "Track money you lend to friends and family" : "Track money you borrow from others"}</Text>
+      </View>
+    );
+  }, [debouncedSearchTerm, activeTab, loanType, theme]);
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.headerTitleContainer} onPress={() => setProfileModalVisible(true)}>
+          <Text style={styles.headerTitle}>{getSelectedProfileName()}</Text>
+          <MaterialCommunityIcons name="chevron-down" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => openModal({ initialType: 'transfer' })}
+          >
+            <MaterialCommunityIcons name="swap-horizontal" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => {
+              if (activeTab === "accounts") {
+                setShowAddAccount(true);
+              } else {
+                setShowAddLoan(true);
+              }
+            }}
+          >
+            <Text style={styles.addButtonText}>+ Add</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <FlatList
+        data={data}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id.toString()}
+        ListHeaderComponent={listHeaderComponent}
+        ListEmptyComponent={emptyComponent}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
+        keyboardShouldPersistTaps="handled"
+      />
 
       {/* Add Account Modal */}
       <AddAccountScreen
@@ -585,7 +625,7 @@ const createStyles = (theme: any) =>
     tabContainer: {
       flexDirection: "row",
       backgroundColor: theme.colors.surface,
-      marginHorizontal: 20,
+      marginHorizontal: 0,
       marginTop: 16,
       borderRadius: 8,
       padding: 4,
@@ -650,8 +690,10 @@ const createStyles = (theme: any) =>
     },
     summaryCard: {
       backgroundColor: theme.colors.surface,
-      margin: 20,
+      marginHorizontal: 0,
       padding: 20,
+      marginTop: 20,
+      marginBottom: 10,
       borderRadius: 16,
       alignItems: "center",
       shadowColor: "#000",
@@ -659,6 +701,7 @@ const createStyles = (theme: any) =>
       shadowOpacity: 0.1,
       shadowRadius: 4,
       elevation: 3,
+      
     },
     summaryLabel: {
       fontSize: 14,
@@ -670,16 +713,18 @@ const createStyles = (theme: any) =>
       fontWeight: "bold",
       color: theme.colors.text,
       marginBottom: 4,
+      
     },
     accountCount: {
       fontSize: 12,
       color: theme.colors.textSecondary,
     },
     listContainer: {
-      padding: 20,
-      paddingTop: 20,
+      paddingHorizontal: 20,
+      paddingBottom: 40,
     },
     accountCard: {
+
       backgroundColor: theme.colors.surface,
       marginBottom: 12,
       borderRadius: 12,
@@ -828,9 +873,10 @@ const createStyles = (theme: any) =>
     },
     loanTypeContainer: {
       flexDirection: 'row',
-      backgroundColor: theme.colors.background,
-      marginHorizontal: 16,
-      marginTop: 16,
+      backgroundColor: theme.colors.surface,
+      marginHorizontal: 0,
+      marginTop: 10,
+      marginBottom: 16,
       borderRadius: 8,
       overflow: 'hidden',
     },
@@ -858,6 +904,7 @@ const createStyles = (theme: any) =>
     },
     loanStatItem: {
       flex: 1,
+      alignItems: 'center',
     },
     loanStatLabel: {
       fontSize: 12,
@@ -867,5 +914,24 @@ const createStyles = (theme: any) =>
     loanStatValue: {
       fontSize: 14,
       fontWeight: '600',
+    },
+    searchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.surface,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      marginTop: 16,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    searchIcon: {
+      marginRight: 8,
+    },
+    searchInput: {
+      flex: 1,
+      height: 48,
+      fontSize: 16,
+      color: theme.colors.text,
     },
   });
