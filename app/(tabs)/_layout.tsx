@@ -1,18 +1,37 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
-import AddTransactionScreen from '../../components/AddTransactionScreen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { TransactionModalProvider, useTransactionModal } from '../../context/TransactionModalContext';
 
-export default function TabLayout() {
-  const [showAddTransaction, setShowAddTransaction] = useState(false);
+function Fab() {
+  const { openModal } = useTransactionModal();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
   return (
-      <View style={{ flex: 1 }}>
+    <TouchableOpacity
+      style={[
+        styles.fab,
+        {
+          backgroundColor: theme.colors.primary,
+          bottom: 55 + insets.bottom
+        }
+      ]}
+      onPress={() => openModal()}
+    >
+      <MaterialCommunityIcons name="plus" size={32} color="white" />
+    </TouchableOpacity>
+  );
+}
+
+export default function TabLayout() {
+  const { theme } = useTheme();
+
+  return (
+    <TransactionModalProvider>
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <Tabs
           screenOptions={{
             tabBarActiveTintColor: theme.colors.primary,
@@ -106,24 +125,9 @@ export default function TabLayout() {
             }}
           />
         </Tabs>
-        <TouchableOpacity
-          style={[
-            styles.fab, 
-            { 
-              backgroundColor: theme.colors.primary,
-              bottom: 55 + insets.bottom 
-            }
-          ]}
-          onPress={() => setShowAddTransaction(true)}
-        >
-          <MaterialCommunityIcons name="plus" size={32} color="white" />
-        </TouchableOpacity>
-        <AddTransactionScreen
-          visible={showAddTransaction}
-          onClose={() => setShowAddTransaction(false)}
-          onTransactionAdded={() => {}}
-        />
+        <Fab />
       </View>
+    </TransactionModalProvider>
   );
 }
 
@@ -143,4 +147,3 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
 });
-

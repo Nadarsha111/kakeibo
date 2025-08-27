@@ -15,50 +15,58 @@ class TransactionService {
   }
 
   /**
+   * Adds a transaction without starting a new DB transaction.
+   * This should only be called from a method that already manages a transaction.
+   */
+  public addTransactionUnsafe(transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): number {
+    const now = new Date().toISOString();
+    
+    const result = this.db.runSync(
+      `INSERT INTO transactions (profileId, amount, type, category, description, date, paymentMethod, accountId, priority, createdAt, updatedAt) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        transaction.profileId,
+        transaction.amount,
+        transaction.type,
+        transaction.category,
+        transaction.description,
+        transaction.date,
+        transaction.paymentMethod,
+        transaction.accountId || null,
+        transaction.priority || null,
+        now,
+        now
+      ]
+    );
+    
+    // Update account balance if account is specified
+    if (transaction.accountId) {
+      this.accountService.updateAccountBalanceForTransaction(
+        transaction.accountId,
+        transaction.amount,
+        transaction.type
+      );
+    }
+    
+    return result.lastInsertRowId;
+  }
+
+  /**
    * Add a new transaction with automatic account balance updates
    */
   addTransaction(transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): number {
     try {
       return DatabaseConnector.getInstance().withTransaction(() => {
-        const now = new Date().toISOString();
-        
-        const result = this.db.runSync(
-          `INSERT INTO transactions (profileId, amount, type, category, description, date, paymentMethod, accountId, priority, createdAt, updatedAt) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            transaction.profileId,
-            transaction.amount,
-            transaction.type,
-            transaction.category,
-            transaction.description,
-            transaction.date,
-            transaction.paymentMethod,
-            transaction.accountId || null,
-            transaction.priority || null,
-            now,
-            now
-          ]
-        );
-        
-        // Update account balance if account is specified
-        if (transaction.accountId) {
-          this.accountService.updateAccountBalanceForTransaction(
-            transaction.accountId,
-            transaction.amount,
-            transaction.type
-          );
-        }
-        
+        const newId = this.addTransactionUnsafe(transaction);
         console.log('Transaction added:', {
-          id: result.lastInsertRowId,
+          id: newId,
           amount: transaction.amount,
           type: transaction.type,
           category: transaction.category,
           date: transaction.date,
           accountId: transaction.accountId
         });
-        
-        return result.lastInsertRowId;
+        return newId;
       });
     } catch (error) {
       console.error('Error adding transaction:', error);
@@ -83,7 +91,7 @@ class TransactionService {
         const toAccount = this.accountService.getAccountById(data.toAccountId);
 
         // Expense from the source account
-        this.addTransaction({
+        this.addTransactionUnsafe({
           profileId: data.profileId,
           amount: data.amount,
           type: 'expense',
@@ -95,7 +103,7 @@ class TransactionService {
         });
 
         // Income to the destination account
-        this.addTransaction({
+        this.addTransactionUnsafe({
           profileId: data.profileId,
           amount: data.amount,
           type: 'income',
@@ -106,15 +114,30 @@ class TransactionService {
           accountId: data.toAccountId,
         });
 
-        // If one of the accounts is a loan, update its returned amount
-        const fromAccountIsLoan = fromAccount?.type === 'loan';
-        const toAccountIsLoan = toAccount?.type === 'loan';
-
-        if (fromAccountIsLoan) {
-          this.accountService.recordPaymentOnLoanAccount(data.fromAccountId, data.amount);
+        // If money is flowing INTO a loan account
+        if (toAccount?.type === 'loan') {
+          if (toAccount.isLending) {
+            // Transfer TO a "Loan To" account (e.g. Checking -> Loan to Bob)
+            // This means I am lending MORE money.
+            this.accountService.increaseLoanPrincipal(data.toAccountId, data.amount);
+          } else {
+            // Transfer TO a "Loan From" account (e.g. Checking -> Loan from Bank)
+            // This means I am REPAYING my debt.
+            this.accountService.recordRepaymentOnLoanAccount(data.toAccountId, data.amount);
+          }
         }
-        if (toAccountIsLoan) {
-          this.accountService.recordPaymentOnLoanAccount(data.toAccountId, data.amount);
+
+        // If money is flowing FROM a loan account
+        if (fromAccount?.type === 'loan') {
+          if (fromAccount.isLending) {
+            // Transfer FROM a "Loan To" account (e.g. Loan to Bob -> Checking)
+            // This means I am receiving a REPAYMENT.
+            this.accountService.recordRepaymentOnLoanAccount(data.fromAccountId, data.amount);
+          } else {
+            // Transfer FROM a "Loan From" account (e.g. Loan from Bank -> Checking)
+            // This means I am borrowing MORE money.
+            this.accountService.increaseLoanPrincipal(data.fromAccountId, data.amount);
+          }
         }
 
         console.log(`Transfer of ${data.amount} from account ${data.fromAccountId} to ${data.toAccountId} successful.`);

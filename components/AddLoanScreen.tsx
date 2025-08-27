@@ -49,8 +49,9 @@ export default function AddLoanScreen({
   const loadAccounts = () => {
     try {
       const accountService = getAccountService();
-      const accountsList = accountService.getAccounts();
-      setAccounts(accountsList);
+      const allAccounts = accountService.getAccounts();
+      const regularAccounts = allAccounts.filter(acc => acc.type !== 'loan');
+      setAccounts(regularAccounts);
     } catch (error) {
       console.error('Error loading accounts:', error);
     }
@@ -109,7 +110,7 @@ export default function AddLoanScreen({
 
         // If a source/destination account is selected, create the initial transaction
         if (selectedAccount) {
-          transactionService.addTransaction({
+          transactionService.addTransactionUnsafe({
             profileId,
             amount: Number(amount),
             type: loanType === 'lendings' ? 'expense' : 'income',

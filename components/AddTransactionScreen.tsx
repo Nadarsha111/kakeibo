@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ interface AddTransactionScreenProps {
   onClose: () => void;
   onTransactionAdded: () => void;
   transactionToEdit?: Transaction | null;
+  loanForRepayment?: Account | null;
+  initialType?: 'income' | 'expense' | 'transfer';
 }
 
 export default function AddTransactionScreen({
@@ -30,20 +32,23 @@ export default function AddTransactionScreen({
   onClose,
   onTransactionAdded,
   transactionToEdit,
+  loanForRepayment,
+  initialType,
 }: AddTransactionScreenProps) {
   const { theme } = useTheme();
   const { selectedProfileId } = useSettings();
   const styles = createStyles(theme);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<"income" | "expense">("expense");
+  const [type, setType] = useState<"income" | "expense" | "transfer">("expense");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<
     "cash" | "credit_card" | "debit_card"
   >("credit_card");
-  const [selectedAccount, setSelectedAccount] = useState<number | undefined>(
+  const [fromAccount, setFromAccount] = useState<number | undefined>(
     undefined,
   );
+  const [toAccount, setToAccount] = useState<number | undefined>(undefined);
   const [priority, setPriority] = useState<"need" | "want" | undefined>(
     undefined,
   );
@@ -51,75 +56,70 @@ export default function AddTransactionScreen({
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
 
+  const resetForm = useCallback((accounts: Account[], categories: Category[]) => {
+    setAmount("");
+    setDescription("");
+    setType("expense");
+    setPaymentMethod("credit_card");
+    setDate(new Date().toISOString().split("T")[0]);
+    setPriority(undefined);
+    setToAccount(undefined);
+
+    const defaultCategory = categories.find(cat => cat.type === 'expense');
+    setSelectedCategory(defaultCategory?.name || "");
+    setFromAccount(accounts.length > 0 ? accounts[0].id : undefined);
+  }, []);
+
+  const loadDataAndSetState = useCallback(() => {
+    const categoryService = getCategoryService();
+    const allCategories = categoryService.getCategories();
+    setCategories(allCategories);
+
+    const accountService = getAccountService();
+    const profileId = selectedProfileId === "all" ? undefined : selectedProfileId;
+    const profileAccounts = accountService.getAccounts(profileId);
+    setAccounts(profileAccounts);
+
+    if (transactionToEdit) {
+      setAmount(String(transactionToEdit.amount));
+      setDescription(transactionToEdit.description || "");
+      setType(transactionToEdit.type);
+      setSelectedCategory(transactionToEdit.category);
+      setPaymentMethod(transactionToEdit.paymentMethod);
+      setFromAccount(transactionToEdit.accountId || undefined);
+      setPriority(transactionToEdit.priority || undefined);
+      setDate(transactionToEdit.date);
+      setToAccount(undefined);
+    } else {
+      resetForm(profileAccounts, allCategories);
+      if (loanForRepayment) {
+        setType('transfer');
+        setDescription(`Repayment for: ${loanForRepayment.name}`);
+        if (loanForRepayment.isLending) { // We are receiving money
+          setFromAccount(loanForRepayment.id);
+        } else { // We are paying money
+          setToAccount(loanForRepayment.id);
+        }
+      } else if (initialType) {
+        setType(initialType);
+      }
+    }
+  }, [selectedProfileId, transactionToEdit, loanForRepayment, initialType, resetForm]);
+
   useEffect(() => {
     if (visible) {
-      loadCategories();
-      loadAccounts();
-      if (transactionToEdit) {
-        setAmount(String(transactionToEdit.amount));
-        setDescription(transactionToEdit.description || "");
-        setType(transactionToEdit.type);
-        setSelectedCategory(transactionToEdit.category);
-        setPaymentMethod(transactionToEdit.paymentMethod);
-        setSelectedAccount(transactionToEdit.accountId || undefined);
-        setPriority(transactionToEdit.priority || undefined);
-        setDate(transactionToEdit.date);
-      } else {
-        resetForm();
-      }
+      loadDataAndSetState();
     }
-  }, [visible, transactionToEdit, selectedProfileId]);
+  }, [visible, loadDataAndSetState]);
 
-  const loadCategories = () => {
-    try {
-      const categoryService = getCategoryService();
-      const allCategories = categoryService.getCategories();
-      setCategories(allCategories);
-
-      // Set default category based on type
-      const defaultCategory = allCategories.find((cat) => cat.type === type);
-      if (defaultCategory) {
-        setSelectedCategory(defaultCategory.name);
-      }
-    } catch (error) {
-      console.error("Error loading categories:", error);
-    }
-  };
-
-  const loadAccounts = () => {
-    try {
-      const accountService = getAccountService();
-      const profileId =
-        selectedProfileId === "all" ? undefined : selectedProfileId;
-      const profileAccounts = accountService.getAccounts(profileId);
-      setAccounts(profileAccounts);
-
-      // Set default account if one isn't selected or if the selected one is no longer valid
-      if (profileAccounts.length > 0) {
-        const currentAccountIsValid = profileAccounts.some(
-          (acc) => acc.id === selectedAccount,
-        );
-        // If no account is selected, or the current one is not in the new list, select the first one.
-        if (!selectedAccount || !currentAccountIsValid) {
-          setSelectedAccount(profileAccounts[0].id);
-        }
-      } else {
-        // If there are no accounts for this profile, clear selection.
-        setSelectedAccount(undefined);
-      }
-    } catch (error) {
-      console.error("Error loading accounts:", error);
-    }
-  };
-
-  const handleTypeChange = (newType: "income" | "expense") => {
+  const handleTypeChange = (newType: "income" | "expense" | "transfer") => {
     setType(newType);
     // Reset category selection when type changes
     const categoryForType = categories.find((cat) => cat.type === newType);
     setSelectedCategory(categoryForType?.name || "");
 
     // Reset priority for income transactions
-    if (newType === "income") {
+    if (newType === "income" || newType === "transfer") {
       setPriority(undefined);
     }
   };
@@ -131,7 +131,7 @@ export default function AddTransactionScreen({
       return;
     }
 
-    if (!selectedCategory) {
+    if (type !== 'transfer' && !selectedCategory) {
       Alert.alert("Error", "Please select a category");
       return;
     }
@@ -154,44 +154,63 @@ export default function AddTransactionScreen({
 
   const submitTransaction = () => {
     try {
-      const selectedAccountDetails = accounts.find(
-        (acc) => acc.id === selectedAccount,
-      );
-      if (!selectedAccountDetails) {
-        Alert.alert("Error", "Please select a valid account.");
-        return;
-      }
-
-      const profileIdToUse = selectedAccountDetails.profileId;
-
-      const transactionData = {
-        profileId: profileIdToUse,
-        amount: parseFloat(amount),
-        type,
-        category: selectedCategory,
-        description: description.trim() || null,
-        date,
-        paymentMethod,
-        accountId: selectedAccount,
-        priority: type === "expense" ? priority : undefined,
-      };
-
-      console.log("Adding transaction:", transactionData);
       const transactionService = getTransactionService();
-      if (transactionToEdit) {
-        transactionService.updateTransaction(
-          transactionToEdit.id,
-          transactionData,
-        );
+
+      if (type === 'transfer') {
+        if (!fromAccount || !toAccount) {
+          Alert.alert('Error', 'Please select both "From" and "To" accounts for a transfer.');
+          return;
+        }
+        if (fromAccount === toAccount) {
+          Alert.alert('Error', '"From" and "To" accounts cannot be the same.');
+          return;
+        }
+        if (selectedProfileId === 'all') {
+          Alert.alert('Error', 'Please select a specific profile to make a transfer.');
+          return;
+        }
+        transactionService.addTransfer({
+          fromAccountId: fromAccount,
+          toAccountId: toAccount,
+          amount: parseFloat(amount),
+          date,
+          description: description.trim() || 'Fund Transfer',
+          profileId: selectedProfileId,
+        });
       } else {
-        const transactionId =
+        const selectedAccountDetails = accounts.find(
+          (acc) => acc.id === fromAccount,
+        );
+        if (!selectedAccountDetails) {
+          Alert.alert("Error", "Please select a valid account.");
+          return;
+        }
+
+        const profileIdToUse = selectedAccountDetails.profileId;
+
+        const transactionData = {
+          profileId: profileIdToUse,
+          amount: parseFloat(amount),
+          type,
+          category: selectedCategory,
+          description: description.trim() || null,
+          date,
+          paymentMethod,
+          accountId: fromAccount,
+          priority: type === "expense" ? priority : undefined,
+        };
+
+        if (transactionToEdit) {
+          transactionService.updateTransaction(
+            transactionToEdit.id,
+            transactionData,
+          );
+        } else {
           transactionService.addTransaction(transactionData);
-        console.log("Transaction added with ID:", transactionId);
+        }
       }
 
-      resetForm();
       onTransactionAdded();
-      onClose();
     } catch (error) {
       console.error("Error adding transaction:", error);
       Alert.alert("Error", "Failed to add transaction. Please try again.", [
@@ -200,37 +219,10 @@ export default function AddTransactionScreen({
     }
   };
 
-  const resetForm = () => {
-    setAmount("");
-    setDescription("");
-    setType("expense");
-    setSelectedCategory("");
-    setPaymentMethod("credit_card");
-    setDate(new Date().toISOString().split("T")[0]);
-    setPriority(undefined);
-    setSelectedAccount(accounts.length > 0 ? accounts[0].id : undefined);
-  };
-
   const getFilteredCategories = () => {
     return categories.filter(
       (cat) => cat.type === type && !cat.name.startsWith("Transfer"),
     );
-  };
-
-  const getCategoryEmoji = (categoryName: string) => {
-    const emojiMap: { [key: string]: string } = {
-      Transport: "🚗",
-      Restaurant: "🍽️",
-      Shopping: "🛍️",
-      Food: "🍎",
-      Gift: "🎁",
-      "Free time": "🎮",
-      Family: "👨‍👩‍👧‍👦",
-      Health: "🏥",
-      Salary: "💰",
-      Investment: "📈",
-    };
-    return emojiMap[categoryName] || "💵";
   };
 
   const getAccountTypeEmoji = (type: Account["type"]) => {
@@ -317,11 +309,30 @@ export default function AddTransactionScreen({
                   Income
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.typeButton,
+                  type === "transfer" && styles.typeButtonActive,
+                ]}
+                onPress={() => handleTypeChange("transfer")}
+                disabled={!!transactionToEdit} // Disable for edits
+              >
+                <Text
+                  style={[
+                    styles.typeButtonText,
+                    type === "transfer" && styles.typeButtonTextActive,
+                    !!transactionToEdit && { color: theme.colors.disabled },
+                  ]}
+                >
+                  Transfer
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 
           {/* Category Selector */}
           <View style={styles.section}>
+            {type !== 'transfer' && (<>
             <Text style={styles.sectionTitle}>Category & Description</Text>
             <ScrollView
               horizontal
@@ -339,7 +350,7 @@ export default function AddTransactionScreen({
                   onPress={() => setSelectedCategory(category.name)}
                 >
                   <Text style={styles.categoryEmojiCompact}>
-                    {getCategoryEmoji(category.name)}
+                    {category.icon}
                   </Text>
                   <Text
                     style={[
@@ -360,11 +371,12 @@ export default function AddTransactionScreen({
               placeholder="Add a note (optional)"
               placeholderTextColor={theme.colors.textSecondary}
             />
+            </>)}
           </View>
 
           {/* Account Selector */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Account</Text>
+            <Text style={styles.sectionTitle}>{type === 'transfer' ? 'From Account' : 'Account'}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -375,10 +387,10 @@ export default function AddTransactionScreen({
                   key={account.id}
                   style={[
                     styles.categoryItemCompact,
-                    selectedAccount === account.id &&
+                    fromAccount === account.id &&
                       styles.categoryItemCompactActive,
                   ]}
-                  onPress={() => setSelectedAccount(account.id)}
+                  onPress={() => setFromAccount(account.id)}
                 >
                   <Text style={styles.categoryEmojiCompact}>
                     {getAccountTypeEmoji(account.type)}
@@ -386,7 +398,7 @@ export default function AddTransactionScreen({
                   <Text
                     style={[
                       styles.categoryNameCompact,
-                      selectedAccount === account.id &&
+                      fromAccount === account.id &&
                         styles.categoryNameCompactActive,
                     ]}
                   >
@@ -399,8 +411,44 @@ export default function AddTransactionScreen({
             </ScrollView>
           </View>
 
+          {type === 'transfer' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>To Account</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryScrollContent}
+              >
+                {accounts.filter(acc => acc.id !== fromAccount).map((account) => (
+                  <TouchableOpacity
+                    key={account.id}
+                    style={[
+                      styles.categoryItemCompact,
+                      toAccount === account.id &&
+                        styles.categoryItemCompactActive,
+                    ]}
+                    onPress={() => setToAccount(account.id)}
+                  >
+                    <Text style={styles.categoryEmojiCompact}>
+                      {getAccountTypeEmoji(account.type)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.categoryNameCompact,
+                        toAccount === account.id &&
+                          styles.categoryNameCompactActive,
+                      ]}
+                    >
+                      {account.bankName ? `${account.name} (${account.bankName})` : account.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Payment Method & Priority (Combined) */}
-          <View style={styles.section}>
+          {type !== 'transfer' && <View style={styles.section}>
             <Text style={styles.sectionTitle}>
               {type === "expense" ? "Payment & Priority" : "Payment Method"}
             </Text>
@@ -468,7 +516,7 @@ export default function AddTransactionScreen({
                 </View>
               </View>
             )}
-          </View>
+          </View>}
 
           {/* Date */}
           <View style={styles.section}>

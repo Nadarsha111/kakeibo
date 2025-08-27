@@ -548,10 +548,10 @@ class AccountService {
   }
 
   /**
-   * Records a payment on a loan account. This is now handled by the TransactionService's addTransfer method,
+   * Records a repayment on a loan account. This is now handled by the TransactionService's addTransfer method,
    * but this helper can update the loan-specific fields.
    */
-  recordPaymentOnLoanAccount(loanAccountId: number, paymentAmount: number): void {
+  recordRepaymentOnLoanAccount(loanAccountId: number, paymentAmount: number): void {
     const loanAccount = this.getAccountById(loanAccountId);
     if (!loanAccount || loanAccount.type !== 'loan') {
       throw new Error('Invalid loan account specified.');
@@ -562,7 +562,7 @@ class AccountService {
       throw new Error('Payment exceeds outstanding loan amount.');
     }
 
-    let newStatus = 'partially_paid';
+    let newStatus: Account['loanStatus'] = 'partially_paid';
     if (newReturnedAmount >= (loanAccount.loanPrincipal || 0)) {
       newStatus = 'fully_paid';
     }
@@ -571,6 +571,28 @@ class AccountService {
       loanReturnedAmount: newReturnedAmount,
       loanStatus: newStatus as any,
       loanActualReturnDate: newStatus === 'fully_paid' ? new Date().toISOString().split('T')[0] : loanAccount.loanActualReturnDate,
+    });
+  }
+
+  /**
+   * Increases the principal of an existing loan account.
+   */
+  increaseLoanPrincipal(loanAccountId: number, increaseAmount: number): void {
+    const loanAccount = this.getAccountById(loanAccountId);
+    if (!loanAccount || loanAccount.type !== 'loan') {
+      throw new Error('Invalid loan account specified.');
+    }
+
+    const newPrincipal = (loanAccount.loanPrincipal || 0) + increaseAmount;
+    
+    // Also update the main balance of the account
+    const newBalance = loanAccount.isLending ? loanAccount.balance + increaseAmount : loanAccount.balance - increaseAmount;
+
+    this.updateAccount(loanAccountId, {
+      loanPrincipal: newPrincipal,
+      balance: newBalance,
+      // If it was fully paid, it's now active again
+      loanStatus: loanAccount.loanStatus === 'fully_paid' ? 'active' : loanAccount.loanStatus,
     });
   }
 }

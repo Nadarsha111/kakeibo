@@ -6,7 +6,7 @@ import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
-import AddTransactionScreen from '../../components/AddTransactionScreen';
+import { useTransactionModal } from '../../context/TransactionModalContext';
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
@@ -20,13 +20,13 @@ export default function TransactionsScreen() {
   
   // Transactions state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('All');
   
   // Categories state
   const [categorySummary, setCategorySummary] = useState<{category: string, amount: number, color: string, percentage: number}[]>([]);
   const [totals, setTotals] = useState({ expenses: 0, balance: 0, income: 0 });
+
+  const { openModal } = useTransactionModal();
 
   useFocusEffect(
     React.useCallback(() => {
@@ -108,8 +108,7 @@ export default function TransactionsScreen() {
   };
 
   const handleEditTransaction = (transaction: Transaction) => {
-    setTransactionToEdit(transaction);
-    setShowEditModal(true);
+    openModal({ transactionToEdit: transaction });
   };
 
   const handleDeleteTransaction = (transaction: Transaction) => {
@@ -294,17 +293,6 @@ export default function TransactionsScreen() {
           }
         />
       )}
-
-      {/* Edit Transaction Modal */}
-      <AddTransactionScreen
-        visible={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        onTransactionAdded={() => {
-          setShowEditModal(false);
-          onRefresh();
-        }}
-        transactionToEdit={transactionToEdit}
-      />
     </View>
   );
 }

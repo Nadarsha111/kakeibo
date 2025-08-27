@@ -18,7 +18,7 @@ import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import AddLoanScreen from "../../components/AddLoanScreen";
 import OptionSelector from "../../components/OptionSelector";
-import TransferFundsScreen from "../../components/TransferFundsScreen";
+import { useTransactionModal } from "../../context/TransactionModalContext";
 
 interface LoanSummary {
   totalLoaned: number;
@@ -38,11 +38,12 @@ export default function AccountsScreen() {
   const { formatCurrency, selectedProfileId, updateSelectedProfileId } = useSettings();
   const styles = createStyles(theme);
 
+  const { openModal } = useTransactionModal();
+
   // Accounts state
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [allAccounts, setAllAccounts] = useState<Account[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
-  const [showTransferFunds, setShowTransferFunds] = useState(false);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -64,7 +65,6 @@ export default function AccountsScreen() {
   const [showAddLoan, setShowAddLoan] = useState(false);
 
   // Shared state
-  const [preselectedTransferAccount, setPreselectedTransferAccount] = useState<Account | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
   const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
@@ -89,9 +89,8 @@ export default function AccountsScreen() {
   const loadAccounts = (profileId?: number) => {
     try {
       const accountService = getAccountService();
-      const allAccounts = accountService.getAccounts(profileId);
-      const accountsList = allAccounts.filter(a => a.type !== 'loan');
-      setAccounts(accountsList);
+      const allAccountsData = accountService.getAccounts(profileId);
+      setAllAccounts(allAccountsData);
 
       const total = accountService.getTotalAccountsBalance(profileId);
       setTotalBalance(total);
@@ -126,14 +125,8 @@ export default function AccountsScreen() {
     setShowAddLoan(false);
   };
 
-  const handleTransferComplete = () => {
-    loadData();
-    setShowTransferFunds(false);
-  };
-
   const handleRecordPayment = (loanAccount: Account) => {
-    setPreselectedTransferAccount(loanAccount);
-    setShowTransferFunds(true);
+    openModal({ loanForRepayment: loanAccount });
   };
 
   const handleDeleteAccount = (account: Account) => {
@@ -346,7 +339,9 @@ export default function AccountsScreen() {
     );
   };
 
-  const filteredLoans = accounts.filter(account => account.type === 'loan').filter(loan => {
+  const regularAccounts = allAccounts.filter(a => a.type !== 'loan');
+
+  const filteredLoans = allAccounts.filter(account => account.type === 'loan').filter(loan => {
     const isLending = loan.isLending === 1 || loan.isLending === true;
     return loanType === 'lendings' ? isLending : !isLending;
   });
@@ -364,7 +359,7 @@ export default function AccountsScreen() {
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => setShowTransferFunds(true)}
+            onPress={() => openModal({ initialType: 'transfer' })}
           >
             <MaterialCommunityIcons name="swap-horizontal" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
@@ -425,7 +420,7 @@ export default function AccountsScreen() {
               {formatCurrency(totalBalance)}
             </Text>
             <Text style={styles.accountCount}>
-              {accounts.length} {accounts.length === 1 ? "Account" : "Accounts"}
+              {regularAccounts.length} {regularAccounts.length === 1 ? "Account" : "Accounts"}
             </Text>
           </>
         ) : (
@@ -496,7 +491,7 @@ export default function AccountsScreen() {
       {/* Content List */}
       {activeTab === "accounts" ? (
         <FlatList
-          data={accounts}
+          data={regularAccounts}
           renderItem={renderAccountItem}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContainer}
@@ -563,13 +558,6 @@ export default function AccountsScreen() {
         onClose={() => setShowAddLoan(false)}
         onLoanAdded={handleLoanAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
-      />
-      <TransferFundsScreen
-        visible={showTransferFunds}
-        onClose={() => setShowTransferFunds(false)}
-        onTransferComplete={handleTransferComplete}
-        accounts={[...accounts, ...filteredLoans]}
-        preselectedAccount={preselectedTransferAccount}
       />
 
       {/* Profile Selection Modal */}
