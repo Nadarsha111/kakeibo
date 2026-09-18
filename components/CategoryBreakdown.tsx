@@ -2,6 +2,7 @@ import React, { useState, useEffect, } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useSettings } from "../context/SettingsContext";
+import DonutChart from "./DonutChart";
 
 interface CategorySummary {
   category: string;
@@ -73,26 +74,6 @@ function createStyles(theme: any) {
     pieChartContainer: {
       alignItems: "center",
       marginBottom: 20,
-    },
-    donutChart: {
-      width: 150,
-      height: 150,
-      borderRadius: 75,
-      backgroundColor: theme.colors.card,
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 20,
-      borderColor: theme.colors.primary,
-    },
-    donutCenterText: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: theme.colors.text,
-    },
-    donutCenterLabel: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      marginTop: 4,
     },
     legendContainer: {
       gap: 8,
@@ -219,12 +200,16 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
           ))}
         </View>
         <View style={styles.pieChartContainer}>
-          <View style={styles.donutChart}>
-            <Text style={styles.donutCenterText}>
-              {formatCurrency(totals.expenses)}
-            </Text>
-            <Text style={styles.donutCenterLabel}>Total Expenses</Text>
-          </View>
+          <DonutChart
+            slices={categorySummary.map((c) => ({ amount: c.amount, color: c.color }))}
+            size={150}
+            strokeWidth={20}
+            centerValue={formatCurrency(totals.expenses)}
+            centerLabel="Total Expenses"
+            centerValueColor={theme.colors.text}
+            centerLabelColor={theme.colors.textSecondary}
+            trackColor={theme.colors.card}
+          />
         </View>
         <View style={styles.legendContainer}>
           {categorySummary.slice(0, 6).map((category, index) => (

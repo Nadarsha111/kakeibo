@@ -12,6 +12,8 @@ import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import { router } from "expo-router";
 import { Account } from "../../types";
+import DonutChart from "../../components/DonutChart";
+import TrendChart from "../../components/TrendChart";
 
 interface DashboardData {
   totalBalance: number;
@@ -24,12 +26,16 @@ interface DashboardData {
   weeklyExpenses: number;
   weeklyIncome: number;
   monthlyExpenses: number;
+  monthlyIncome: number;
   categorySummary: Array<{
     category: string;
     amount: number;
     color: string;
   }>;
+  monthlyTrend: Array<{ month: string; income: number; expenses: number }>;
 }
+
+const TREND_MONTHS = 6;
 
 export default function OverviewScreen() {
   const { theme } = useTheme();
@@ -40,7 +46,9 @@ export default function OverviewScreen() {
     weeklyExpenses: 0,
     weeklyIncome: 0,
     monthlyExpenses: 0,
+    monthlyIncome: 0,
     categorySummary: [],
+    monthlyTrend: [],
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -96,7 +104,9 @@ export default function OverviewScreen() {
         weeklyExpenses,
         weeklyIncome,
         monthlyExpenses,
+        monthlyIncome,
         categorySummary,
+        monthlyTrend,
       ] = await Promise.all([
         Promise.resolve(
           accountService.getMonthlyAccountBalances(profileId),
@@ -123,11 +133,21 @@ export default function OverviewScreen() {
           ),
         ),
         Promise.resolve(
+          transactionService.getTotalIncome(
+            monthStart.toISOString().split("T")[0],
+            monthEnd.toISOString().split("T")[0],
+            profileId,
+          ),
+        ),
+        Promise.resolve(
           transactionService.getCategorySummary(
             monthStart.toISOString().split("T")[0],
             monthEnd.toISOString().split("T")[0],
             profileId,
           ),
+        ),
+        Promise.resolve(
+          transactionService.getMonthlyTrend(TREND_MONTHS, profileId),
         ),
       ]);
 
@@ -149,7 +169,9 @@ export default function OverviewScreen() {
         weeklyExpenses: weeklyExpenses || 0,
         weeklyIncome: weeklyIncome || 0,
         monthlyExpenses: monthlyExpenses || 0,
+        monthlyIncome: monthlyIncome || 0,
         categorySummary: (categorySummary || []).slice(0, 5), // Top 5 categories
+        monthlyTrend: monthlyTrend || [],
       });
     } catch (error) {
       console.error("Error loading dashboard data:", error);
@@ -160,7 +182,9 @@ export default function OverviewScreen() {
         weeklyExpenses: 0,
         weeklyIncome: 0,
         monthlyExpenses: 0,
+        monthlyIncome: 0,
         categorySummary: [],
+        monthlyTrend: [],
       });
     } finally {
       setIsLoading(false);
@@ -269,20 +293,17 @@ export default function OverviewScreen() {
           Top Categories
         </Text>
         <View className="flex-row items-center">
-          <View
-            className="justify-center items-center mr-5 rounded-full"
-            style={{
-              width: 100,
-              height: 100,
-              backgroundColor: theme.colors.primary,
-            }}
-          >
-            <Text className="text-base font-bold text-white">
-              {formatCurrency(total)}
-            </Text>
-            <Text className="text-xs text-white" style={{ opacity: 0.8 }}>
-              Total
-            </Text>
+          <View className="mr-5">
+            <DonutChart
+              slices={data.categorySummary.map((c) => ({ amount: c.amount, color: c.color }))}
+              size={100}
+              strokeWidth={16}
+              centerValue={formatCurrency(total)}
+              centerLabel="Total"
+              centerValueColor={theme.colors.text}
+              centerLabelColor={theme.colors.textSecondary}
+              trackColor={theme.colors.border}
+            />
           </View>
           <View className="flex-1">
             {data.categorySummary.map((category, index) => {
@@ -322,6 +343,71 @@ export default function OverviewScreen() {
                 </View>
               );
             })}
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderMonthlyTrend = () => {
+    const savingsRate =
+      data.monthlyIncome > 0
+        ? ((data.monthlyIncome - data.monthlyExpenses) / data.monthlyIncome) * 100
+        : 0;
+
+    return (
+      <View
+        className="m-5 rounded-xl p-5 border"
+        style={{
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.border,
+        }}
+      >
+        <View className="flex-row justify-between items-center mb-1">
+          <Text className="text-lg font-bold" style={{ color: theme.colors.text }}>
+            Income vs Expenses
+          </Text>
+          <Text
+            className="text-sm font-semibold"
+            style={{ color: savingsRate >= 0 ? theme.colors.success : theme.colors.error }}
+          >
+            {savingsRate >= 0 ? "+" : ""}
+            {savingsRate.toFixed(0)}% saved this month
+          </Text>
+        </View>
+        <Text className="text-xs mb-4" style={{ color: theme.colors.textSecondary }}>
+          Last {TREND_MONTHS} months
+        </Text>
+        {data.monthlyTrend.length > 0 ? (
+          <TrendChart
+            data={data.monthlyTrend}
+            incomeColor={theme.colors.success}
+            expenseColor={theme.colors.error}
+            labelColor={theme.colors.textSecondary}
+          />
+        ) : (
+          <Text className="text-sm text-center" style={{ color: theme.colors.textSecondary }}>
+            No transaction history yet
+          </Text>
+        )}
+        <View className="flex-row justify-center mt-3">
+          <View className="flex-row items-center mr-5">
+            <View
+              className="rounded-full mr-1.5"
+              style={{ width: 10, height: 10, backgroundColor: theme.colors.success }}
+            />
+            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>
+              Income
+            </Text>
+          </View>
+          <View className="flex-row items-center">
+            <View
+              className="rounded-full mr-1.5"
+              style={{ width: 10, height: 10, backgroundColor: theme.colors.error }}
+            />
+            <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>
+              Expenses
+            </Text>
           </View>
         </View>
       </View>
@@ -537,6 +623,9 @@ export default function OverviewScreen() {
 
         {/* Weekly Chart */}
         {renderWeeklyChart()}
+
+        {/* Monthly Income vs Expense Trend */}
+        {renderMonthlyTrend()}
 
         {/* Account Balances */}
         {renderAccountBalances()}

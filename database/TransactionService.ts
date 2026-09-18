@@ -465,6 +465,45 @@ class TransactionService {
   }
 
   /**
+   * Get income vs. expense totals for each of the last N months (oldest first).
+   * Months with no transactions are included with zero totals.
+   */
+  getMonthlyTrend(monthsBack: number, profileId?: number): Array<{ month: string; income: number; expenses: number }> {
+    try {
+      let query = `SELECT strftime('%Y-%m', date) as month,
+          SUM(CASE WHEN type = 'income' AND category != 'Transfer In' THEN amount ELSE 0 END) as income,
+          SUM(CASE WHEN type = 'expense' AND category != 'Transfer Out' THEN amount ELSE 0 END) as expenses
+        FROM transactions
+        WHERE date >= DATE('now', ?)`;
+      const params: any[] = [`-${monthsBack} months`];
+
+      if (profileId) {
+        query += ' AND profileId = ?';
+        params.push(profileId);
+      }
+
+      query += ' GROUP BY month';
+
+      const rows = this.db.getAllSync(query, params) as Array<{ month: string; income: number; expenses: number }>;
+      const byMonth = new Map(rows.map(row => [row.month, row]));
+
+      const result: Array<{ month: string; income: number; expenses: number }> = [];
+      const cursor = new Date();
+      cursor.setDate(1);
+      for (let i = monthsBack - 1; i >= 0; i--) {
+        const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const row = byMonth.get(key);
+        result.push({ month: key, income: row?.income || 0, expenses: row?.expenses || 0 });
+      }
+      return result;
+    } catch (error) {
+      console.error('Error getting monthly trend:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get all transactions for export with category names
    */
   getAllTransactionsForExport(): Array<Transaction & { categoryName?: string }> {
