@@ -5,6 +5,7 @@ import {
   GoogleSignin,
   type User,
 } from "@react-native-google-signin/google-signin";
+import { getSheetsWorkbookService, SHEET_TABS } from "./SheetsWorkbookService";
 
 class GoogleSyncService {
   private static SPREADSHEET_NAME = "Kakeibo App Data";
@@ -136,47 +137,14 @@ class GoogleSyncService {
   }
 
   private async syncTransactions() {
-    // 1. Ensure user is signed in and get an access token
     const tokens = await GoogleSignin.getTokens();
     const accessToken = tokens.accessToken;
 
-    // 2. Find or create the spreadsheet
     const spreadsheetId = await this.findOrCreateSpreadsheet(accessToken);
     if (!spreadsheetId)
       throw new Error("Could not find or create spreadsheet.");
 
-    // 3. Get all transactions from the local database
-    const transactionService = getTransactionService();
-    const transactions = transactionService.getAllTransactionsForExport();
-
-    // 4. Format data for the sheet (add headers)
-    const values = [
-      [
-        "ID",
-        "Date",
-        "Type",
-        "Category",
-        "Amount",
-        "Description",
-        "Payment Method",
-        "Account ID",
-        "Profile ID",
-      ],
-      ...transactions.map((t) => [
-        t.id,
-        t.date,
-        t.type,
-        t.category,
-        t.amount,
-        t.description,
-        t.paymentMethod,
-        t.accountId,
-        t.profileId,
-      ]),
-    ];
-
-    // 5. Write data to the sheet
-    await this.writeToSheet(accessToken, spreadsheetId, values);
+    await getSheetsWorkbookService().refresh(accessToken, spreadsheetId);
     console.log("Sync complete!");
   }
 
@@ -189,8 +157,7 @@ class GoogleSyncService {
       throw new Error("Could not find the spreadsheet. Push your data to Google Sheets first.");
     }
 
-    const range = "Sheet1";
-    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`;
+    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${SHEET_TABS.TRANSACTIONS}`;
     const response = await fetch(readUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -259,39 +226,6 @@ class GoogleSyncService {
     const createResult = await createResponse.json();
     console.log("Created new spreadsheet with ID:", createResult.spreadsheetId);
     return createResult.spreadsheetId;
-  }
-
-  private async writeToSheet(
-    accessToken: string,
-    spreadsheetId: string,
-    values: any[][],
-  ) {
-    const range = "Sheet1";
-    // Clear the sheet first to ensure fresh data
-    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:clear`;
-    await fetch(clearUrl, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    // Write the new data
-    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`;
-    const response = await fetch(writeUrl, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ values }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Error writing to sheet:", errorData);
-      throw new Error("Failed to write data to Google Sheet.");
-    }
-
-    console.log(`Successfully wrote ${values.length} rows to spreadsheet.`);
   }
 }
 
