@@ -3,7 +3,7 @@
  * This file helps create and manage pre-seeded database content
  */
 
-import { getAccountService, getTransactionService, getLoanService,DatabaseUtils } from '../database';
+import { getAccountService, getProfileService, getTransactionService, DatabaseUtils } from '../database';
 
 export class DatabaseSeeder {
   
@@ -63,22 +63,25 @@ export class DatabaseSeeder {
         }
       });
       
-      // Add realistic loans
-      const productionLoans = [
-        {
-          borrowerName: 'Alex Chen',
-          borrowerContact: '+1 555-0123',
-          amount: 800,
-          lentDate: this.getDateDaysAgo(45),
-          expectedReturnDate: this.getDateDaysAgo(-15), // 15 days from now
+      // Add a realistic loan (loans are accounts with type 'loan')
+      const profileId = checkingAccount?.profileId ?? getProfileService().getProfiles()[0]?.id;
+      if (profileId) {
+        accountService.addAccount({
+          profileId,
+          name: 'Loan to Alex Chen',
+          type: 'loan',
+          balance: 0,
+          currency: 'USD',
+          isActive: true,
+          isLending: true,
+          loanPrincipal: 800,
+          loanCounterpartyName: 'Alex Chen',
+          loanCounterpartyContact: '+1 555-0123',
+          loanLentDate: this.getDateDaysAgo(45),
+          loanExpectedReturnDate: this.getDateDaysAgo(-15), // 15 days from now
           description: 'Emergency medical expenses',
-        },
-      ];
-      
-      const loanService = getLoanService();
-      productionLoans.forEach(loan => {
-        loanService.addLoan(loan);
-      });
+        });
+      }
       
       console.log('✅ Production data seeded successfully');
       return true;
@@ -95,20 +98,23 @@ export class DatabaseSeeder {
   static seedMinimalData = (): boolean => {
     try {
       console.log('🌱 Seeding minimal data...');
-      
-      // Only add a basic account setup
-      const now = new Date().toISOString();
-      
+
+      const profileId = getProfileService().getProfiles()[0]?.id;
+      if (!profileId) {
+        throw new Error('No profile exists to seed accounts into.');
+      }
+
       // Add one basic account of each type with zero balance
       const minimalAccounts = [
         { name: 'Wallet', type: 'cash' as const, balance: 0, currency: 'USD' },
         { name: 'Bank Account', type: 'checking' as const, balance: 0, currency: 'USD' },
       ];
-      
+
       const accountService = getAccountService();
       minimalAccounts.forEach(account => {
         accountService.addAccount({
           ...account,
+          profileId,
           isActive: true,
         });
       });

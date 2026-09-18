@@ -94,20 +94,14 @@ class ProfileService {
   }
 
   /**
-   * Delete a profile. This will fail if the profile is in use by accounts or loans.
+   * Delete a profile. This will fail if the profile is in use by accounts (loan accounts included).
    */
   deleteProfile(id: number): void {
     try {
-      // Check for associated accounts
+      // Check for associated accounts (loan accounts live in the accounts table too)
       const accountCount = this.db.getFirstSync('SELECT COUNT(*) as count FROM accounts WHERE profileId = ?', [id]) as { count: number };
       if (accountCount.count > 0) {
         throw new Error(`Cannot delete profile with ${accountCount.count} associated accounts.`);
-      }
-
-      // Check for associated loans
-      const loanCount = this.db.getFirstSync('SELECT COUNT(*) as count FROM loans WHERE profileId = ?', [id]) as { count: number };
-      if (loanCount.count > 0) {
-        throw new Error(`Cannot delete profile with ${loanCount.count} associated loans.`);
       }
 
       this.db.runSync('DELETE FROM profiles WHERE id = ?', [id]);
