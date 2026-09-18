@@ -524,6 +524,77 @@ class TransactionService {
   }
 
   /**
+   * Creates or updates a transaction from a row pulled from the synced Google Sheet.
+   * Row order matches the export header: [ID, Date, Type, Category, Amount, Description,
+   * Payment Method, Account ID, Profile ID]. A blank/unrecognized ID is treated as a new row.
+   * Rows that fail validation (bad category, account, enum values, etc.) are skipped rather
+   * than guessed at, so a bad manual edit in the sheet can't corrupt local data.
+   */
+  upsertFromSheetRow(row: string[]): 'created' | 'updated' | 'unchanged' | 'skipped' {
+    try {
+      const [idRaw, date, type, category, amountRaw, description, paymentMethod, accountIdRaw, profileIdRaw] = row;
+
+      if (type !== 'income' && type !== 'expense') return 'skipped';
+      if (!['cash', 'credit_card', 'debit_card'].includes(paymentMethod)) return 'skipped';
+
+      const amount = parseFloat(amountRaw);
+      if (isNaN(amount) || amount <= 0) return 'skipped';
+
+      if (!date || isNaN(new Date(date).getTime())) return 'skipped';
+
+      const categoryExists = this.db.getFirstSync('SELECT 1 FROM categories WHERE name = ?', [category]);
+      if (!categoryExists) return 'skipped';
+
+      const profileId = parseInt(profileIdRaw, 10);
+      if (isNaN(profileId) || !this.db.getFirstSync('SELECT 1 FROM profiles WHERE id = ?', [profileId])) return 'skipped';
+
+      let accountId: number | null = null;
+      const parsedAccountId = parseInt(accountIdRaw, 10);
+      if (!isNaN(parsedAccountId) && this.accountService.getAccountById(parsedAccountId)) {
+        accountId = parsedAccountId;
+      }
+
+      const payload = {
+        profileId,
+        amount,
+        type: type as Transaction['type'],
+        category,
+        description: description || undefined,
+        date,
+        paymentMethod: paymentMethod as Transaction['paymentMethod'],
+        accountId,
+      };
+
+      const id = parseInt(idRaw, 10);
+      const existing = !isNaN(id) ? this.getTransactionById(id) : null;
+
+      if (!existing) {
+        this.addTransaction(payload);
+        return 'created';
+      }
+
+      const norm = (v: unknown) => (v === undefined || v === null || v === '' ? null : v);
+      const unchanged =
+        existing.profileId === payload.profileId &&
+        Math.abs(existing.amount - payload.amount) < 0.005 &&
+        existing.type === payload.type &&
+        existing.category === payload.category &&
+        norm(existing.description) === norm(payload.description) &&
+        existing.date === payload.date &&
+        existing.paymentMethod === payload.paymentMethod &&
+        norm(existing.accountId) === norm(payload.accountId);
+
+      if (unchanged) return 'unchanged';
+
+      this.updateTransaction(id, payload);
+      return 'updated';
+    } catch (error) {
+      console.error('Error upserting transaction from sheet row:', error);
+      return 'skipped';
+    }
+  }
+
+  /**
    * Get export summary statistics
    */
   getExportSummary() {

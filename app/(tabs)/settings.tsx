@@ -168,12 +168,21 @@ export default function SettingsScreen() {
           {googleUser ? (
             <>
               <SettingItem
-                title="Sync with Google Sheets"
+                title="Push to Google Sheets"
                 subtitle={`Signed in as ${googleUser.user.email}`}
                 rightComponent={<Text style={styles.chevron}>›</Text>}
                 onPress={async () => {
                   const syncService = getGoogleSyncService();
-                  await syncService.sync();
+                  await syncService.push();
+                }}
+              />
+              <SettingItem
+                title="Pull from Google Sheets"
+                subtitle="Bring edits made in the sheet back into the app"
+                rightComponent={<Text style={styles.chevron}>›</Text>}
+                onPress={async () => {
+                  const syncService = getGoogleSyncService();
+                  await syncService.pull();
                 }}
               />
               <SettingItem
@@ -192,7 +201,7 @@ export default function SettingsScreen() {
               rightComponent={<Text style={styles.chevron}>›</Text>}
               onPress={async () => {
                 const syncService = getGoogleSyncService();
-                await syncService.sync();
+                await syncService.push();
                 checkGoogleSignInStatus(); // Refresh UI after sync attempt
               }}
             />

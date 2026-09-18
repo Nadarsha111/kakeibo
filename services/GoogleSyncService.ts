@@ -65,7 +65,10 @@ class GoogleSyncService {
     return GoogleSignin.getCurrentUser();
   }
 
-  public async sync(): Promise<void> {
+  /**
+   * Overwrites the Google Sheet with the current local data (local wins).
+   */
+  public async push(): Promise<void> {
     try {
       let isSignedIn = await this.isSignedIn();
       if (!isSignedIn) {
@@ -77,19 +80,57 @@ class GoogleSyncService {
       }
 
       Alert.alert(
-        "Syncing...",
-        "Your data is being synced to Google Sheets. This may take a moment.",
+        "Pushing...",
+        "Your data is being pushed to Google Sheets. This may take a moment.",
       );
       await this.syncTransactions();
       Alert.alert(
         "Success",
-        "Your data has been successfully synced to Google Sheets.",
+        "Your data has been successfully pushed to Google Sheets.",
       );
     } catch (error: any) {
-      console.error("Sync process failed:", error);
+      console.error("Push process failed:", error);
       Alert.alert(
-        "Sync Failed",
-        error.message || "An unexpected error occurred during sync.",
+        "Push Failed",
+        error.message || "An unexpected error occurred during push.",
+      );
+    }
+  }
+
+  /**
+   * Reads the Google Sheet and applies its rows to the local database: edited
+   * rows update the matching local transaction, and rows with no matching ID
+   * (e.g. new rows typed directly into the sheet) are created locally. Rows
+   * that fail validation are left alone. A row deleted from the sheet does
+   * NOT delete the local transaction - that's left to the app to avoid an
+   * accidental sheet edit wiping data. Finishes by pushing so the sheet's ID
+   * column reflects any newly-created rows.
+   */
+  public async pull(): Promise<void> {
+    try {
+      let isSignedIn = await this.isSignedIn();
+      if (!isSignedIn) {
+        const user = await this.signIn();
+        if (!user) {
+          return;
+        }
+      }
+
+      Alert.alert(
+        "Pulling...",
+        "Reading changes from Google Sheets. This may take a moment.",
+      );
+      const summary = await this.pullTransactions();
+      await this.syncTransactions();
+      Alert.alert(
+        "Pull Complete",
+        `${summary.created} added, ${summary.updated} updated, ${summary.unchanged} unchanged, ${summary.skipped} skipped.`,
+      );
+    } catch (error: any) {
+      console.error("Pull process failed:", error);
+      Alert.alert(
+        "Pull Failed",
+        error.message || "An unexpected error occurred during pull.",
       );
     }
   }
@@ -137,6 +178,41 @@ class GoogleSyncService {
     // 5. Write data to the sheet
     await this.writeToSheet(accessToken, spreadsheetId, values);
     console.log("Sync complete!");
+  }
+
+  private async pullTransactions(): Promise<{ created: number; updated: number; unchanged: number; skipped: number }> {
+    const tokens = await GoogleSignin.getTokens();
+    const accessToken = tokens.accessToken;
+
+    const spreadsheetId = await this.findOrCreateSpreadsheet(accessToken);
+    if (!spreadsheetId) {
+      throw new Error("Could not find the spreadsheet. Push your data to Google Sheets first.");
+    }
+
+    const range = "Sheet1";
+    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`;
+    const response = await fetch(readUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to read data from Google Sheet.");
+    }
+
+    const result = await response.json();
+    const rows: string[][] = result.values || [];
+    const dataRows = rows.slice(1); // Drop the header row
+
+    const transactionService = getTransactionService();
+    const summary = { created: 0, updated: 0, unchanged: 0, skipped: 0 };
+
+    for (const row of dataRows) {
+      const outcome = transactionService.upsertFromSheetRow(row);
+      summary[outcome]++;
+    }
+
+    console.log("Pull complete:", summary);
+    return summary;
   }
 
   private async findOrCreateSpreadsheet(
