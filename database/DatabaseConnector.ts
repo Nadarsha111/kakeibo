@@ -80,6 +80,7 @@ class DatabaseConnector {
           accountNumber TEXT,
           creditLimit REAL,
           billDay INTEGER,
+          payAtMonthEnd INTEGER NOT NULL DEFAULT 0,
           isActive INTEGER NOT NULL DEFAULT 1,
           createdAt TEXT NOT NULL,
           updatedAt TEXT NOT NULL
@@ -250,6 +251,12 @@ class DatabaseConnector {
     (db) => {
       if (!DatabaseConnector.hasColumn(db, 'accounts', 'billDay')) {
         db.execSync('ALTER TABLE accounts ADD COLUMN billDay INTEGER');
+      }
+    },
+    // 6: bills paid from the month-end salary count as money needed this month even when they fall due early next month
+    (db) => {
+      if (!DatabaseConnector.hasColumn(db, 'accounts', 'payAtMonthEnd')) {
+        db.execSync('ALTER TABLE accounts ADD COLUMN payAtMonthEnd INTEGER NOT NULL DEFAULT 0');
       }
     },
   ];

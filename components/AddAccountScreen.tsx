@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
   Modal,
+  Switch,
 } from 'react-native';
 import { getAccountService, getTransactionService } from '../database';
 import { Account } from '../types';
@@ -43,6 +44,7 @@ export default function AddAccountScreen({
   const [accountNumber, setAccountNumber] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
   const [billDay, setBillDay] = useState('');
+  const [payAtMonthEnd, setPayAtMonthEnd] = useState(false);
 
   // Loan-specific state
   const [isLending, setIsLending] = useState(true);
@@ -74,6 +76,7 @@ export default function AddAccountScreen({
     setAccountNumber(account.accountNumber ?? '');
     setCreditLimit(account.creditLimit ? String(account.creditLimit) : '');
     setBillDay(account.billDay ? String(account.billDay) : '');
+    setPayAtMonthEnd(!!account.payAtMonthEnd);
   }, [visible, account?.id]);
 
   useEffect(() => {
@@ -102,6 +105,7 @@ export default function AddAccountScreen({
     setAccountNumber('');
     setCreditLimit('');
     setBillDay('');
+    setPayAtMonthEnd(false);
     // Reset loan fields
     setIsLending(true);
     setLoanCounterpartyName('');
@@ -181,6 +185,7 @@ export default function AddAccountScreen({
           ...(type === 'credit_card' && {
             creditLimit: creditLimit.trim() ? parseFloat(creditLimit) : null,
             billDay: billDay.trim() ? Number(billDay) : null,
+            payAtMonthEnd,
           }),
         });
         onAccountAdded();
@@ -225,6 +230,7 @@ export default function AddAccountScreen({
           loanLentDate: new Date().toISOString().split('T')[0],
           loanExpectedReturnDate: loanExpectedReturnDate.trim() || undefined,
           description: loanDescription.trim() || undefined,
+          payAtMonthEnd: !isLending && payAtMonthEnd,
           ...installmentFields,
         };
       } else {
@@ -237,6 +243,7 @@ export default function AddAccountScreen({
           currency: currency.trim() || 'USD',
           creditLimit: type === 'credit_card' && creditLimit.trim() ? parseFloat(creditLimit) : undefined,
           billDay: type === 'credit_card' && billDay.trim() ? Number(billDay) : undefined,
+          payAtMonthEnd: type === 'credit_card' && payAtMonthEnd,
           bankName: bankName.trim() || undefined,
           accountNumber: accountNumber.trim() || undefined,
           isActive: true,
@@ -464,6 +471,24 @@ export default function AddAccountScreen({
                 />
               </View>
 
+              {!isLending && (
+                <View style={styles.section}>
+                  <View style={styles.switchRow}>
+                    <View style={styles.switchText}>
+                      <Text style={styles.sectionTitle}>I pay this at month end</Text>
+                      <Text style={styles.helperText}>
+                        For a loan due early next month that you pay from your month-end salary: it counts as money needed this month.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={payAtMonthEnd}
+                      onValueChange={setPayAtMonthEnd}
+                      trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                    />
+                  </View>
+                </View>
+              )}
+
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
                   {isLending ? "Paid From Account" : "Deposit Into Account"}
@@ -553,7 +578,7 @@ export default function AddAccountScreen({
                     style={styles.textInput}
                     value={billDay}
                     onChangeText={setBillDay}
-                    placeholder="Day of the month the bill is due, e.g., 15"
+                    placeholder="Day of the month the bill is generated, e.g., 22"
                     keyboardType="number-pad"
                     maxLength={2}
                     placeholderTextColor={theme.colors.textSecondary}
@@ -561,6 +586,19 @@ export default function AddAccountScreen({
                   <Text style={styles.helperText}>
                     What you owe on this card is added to "Money needed this month" when this day falls before the month ends.
                   </Text>
+                  <View style={[styles.switchRow, { marginTop: 20 }]}>
+                    <View style={styles.switchText}>
+                      <Text style={styles.sectionTitle}>I pay this at month end</Text>
+                      <Text style={styles.helperText}>
+                        The bill is due early next month (after the grace period) but you pay it from your month-end salary. It stays in "Money needed this month" after the bill is generated, until it is paid.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={payAtMonthEnd}
+                      onValueChange={setPayAtMonthEnd}
+                      trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                    />
+                  </View>
                 </View>
               )}
 
@@ -726,6 +764,15 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
       marginTop: 8,
       fontStyle: 'italic',
+    },
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    switchText: {
+      flex: 1,
     },
     loanTypeContainer: {
       flexDirection: 'row',

@@ -69,8 +69,8 @@ class AccountService {
       const result = this.db.runSync(
         `INSERT INTO accounts (profileId, name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt,
           isLending, loanPrincipal, loanReturnedAmount, loanStatus, loanCounterpartyName, loanCounterpartyContact, loanLentDate, loanExpectedReturnDate, description,
-          loanInterestRate, loanTermMonths, loanInstallmentAmount, loanPaymentDay, loanNextDueDate, loanInterestPaid, creditLimit, billDay)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          loanInterestRate, loanTermMonths, loanInstallmentAmount, loanPaymentDay, loanNextDueDate, loanInterestPaid, creditLimit, billDay, payAtMonthEnd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           account.profileId,
           account.name,
@@ -99,6 +99,7 @@ class AccountService {
           account.loanInterestPaid ?? null,
           account.creditLimit ?? null,
           account.billDay ?? null,
+          account.payAtMonthEnd ? 1 : 0,
         ]
       );
 
@@ -179,6 +180,10 @@ class AccountService {
       if (account.billDay !== undefined) {
         fields.push('billDay = ?');
         values.push(account.billDay);
+      }
+      if (account.payAtMonthEnd !== undefined) {
+        fields.push('payAtMonthEnd = ?');
+        values.push(account.payAtMonthEnd ? 1 : 0);
       }
       if (account.loanInterestPaid !== undefined) {
         fields.push('loanInterestPaid = ?');
@@ -558,7 +563,5 @@ class AccountService {
     });
   }
 }
-
-export default AccountService;
 
 export default AccountService;

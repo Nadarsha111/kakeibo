@@ -2,8 +2,8 @@ import DatabaseConnector from './DatabaseConnector';
 import AccountService from './AccountService';
 import TransactionService from './TransactionService';
 import { Account, RecurringItem } from '../types';
-import { FREQUENCIES, advanceDueDate, countDue, endOfMonth, monthlyEquivalent, nextBillDate } from '../utils/recurring';
-import { interestDue, isValidDate, round2 } from '../utils/loanMath';
+import { FREQUENCIES, advanceDueDate, countDue, endOfMonth, endOfNextMonth, monthlyEquivalent, nextBillDate } from '../utils/recurring';
+import { addMonths, interestDue, isValidDate, round2 } from '../utils/loanMath';
 
 export interface MonthlyEmi {
   id: number;
@@ -35,6 +35,11 @@ export interface NeededLine {
   dueDate: string;
   overdue: boolean;
   kind: 'bill' | 'savings' | 'loan' | 'card';
+  /**
+   * Paid from the month-end salary although it falls due (or is billed) after the month ends, so it
+   * counts this month.
+   */
+  payAtMonthEnd?: boolean;
 }
 
 export interface NeededSummary {
@@ -316,9 +321,15 @@ class RecurringService {
    * installments counts in full when its return date is by month end. A credit card with a bill
    * day counts what is owed on it when that day falls by month end. It is compared with what is in
    * cash, bank and savings accounts.
+   *
+   * A loan or credit card marked "pay at month end" is paid from the month-end salary even when it
+   * falls due early next month (a card's grace period, a loan due on the 4th), so it also counts
+   * anything falling due by the end of next month. For a card that means the statement amount: what
+   * is owed minus what was charged since the bill day, because those charges go on the next bill.
    */
   getNeededThisMonth(profileId?: number, today: string = new Date().toISOString().split('T')[0]): NeededSummary {
     const monthEnd = endOfMonth(today);
+    const nextMonthEnd = endOfNextMonth(today);
     const lines: NeededLine[] = [];
     let expectedIncome = 0;
 
@@ -341,7 +352,7 @@ class RecurringService {
     });
 
     let loanQuery = `SELECT id, name, loanPrincipal, loanReturnedAmount, loanInterestRate, loanTermMonths, loanInstallmentAmount,
-        loanPaymentDay, loanNextDueDate, loanExpectedReturnDate FROM accounts
+        loanPaymentDay, loanNextDueDate, loanExpectedReturnDate, payAtMonthEnd FROM accounts
       WHERE type = 'loan' AND isActive = 1 AND (isLending IS NULL OR isLending = 0) AND loanStatus != 'fully_paid'`;
     const loanParams: any[] = [];
     if (profileId) {
@@ -353,9 +364,12 @@ class RecurringService {
       const outstanding = round2((loan.loanPrincipal || 0) - (loan.loanReturnedAmount || 0));
       if (outstanding <= 0) return;
 
+      // Paid from the month-end salary, so what falls due before the next one is needed now too
+      const cutoff = loan.payAtMonthEnd ? nextMonthEnd : monthEnd;
+
       if (loan.loanTermMonths && loan.loanInstallmentAmount > 0) {
         if (!loan.loanNextDueDate) return;
-        const installments = countDue(loan.loanNextDueDate, monthEnd, 'monthly', loan.loanPaymentDay, MAX_CATCH_UP);
+        const installments = countDue(loan.loanNextDueDate, cutoff, 'monthly', loan.loanPaymentDay, MAX_CATCH_UP);
         if (installments === 0) return;
         // The last installments cannot come to more than what is left to pay off
         const payoff = round2(outstanding + interestDue(outstanding, loan.loanInterestRate || 0));
@@ -366,8 +380,9 @@ class RecurringService {
           dueDate: loan.loanNextDueDate,
           overdue: loan.loanNextDueDate < today,
           kind: 'loan',
+          payAtMonthEnd: !!loan.payAtMonthEnd && loan.loanNextDueDate > monthEnd,
         });
-      } else if (loan.loanExpectedReturnDate && loan.loanExpectedReturnDate <= monthEnd) {
+      } else if (loan.loanExpectedReturnDate && loan.loanExpectedReturnDate <= cutoff) {
         lines.push({
           key: `loan-${loan.id}`,
           label: loan.name,
@@ -375,14 +390,16 @@ class RecurringService {
           dueDate: loan.loanExpectedReturnDate,
           overdue: loan.loanExpectedReturnDate < today,
           kind: 'loan',
+          payAtMonthEnd: !!loan.payAtMonthEnd && loan.loanExpectedReturnDate > monthEnd,
         });
       }
     });
 
     // A credit card with a bill day and something owed is a bill: what is owed now, due on that day.
-    // A bill day already past this month means the next bill falls next month, so it is not needed yet.
-    let cardQuery = `SELECT id, name, balance, billDay FROM accounts
-      WHERE type = 'credit_card' AND isActive = 1 AND billDay IS NOT NULL AND balance < 0`;
+    // A bill day already past this month means the next bill falls next month, so it is not needed yet,
+    // unless the card is paid at month end: then its already-issued bill is still to be paid this month.
+    let cardQuery = `SELECT id, name, balance, billDay, payAtMonthEnd FROM accounts
+      WHERE type = 'credit_card' AND isActive = 1 AND (billDay IS NOT NULL OR payAtMonthEnd = 1) AND balance < 0`;
     const cardParams: any[] = [];
     if (profileId) {
       cardQuery += ' AND profileId = ?';
@@ -390,6 +407,34 @@ class RecurringService {
     }
 
     (this.db.getAllSync(cardQuery, cardParams) as any[]).forEach((card) => {
+      if (card.payAtMonthEnd) {
+        // Before the bill day everything owed goes on the coming bill. From then on the bill is fixed
+        // at what was owed that day, and later purchases belong to the next one.
+        const owed = round2(-card.balance);
+        let amount = owed;
+        if (card.billDay) {
+          const billDate = addMonths(today, 0, card.billDay);
+          if (billDate < today) {
+            const since = this.db.getFirstSync(
+              "SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE accountId = ? AND type = 'expense' AND DATE(date) > DATE(?)",
+              [card.id, billDate],
+            ) as { total: number };
+            amount = round2(owed - since.total);
+          }
+        }
+        if (amount <= 0) return;
+        lines.push({
+          key: `card-${card.id}`,
+          label: `${card.name} bill`,
+          amount,
+          dueDate: monthEnd,
+          overdue: false,
+          kind: 'card',
+          payAtMonthEnd: true,
+        });
+        return;
+      }
+
       const dueDate = nextBillDate(card.billDay, today);
       if (dueDate > monthEnd) return;
       lines.push({

@@ -101,6 +101,11 @@ export function endOfMonth(date: string): string {
   return new Date(Date.UTC(year, month, 0)).toISOString().split('T')[0];
 }
 
+/** The last day of the month after the one `date` falls in. */
+export function endOfNextMonth(date: string): string {
+  return endOfMonth(addMonths(date, 1, 1));
+}
+
 /** "2026-09-25" -> "25 Sep", read as a plain calendar date so the time zone cannot shift it. */
 export function formatDay(date: string): string {
   const [year, month, day] = date.split('-').map(Number);

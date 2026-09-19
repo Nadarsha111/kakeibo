@@ -173,6 +173,17 @@ export default function AccountsScreen() {
     setPaymentLoan(loanAccount);
   };
 
+  // Whether a bill falling due next month is counted in this month's "Money needed"
+  const togglePayAtMonthEnd = (account: Account) => {
+    try {
+      getAccountService().updateAccount(account.id, { payAtMonthEnd: !account.payAtMonthEnd });
+      loadData();
+    } catch (error) {
+      console.error("Error updating month-end payment:", error);
+      Alert.alert("Error", "Failed to update account");
+    }
+  };
+
   const deleteAccount = (account: Account, deleteTransactions: boolean) => {
     try {
       getAccountService().deleteAccount(account.id, { deleteTransactions });
@@ -309,7 +320,7 @@ export default function AccountsScreen() {
 
   const renderBillDay = (account: Account) => (
     <Text style={[styles.accountType, { marginTop: 8 }]}>
-      {`Bill due on the ${account.billDay}${ordinalSuffix(account.billDay || 0)} of each month`}
+      {`Bill on the ${account.billDay}${ordinalSuffix(account.billDay || 0)} of each month${account.payAtMonthEnd ? " · paid at month end" : ""}`}
     </Text>
   );
 
@@ -351,6 +362,9 @@ export default function AccountsScreen() {
         </View>
         {account.type === 'credit_card' && (account.creditLimit || 0) > 0 && renderCardUsage(account)}
         {account.type === 'credit_card' && !!account.billDay && renderBillDay(account)}
+        {account.type === 'credit_card' && !account.billDay && !!account.payAtMonthEnd && (
+          <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
+        )}
         {isSelected && (
           <View style={styles.cardActions}>
             <TouchableOpacity
@@ -487,6 +501,10 @@ export default function AccountsScreen() {
           </View>
         )}
 
+        {!isLendingLoan(loanAccount) && !!loanAccount.payAtMonthEnd && loanAccount.loanStatus !== 'fully_paid' && (
+          <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
+        )}
+
         <View style={styles.loanDateSection}>
           <Text style={styles.loanDateLabel}>
             Date: {new Date(loanAccount.loanLentDate || '').toLocaleDateString()}
@@ -509,6 +527,21 @@ export default function AccountsScreen() {
               <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.error} />
               <Text style={[styles.cardActionButtonText, { color: theme.colors.error }]}>Delete</Text>
             </TouchableOpacity>
+            {!isLendingLoan(loanAccount) && loanAccount.loanStatus !== 'fully_paid' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => togglePayAtMonthEnd(loanAccount)}
+              >
+                <MaterialCommunityIcons
+                  name={loanAccount.payAtMonthEnd ? "calendar-check" : "calendar-blank-outline"}
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>
+                  {loanAccount.payAtMonthEnd ? "Month-end pay: on" : "Month-end pay: off"}
+                </Text>
+              </TouchableOpacity>
+            )}
             {loanAccount.loanStatus !== 'fully_paid' && (
               <TouchableOpacity
                 style={styles.cardActionButton}

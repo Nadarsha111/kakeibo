@@ -2,12 +2,20 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { getRecurringService, type NeededSummary } from '../database';
+import { getRecurringService, type NeededLine, type NeededSummary } from '../database';
 import { useTheme } from '../context/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
 import { formatDay } from '../utils/recurring';
 
 const MAX_LINES = 4;
+
+/** When a line falls due; ones paid from the month-end salary say so, since their due date is next month. */
+const describeDue = (line: NeededLine) => {
+  if (line.overdue) return `Overdue since ${formatDay(line.dueDate)}`;
+  if (!line.payAtMonthEnd) return `Due ${formatDay(line.dueDate)}`;
+  // A card's real due date depends on its grace period, so only the loans show one
+  return line.kind === 'card' ? 'Paid at month end' : `Due ${formatDay(line.dueDate)} · paid at month end`;
+};
 
 interface NeededThisMonthCardProps {
   /** Changes whenever the screen reloads its numbers, so this card refreshes with it. */
@@ -84,7 +92,7 @@ export default function NeededThisMonthCard({ refreshKey }: NeededThisMonthCardP
               <View style={styles.lineText}>
                 <Text style={styles.lineLabel} numberOfLines={1}>{line.label}</Text>
                 <Text style={[styles.lineDate, line.overdue && { color: theme.colors.error, fontWeight: '600' }]}>
-                  {line.overdue ? `Overdue since ${formatDay(line.dueDate)}` : `Due ${formatDay(line.dueDate)}`}
+                  {describeDue(line)}
                   {line.kind === 'savings' ? ' · savings' : line.kind === 'card' ? ' · credit card' : ''}
                 </Text>
               </View>
