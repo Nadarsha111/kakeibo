@@ -154,12 +154,7 @@ export default function AccountsScreen() {
   }, [allAccounts, debouncedSearchTerm]);
 
   const handleRecordPayment = (loanAccount: Account) => {
-    if (loanAccount.loanTermMonths) {
-      // Installment loans split each payment into interest and principal
-      setPaymentLoan(loanAccount);
-    } else {
-      openModal({ loanForRepayment: loanAccount });
-    }
+    setPaymentLoan(loanAccount);
   };
 
   const handleDeleteAccount = (account: Account) => {
