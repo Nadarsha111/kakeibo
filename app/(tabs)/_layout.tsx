@@ -4,6 +4,7 @@ import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { useTabSwipe } from '../../hooks/useTabSwipe';
+import PebbleTabBar, { tabBarOffset } from '../../components/PebbleTabBar';
 import { TransactionModalProvider, useTransactionModal } from '../../context/TransactionModalContext';
 
 function Fab() {
@@ -17,7 +18,7 @@ function Fab() {
         styles.fab,
         {
           backgroundColor: theme.colors.primary,
-          bottom: 55 + insets.bottom
+          bottom: tabBarOffset(insets.bottom) + 12
         }
       ]}
       onPress={() => openModal()}
@@ -34,33 +35,12 @@ export default function TabLayout() {
   return (
     <TransactionModalProvider>
       <View style={{ flex: 1, backgroundColor: theme.colors.background }} {...swipeHandlers}>
-        <Tabs
-          screenOptions={{
-            tabBarActiveTintColor: theme.colors.primary,
-            tabBarInactiveTintColor: theme.colors.textSecondary,
-            headerShown: false,
-            tabBarStyle: {
-              backgroundColor: theme.colors.surface,
-              borderTopColor: theme.colors.border,
-              borderTopWidth: 1,
-            },
-            tabBarLabelStyle: {
-              fontWeight: '600',
-              fontSize: 12,
-              marginBottom: 4,
-            },
-          }}
-        >
+        <Tabs tabBar={(props) => <PebbleTabBar {...props} />} screenOptions={{ headerShown: false }}>
           <Tabs.Screen
             name="index"
             options={{
               title: 'Overview',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="chart-donut" color={color} />,
-              tabBarButton: ({ children, onPress, style }) => (
-                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
-                  {children}
-                </TouchableOpacity>
-              ),
             }}
           />
           <Tabs.Screen
@@ -68,11 +48,6 @@ export default function TabLayout() {
             options={{
               title: 'Transactions',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="clipboard-list-outline" color={color} />,
-              tabBarButton: ({ children, onPress, style }) => (
-                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
-                  {children}
-                </TouchableOpacity>
-              ),
             }}
           />
           <Tabs.Screen
@@ -80,11 +55,6 @@ export default function TabLayout() {
             options={{
               title: 'Accounts',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="bank-outline" color={color} />,
-              tabBarButton: ({ children, onPress, style }) => (
-                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
-                  {children}
-                </TouchableOpacity>
-              ),
             }}
           />
         
@@ -93,11 +63,6 @@ export default function TabLayout() {
             options={{
               title: 'Manage',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="account-settings-outline" color={color} />,
-              tabBarButton: ({ children, onPress, style }) => (
-                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
-                  {children}
-                </TouchableOpacity>
-              ),
             }}
           />
           <Tabs.Screen
@@ -105,11 +70,6 @@ export default function TabLayout() {
             options={{
               title: 'Settings',
               tabBarIcon: ({ color }) => <MaterialCommunityIcons size={26} name="cog-outline" color={color} />,
-              tabBarButton: ({ children, onPress, style }) => (
-                <TouchableOpacity onPress={onPress} style={style} activeOpacity={1}>
-                  {children}
-                </TouchableOpacity>
-              ),
             }}
           />
           <Tabs.Screen
