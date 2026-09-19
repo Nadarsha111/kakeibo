@@ -1,5 +1,5 @@
 import DatabaseConnector from './DatabaseConnector';
-import { Transaction } from '../types';
+import { Account, Transaction } from '../types';
 import AccountService from './AccountService';
 
 /**
@@ -144,6 +144,47 @@ class TransactionService {
       });
     } catch (error) {
       console.error('Error processing transfer:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Creates a loan account and, optionally, records the cash movement on a real account.
+   * Borrowed money is deposited into the funding account; lent money is withdrawn from it.
+   * The movement uses the Transfer In/Out categories so it is not counted as income or spending.
+   */
+  addLoanWithFunding(
+    loan: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>,
+    fundingAccountId?: number | null,
+  ): number {
+    try {
+      return DatabaseConnector.getInstance().withTransaction(() => {
+        const fundingAccount = fundingAccountId ? this.accountService.getAccountById(fundingAccountId) : null;
+        if (fundingAccountId && (!fundingAccount || fundingAccount.type === 'loan' || fundingAccount.profileId !== loan.profileId)) {
+          throw new Error('Invalid funding account for this loan.');
+        }
+
+        const loanId = this.accountService.addAccount(loan);
+
+        if (fundingAccount) {
+          const isLending = !!loan.isLending;
+          const counterparty = loan.loanCounterpartyName || 'unknown';
+          this.addTransactionUnsafe({
+            profileId: loan.profileId,
+            amount: loan.loanPrincipal || 0,
+            type: isLending ? 'expense' : 'income',
+            category: isLending ? 'Transfer Out' : 'Transfer In',
+            description: `${isLending ? 'Lent to' : 'Borrowed from'} ${counterparty}`,
+            date: new Date().toISOString().split('T')[0],
+            paymentMethod: 'cash',
+            accountId: fundingAccount.id,
+          });
+        }
+
+        return loanId;
+      });
+    } catch (error) {
+      console.error('Error adding loan:', error);
       throw error;
     }
   }

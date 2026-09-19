@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { getAccountService } from '../database';
+import { getAccountService, getTransactionService } from '../database';
 import { Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 
@@ -43,6 +43,16 @@ export default function AddAccountScreen({
   const [loanPrincipal, setLoanPrincipal] = useState('');
   const [loanExpectedReturnDate, setLoanExpectedReturnDate] = useState('');
   const [loanDescription, setLoanDescription] = useState('');
+  // Account that receives the borrowed cash (or pays out the lent cash); null records the debt only
+  const [fundingAccountId, setFundingAccountId] = useState<number | null>(null);
+  const [fundingAccounts, setFundingAccounts] = useState<Account[]>([]);
+
+  useEffect(() => {
+    if (!visible || type !== 'loan' || !profileId || profileId === 'all') return;
+    setFundingAccounts(
+      getAccountService().getAccounts(profileId).filter((account) => account.type !== 'loan'),
+    );
+  }, [visible, type, profileId]);
 
   const resetForm = () => {
     setName('');
@@ -58,6 +68,7 @@ export default function AddAccountScreen({
     setLoanPrincipal('');
     setLoanExpectedReturnDate('');
     setLoanDescription('');
+    setFundingAccountId(null);
   };
 
   const handleSubmit = () => {
@@ -119,8 +130,11 @@ export default function AddAccountScreen({
         };
       }
 
-      const accountService = getAccountService();
-      accountService.addAccount(accountData);
+      if (type === 'loan') {
+        getTransactionService().addLoanWithFunding(accountData, fundingAccountId);
+      } else {
+        getAccountService().addAccount(accountData);
+      }
       resetForm();
       onAccountAdded();
       onClose();
@@ -270,6 +284,30 @@ export default function AddAccountScreen({
                   multiline
                   placeholderTextColor={theme.colors.textSecondary}
                 />
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  {isLending ? "Paid From Account" : "Deposit Into Account"}
+                </Text>
+                <View style={styles.chipRow}>
+                  {[{ id: null, name: "Don't record" }, ...fundingAccounts].map((account) => (
+                    <TouchableOpacity
+                      key={account.id ?? 'none'}
+                      style={[styles.chip, fundingAccountId === account.id && styles.chipActive]}
+                      onPress={() => setFundingAccountId(account.id)}
+                    >
+                      <Text style={[styles.chipText, fundingAccountId === account.id && styles.chipTextActive]}>
+                        {account.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={styles.helperText}>
+                  {isLending
+                    ? "Deducts the loan amount from this account. It won't count as spending."
+                    : "Adds the loan amount to this account. It won't count as income."}
+                </Text>
               </View>
             </>
           ) : (
@@ -494,5 +532,30 @@ const createStyles = (theme: any) =>
     },
     activeLoanTypeText: {
       color: 'white',
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    chip: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    chipActive: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    chipText: {
+      fontSize: 14,
+      color: theme.colors.text,
+    },
+    chipTextActive: {
+      color: 'white',
+      fontWeight: '600',
     },
   });

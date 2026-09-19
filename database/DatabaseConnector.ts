@@ -134,6 +134,8 @@ class DatabaseConnector {
 
 
 
+      this.runMigrations();
+
       // Insert default categories if none exist
       this.insertDefaultCategories();
       this.insertDefaultProfiles();
@@ -146,6 +148,37 @@ class DatabaseConnector {
   }
  
   
+
+  /**
+   * Schema changes for existing installs. CREATE TABLE IF NOT EXISTS never alters a table that
+   * already exists, so every new column or table must also be added here or upgraded users lose
+   * access to it. Append a new entry per schema change; never edit or reorder existing ones.
+   * PRAGMA user_version records how many have run. Fresh installs (version 0) run them all too,
+   * so each must be safe on a schema that already has the change, e.g.:
+   *   (db) => {
+   *     if (!DatabaseConnector.hasColumn(db, 'accounts', 'notes')) {
+   *       db.execSync('ALTER TABLE accounts ADD COLUMN notes TEXT');
+   *     }
+   *   }
+   */
+  private static readonly MIGRATIONS: Array<(db: SQLite.SQLiteDatabase) => void> = [];
+
+  private static hasColumn(db: SQLite.SQLiteDatabase, table: string, column: string): boolean {
+    const columns = db.getAllSync(`PRAGMA table_info(${table})`) as Array<{ name: string }>;
+    return columns.some((c) => c.name === column);
+  }
+
+  private runMigrations(): void {
+    const row = this.db.getFirstSync("PRAGMA user_version") as { user_version: number } | null;
+    const applied = row?.user_version ?? 0;
+
+    DatabaseConnector.MIGRATIONS.slice(applied).forEach((migrate, index) => {
+      this.withTransaction(() => {
+        migrate(this.db);
+        this.db.execSync(`PRAGMA user_version = ${applied + index + 1}`);
+      });
+    });
+  }
 
   private insertDefaultCategories(): void {
     try {
