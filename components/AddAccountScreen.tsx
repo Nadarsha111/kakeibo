@@ -38,6 +38,7 @@ export default function AddAccountScreen({
   const [currency, setCurrency] = useState('USD');
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
+  const [creditLimit, setCreditLimit] = useState('');
 
   // Loan-specific state
   const [isLending, setIsLending] = useState(true);
@@ -80,6 +81,7 @@ export default function AddAccountScreen({
     setCurrency('USD');
     setBankName('');
     setAccountNumber('');
+    setCreditLimit('');
     // Reset loan fields
     setIsLending(true);
     setLoanCounterpartyName('');
@@ -132,7 +134,13 @@ export default function AddAccountScreen({
         return;
       }
       if (!balance || isNaN(parseFloat(balance))) {
-        Alert.alert('Error', 'Please enter a valid initial balance.');
+        Alert.alert('Error', type === 'credit_card'
+          ? 'Please enter the amount owed on this card (0 if nothing).'
+          : 'Please enter a valid initial balance.');
+        return;
+      }
+      if (type === 'credit_card' && creditLimit.trim() && !(parseFloat(creditLimit) > 0)) {
+        Alert.alert('Error', 'Please enter a valid credit limit.');
         return;
       }
     }
@@ -182,8 +190,10 @@ export default function AddAccountScreen({
           profileId,
           name: name.trim(),
           type,
-          balance: parseFloat(balance),
+          // A credit card is money owed, stored as a negative balance so spending deepens it and payments reduce it
+          balance: type === 'credit_card' ? 0 - Math.abs(parseFloat(balance)) : parseFloat(balance),
           currency: currency.trim() || 'USD',
+          creditLimit: type === 'credit_card' && creditLimit.trim() ? parseFloat(creditLimit) : undefined,
           bankName: bankName.trim() || undefined,
           accountNumber: accountNumber.trim() || undefined,
           isActive: true,
@@ -449,7 +459,9 @@ export default function AddAccountScreen({
 
               {/* Current Balance */}
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Current Balance</Text>
+                <Text style={styles.sectionTitle}>
+                  {type === 'credit_card' ? 'Amount Owed' : 'Current Balance'}
+                </Text>
                 <View style={styles.balanceRow}>
                   <TextInput
                     style={styles.balanceInput}
@@ -465,10 +477,29 @@ export default function AddAccountScreen({
                     placeholder="USD"
                   />
                 </View>
-                <Text style={styles.helperText}>
-                  Enter negative amount for debt accounts (e.g., credit cards)
-                </Text>
+                {type === 'credit_card' && (
+                  <Text style={styles.helperText}>
+                    What you owe on this card right now (0 if nothing). It counts as money you have to pay back.
+                  </Text>
+                )}
               </View>
+
+              {type === 'credit_card' && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Credit Limit (Optional)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={creditLimit}
+                    onChangeText={setCreditLimit}
+                    placeholder="e.g., 50000"
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={theme.colors.textSecondary}
+                  />
+                  <Text style={styles.helperText}>
+                    Used to show how much of the limit you have used.
+                  </Text>
+                </View>
+              )}
 
               {/* Bank Name (Optional) */}
               <View style={styles.section}>
