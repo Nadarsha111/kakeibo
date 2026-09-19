@@ -209,19 +209,31 @@ class AccountService {
     }
   }
 
+  /** How many transactions are recorded against an account. */
+  getTransactionCount(id: number): number {
+    const row = this.db.getFirstSync('SELECT COUNT(*) as count FROM transactions WHERE accountId = ?', [id]) as { count: number } | null;
+    return row?.count ?? 0;
+  }
+
   /**
-   * Soft delete an account (mark as inactive)
+   * Permanently delete an account. transactions.accountId is a foreign key, so an account that
+   * still has transactions cannot be deleted until they are dealt with: by default they are kept
+   * for spending history and reports but no longer belong to any account, or with
+   * `deleteTransactions` they are deleted along with it. Recurring items pointing at the account
+   * are detached by the database itself (ON DELETE SET NULL).
    */
-  deleteAccount(id: number): void {
+  deleteAccount(id: number, { deleteTransactions = false }: { deleteTransactions?: boolean } = {}): void {
     try {
-      // For now, we soft delete. Hard delete for loans might need to revert transactions.
-      const account = this.getAccountById(id);
-      if (account?.type === 'loan') {
-        // More complex logic might be needed here, like checking for associated transactions.
-        // For now, we just delete it.
-      }
-      this.db.runSync('DELETE FROM accounts WHERE id = ?', [id]);
-      console.log('Account deleted (marked inactive):', id);
+      DatabaseConnector.getInstance().withTransaction(() => {
+        this.db.runSync(
+          deleteTransactions
+            ? 'DELETE FROM transactions WHERE accountId = ?'
+            : 'UPDATE transactions SET accountId = NULL WHERE accountId = ?',
+          [id],
+        );
+        this.db.runSync('DELETE FROM accounts WHERE id = ?', [id]);
+      });
+      console.log('Account deleted:', id);
     } catch (error) {
       console.error('Error deleting account:', error);
       throw error;

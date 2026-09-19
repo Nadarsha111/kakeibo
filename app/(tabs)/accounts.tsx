@@ -173,26 +173,46 @@ export default function AccountsScreen() {
     setPaymentLoan(loanAccount);
   };
 
+  const deleteAccount = (account: Account, deleteTransactions: boolean) => {
+    try {
+      getAccountService().deleteAccount(account.id, { deleteTransactions });
+      loadData();
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      Alert.alert("Error", "Failed to delete account");
+    }
+  };
+
   const handleDeleteAccount = (account: Account) => {
+    let transactionCount = 0;
+    try {
+      transactionCount = getAccountService().getTransactionCount(account.id);
+    } catch (error) {
+      console.error("Error counting transactions:", error);
+    }
+
+    // Nothing recorded against it, so there is no history to decide about
+    if (transactionCount === 0) {
+      Alert.alert(
+        "Delete Account",
+        `Are you sure you want to delete "${account.name}"? This action cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => deleteAccount(account, false) },
+        ]
+      );
+      return;
+    }
+
     Alert.alert(
       "Delete Account",
-      `Are you sure you want to delete "${account.name}"? This action cannot be undone.`,
+      `"${account.name}" has ${transactionCount} ${transactionCount === 1 ? "transaction" : "transactions"}.\n\n` +
+        "Keep History removes the account but leaves its transactions in your spending history and reports.\n\n" +
+        "Delete Everything also permanently deletes those transactions.",
       [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            try {
-              const accountService = getAccountService();
-              accountService.deleteAccount(account.id);
-              loadData();
-            } catch (error) {
-              console.error("Error deleting account:", error);
-              Alert.alert("Error", "Failed to delete account");
-            }
-          },
-        },
+        { text: "Keep History", onPress: () => deleteAccount(account, false) },
+        { text: "Delete Everything", style: "destructive", onPress: () => deleteAccount(account, true) },
       ]
     );
   };
