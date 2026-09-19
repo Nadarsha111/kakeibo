@@ -13,7 +13,7 @@ import { getAccountService, getTransactionService } from '../database';
 import { Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
-import { interestDue, round2 } from '../utils/loanMath';
+import { interestDue, isValidDate, round2 } from '../utils/loanMath';
 
 interface LoanPaymentModalProps {
   visible: boolean;
@@ -23,7 +23,7 @@ interface LoanPaymentModalProps {
 }
 
 /**
- * Records a payment on a loan that carries interest, splitting it into interest and principal.
+ * Records a payment on a loan, splitting it into interest and principal when the loan has interest.
  */
 export default function LoanPaymentModal({ visible, loan, onClose, onPaymentRecorded }: LoanPaymentModalProps) {
   const { theme } = useTheme();
@@ -32,7 +32,10 @@ export default function LoanPaymentModal({ visible, loan, onClose, onPaymentReco
 
   const [amount, setAmount] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // null records the payment on the loan only, e.g. one made before the app was used
   const [accountId, setAccountId] = useState<number | null>(null);
+  const [date, setDate] = useState('');
+  const [count, setCount] = useState('1');
 
   const isLending = !!loan?.isLending;
   const outstanding = loan ? round2((loan.loanPrincipal || 0) - (loan.loanReturnedAmount || 0)) : 0;
@@ -46,17 +49,21 @@ export default function LoanPaymentModal({ visible, loan, onClose, onPaymentReco
       .filter((account) => account.type !== 'loan');
     setAccounts(candidates);
     setAccountId(candidates[0]?.id ?? null);
+    setDate(new Date().toISOString().split('T')[0]);
+    setCount('1');
     const due = loan.loanInstallmentAmount || payoff;
     setAmount(String(Math.min(due, payoff)));
   }, [visible, loan?.id]);
 
+  // Recording several monthly payments at once only makes sense for the loan on its own
+  const showCount = accountId === null && !!loan?.loanTermMonths;
   const paid = parseFloat(amount) || 0;
   const principalPart = round2(paid - interest);
 
   const handleSave = () => {
     if (!loan) return;
-    if (accountId == null) {
-      Alert.alert('Error', 'Choose an account for this payment.');
+    if (accountId != null && !isValidDate(date.trim())) {
+      Alert.alert('Error', 'Enter the payment date as YYYY-MM-DD.');
       return;
     }
     try {
@@ -64,7 +71,8 @@ export default function LoanPaymentModal({ visible, loan, onClose, onPaymentReco
         loanAccountId: loan.id,
         accountId,
         amount: paid,
-        date: new Date().toISOString().split('T')[0],
+        date: date.trim(),
+        count: showCount ? Number(count) : 1,
       });
       onPaymentRecorded();
       onClose();
@@ -134,6 +142,14 @@ export default function LoanPaymentModal({ visible, loan, onClose, onPaymentReco
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{isLending ? 'Received Into' : 'Paid From'}</Text>
             <View style={styles.chipRow}>
+              <TouchableOpacity
+                style={[styles.chip, accountId === null && styles.chipActive]}
+                onPress={() => setAccountId(null)}
+              >
+                <Text style={[styles.chipText, accountId === null && styles.chipTextActive]}>
+                  No account
+                </Text>
+              </TouchableOpacity>
               {accounts.map((account) => (
                 <TouchableOpacity
                   key={account.id}
@@ -146,7 +162,37 @@ export default function LoanPaymentModal({ visible, loan, onClose, onPaymentReco
                 </TouchableOpacity>
               ))}
             </View>
+            {accountId === null ? (
+              <Text style={styles.helperText}>
+                Only updates this loan. No account balance or transaction changes, so it suits payments made before you started using the app. Enter the oldest first.
+              </Text>
+            ) : (
+              <TextInput
+                style={[styles.textInput, { marginTop: 12 }]}
+                value={date}
+                onChangeText={setDate}
+                placeholder="Payment date (YYYY-MM-DD)"
+                placeholderTextColor={theme.colors.textSecondary}
+              />
+            )}
           </View>
+
+          {showCount && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Number of Payments</Text>
+              <TextInput
+                style={styles.textInput}
+                value={count}
+                onChangeText={setCount}
+                keyboardType="number-pad"
+                placeholder="1"
+                placeholderTextColor={theme.colors.textSecondary}
+              />
+              <Text style={styles.helperText}>
+                Records the amount above this many times in a row, one for each month already paid.
+              </Text>
+            </View>
+          )}
         </ScrollView>
       </View>
     </Modal>

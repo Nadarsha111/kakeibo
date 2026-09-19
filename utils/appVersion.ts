@@ -32,10 +32,10 @@ export function getAppVersionInfo(): AppVersionInfo {
   const version = Constants.expoConfig?.version ?? 'unknown';
 
   if (!Updates.isEnabled) {
-    return { version, update: 'Development build (updates off)' };
+    return { version, update: 'Development build' };
   }
   if (Updates.isEmbeddedLaunch || !Updates.updateId) {
-    return { version, update: 'Built-in (no update installed)' };
+    return { version, update: 'Built-in' };
   }
 
   const shortId = Updates.updateId.slice(0, 8);

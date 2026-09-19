@@ -167,82 +167,121 @@ class TransactionService {
    * expense (or income when lending) under the "Loan Interest" category; the principal part is a
    * transfer that reduces what is owed. For an installment loan, a payment that covers the
    * monthly amount also moves the next due date forward one month.
+   *
+   * With no account, only the loan itself is updated and no transactions or account balances
+   * change. Use this to bring in payments made before the app was used, and set `count` to record
+   * several identical payments at once (oldest first, so each interest split is correct).
    */
   recordLoanPayment(data: {
     loanAccountId: number;
-    accountId: number;
+    accountId: number | null;
     amount: number;
     date: string;
+    count?: number;
   }): { interest: number; principal: number } {
     try {
       return DatabaseConnector.getInstance().withTransaction(() => {
-        const loan = this.accountService.getAccountById(data.loanAccountId);
-        const account = this.accountService.getAccountById(data.accountId);
-        if (!loan || loan.type !== 'loan') {
-          throw new Error('Invalid loan account specified.');
+        const count = data.count ?? 1;
+        if (!Number.isInteger(count) || count < 1) {
+          throw new Error('Enter a whole number of payments.');
         }
-        if (!account || account.type === 'loan' || account.profileId !== loan.profileId) {
-          throw new Error('Invalid account for this payment.');
-        }
-        if (!(data.amount > 0)) {
-          throw new Error('Enter a payment amount greater than zero.');
+        if (count > 1 && data.accountId != null) {
+          throw new Error('Several payments can only be recorded at once without an account.');
         }
 
-        const isLending = !!loan.isLending;
-        const outstanding = round2((loan.loanPrincipal || 0) - (loan.loanReturnedAmount || 0));
-        const interest = interestDue(outstanding, loan.loanInterestRate || 0);
-        if (data.amount < interest) {
-          throw new Error(`The payment must cover at least the ${interest.toFixed(2)} interest due.`);
+        const total = { interest: 0, principal: 0 };
+        for (let i = 0; i < count; i++) {
+          const part = this.applyLoanPayment(data);
+          total.interest = round2(total.interest + part.interest);
+          total.principal = round2(total.principal + part.principal);
         }
-        const principal = round2(data.amount - interest);
-        if (principal > outstanding + 0.005) {
-          throw new Error(`The payment exceeds the ${round2(outstanding + interest).toFixed(2)} needed to pay off this loan.`);
-        }
-
-        if (interest > 0) {
-          this.addTransactionUnsafe({
-            profileId: loan.profileId,
-            amount: interest,
-            type: isLending ? 'income' : 'expense',
-            category: 'Loan Interest',
-            description: `Interest on ${loan.name}`,
-            date: data.date,
-            paymentMethod: 'cash',
-            accountId: account.id,
-          });
-        }
-
-        if (principal > 0) {
-          this.addTransferUnsafe({
-            fromAccountId: isLending ? loan.id : account.id,
-            toAccountId: isLending ? account.id : loan.id,
-            amount: Math.min(principal, outstanding),
-            date: data.date,
-            description: 'Loan payment',
-            profileId: loan.profileId,
-          });
-        }
-
-        const settled = round2(outstanding - principal) <= 0.005;
-        const coversInstallment = data.amount >= (loan.loanInstallmentAmount || 0) - 0.005;
-        let nextDueDate = loan.loanNextDueDate;
-        if (settled) {
-          nextDueDate = null;
-        } else if (nextDueDate && coversInstallment) {
-          nextDueDate = addMonths(nextDueDate, 1, loan.loanPaymentDay || undefined);
-        }
-
-        this.accountService.updateAccount(loan.id, {
-          loanInterestPaid: round2((loan.loanInterestPaid || 0) + interest),
-          loanNextDueDate: nextDueDate,
-        });
-
-        return { interest, principal };
+        return total;
       });
     } catch (error) {
       console.error('Error recording loan payment:', error);
       throw error;
     }
+  }
+
+  /**
+   * A single loan payment. This should only be called from a method that already manages a
+   * transaction.
+   */
+  private applyLoanPayment(data: {
+    loanAccountId: number;
+    accountId: number | null;
+    amount: number;
+    date: string;
+  }): { interest: number; principal: number } {
+    const loan = this.accountService.getAccountById(data.loanAccountId);
+    const account = data.accountId == null ? null : this.accountService.getAccountById(data.accountId);
+    if (!loan || loan.type !== 'loan') {
+      throw new Error('Invalid loan account specified.');
+    }
+    if (data.accountId != null && (!account || account.type === 'loan' || account.profileId !== loan.profileId)) {
+      throw new Error('Invalid account for this payment.');
+    }
+    if (!(data.amount > 0)) {
+      throw new Error('Enter a payment amount greater than zero.');
+    }
+
+    const isLending = !!loan.isLending;
+    const outstanding = round2((loan.loanPrincipal || 0) - (loan.loanReturnedAmount || 0));
+    const interest = interestDue(outstanding, loan.loanInterestRate || 0);
+    if (data.amount < interest) {
+      throw new Error(`The payment must cover at least the ${interest.toFixed(2)} interest due.`);
+    }
+    const principal = round2(data.amount - interest);
+    if (principal > outstanding + 0.005) {
+      throw new Error(`The payment exceeds the ${round2(outstanding + interest).toFixed(2)} needed to pay off this loan.`);
+    }
+    const principalPaid = Math.min(principal, outstanding);
+
+    if (account) {
+      if (interest > 0) {
+        this.addTransactionUnsafe({
+          profileId: loan.profileId,
+          amount: interest,
+          type: isLending ? 'income' : 'expense',
+          category: 'Loan Interest',
+          description: `Interest on ${loan.name}`,
+          date: data.date,
+          paymentMethod: 'cash',
+          accountId: account.id,
+        });
+      }
+
+      if (principal > 0) {
+        this.addTransferUnsafe({
+          fromAccountId: isLending ? loan.id : account.id,
+          toAccountId: isLending ? account.id : loan.id,
+          amount: principalPaid,
+          date: data.date,
+          description: 'Loan payment',
+          profileId: loan.profileId,
+        });
+      }
+    } else if (principal > 0) {
+      // No transfer to do this for us, so update what is owed and the loan's own balance directly
+      this.accountService.recordRepaymentOnLoanAccount(loan.id, principalPaid);
+    }
+
+    const settled = round2(outstanding - principal) <= 0.005;
+    const coversInstallment = data.amount >= (loan.loanInstallmentAmount || 0) - 0.005;
+    let nextDueDate = loan.loanNextDueDate;
+    if (settled) {
+      nextDueDate = null;
+    } else if (nextDueDate && coversInstallment) {
+      nextDueDate = addMonths(nextDueDate, 1, loan.loanPaymentDay || undefined);
+    }
+
+    this.accountService.updateAccount(loan.id, {
+      loanInterestPaid: round2((loan.loanInterestPaid || 0) + interest),
+      loanNextDueDate: nextDueDate,
+      ...(account ? {} : { balance: round2(loan.balance + (isLending ? -principalPaid : principalPaid)) }),
+    });
+
+    return { interest, principal };
   }
 
   /**
