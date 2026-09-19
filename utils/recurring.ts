@@ -86,6 +86,15 @@ export function countDue(
   return count;
 }
 
+/**
+ * The next date a bill due on `billDay` of each month falls, today included. A day the month does
+ * not have (the 31st in April) falls on the month's last day.
+ */
+export function nextBillDate(billDay: number, today: string): string {
+  const thisMonth = addMonths(today, 0, billDay);
+  return thisMonth >= today ? thisMonth : addMonths(today, 1, billDay);
+}
+
 /** The last day of the month that `date` falls in. */
 export function endOfMonth(date: string): string {
   const [year, month] = date.split('-').map(Number);

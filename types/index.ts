@@ -24,6 +24,7 @@ export interface Account {
   bankName?: string | null;
   accountNumber?: string | null;
   creditLimit?: number | null; // credit cards only
+  billDay?: number | null; // credit cards only: day of the month the bill is due (1-31)
   isActive: boolean | number; // SQLite uses 1/0 for boolean
   // Loan-specific fields
   isLending?: boolean | number | null;

@@ -45,6 +45,9 @@ const outstandingOf = (loan: Account) =>
 const loanRank = (loan: Account) =>
   ({ overdue: 0, active: 1, partially_paid: 1, fully_paid: 2 } as Record<string, number>)[loan.loanStatus || "active"] ?? 1;
 
+const ordinalSuffix = (day: number) =>
+  day % 100 >= 11 && day % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ?? "th";
+
 export default function AccountsScreen() {
   const tabInset = useTabBarInset();
   const { theme } = useTheme();
@@ -59,6 +62,7 @@ export default function AccountsScreen() {
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
   const [limitAccount, setLimitAccount] = useState<Account | null>(null);
+  const [editAccount, setEditAccount] = useState<Account | null>(null);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -283,6 +287,12 @@ export default function AccountsScreen() {
     );
   };
 
+  const renderBillDay = (account: Account) => (
+    <Text style={[styles.accountType, { marginTop: 8 }]}>
+      {`Bill due on the ${account.billDay}${ordinalSuffix(account.billDay || 0)} of each month`}
+    </Text>
+  );
+
   const renderAccountItem = ({ item: account }: { item: Account }) => {
     const isSelected = selectedAccountId === account.id;
     return (
@@ -320,8 +330,16 @@ export default function AccountsScreen() {
           </View>
         </View>
         {account.type === 'credit_card' && (account.creditLimit || 0) > 0 && renderCardUsage(account)}
+        {account.type === 'credit_card' && !!account.billDay && renderBillDay(account)}
         {isSelected && (
           <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.cardActionButton}
+              onPress={() => setEditAccount(account)}
+            >
+              <MaterialCommunityIcons name="pencil-outline" size={20} color={theme.colors.primary} />
+              <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Edit</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.cardActionButton}
               onPress={() => handleDeleteAccount(account)}
@@ -672,6 +690,14 @@ export default function AccountsScreen() {
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
       />
 
+      {/* Edit Account Modal */}
+      <AddAccountScreen
+        visible={editAccount !== null}
+        account={editAccount}
+        onClose={() => setEditAccount(null)}
+        onAccountAdded={loadData}
+      />
+
       {/* Credit Limit Modal */}
       <CreditLimitModal
         visible={limitAccount !== null}
@@ -804,6 +830,7 @@ const createStyles = (theme: any) =>
       borderTopColor: theme.colors.border,
       flexDirection: 'row',
       justifyContent: 'flex-end',
+      flexWrap: 'wrap',
       gap: 8,
     },
     cardActionButton: {

@@ -79,6 +79,7 @@ class DatabaseConnector {
           bankName TEXT,
           accountNumber TEXT,
           creditLimit REAL,
+          billDay INTEGER,
           isActive INTEGER NOT NULL DEFAULT 1,
           createdAt TEXT NOT NULL,
           updatedAt TEXT NOT NULL
@@ -244,6 +245,12 @@ class DatabaseConnector {
         FROM recurring_items_old
       `);
       db.execSync('DROP TABLE recurring_items_old');
+    },
+    // 5: credit card bill day, the day of the month the card's bill is due
+    (db) => {
+      if (!DatabaseConnector.hasColumn(db, 'accounts', 'billDay')) {
+        db.execSync('ALTER TABLE accounts ADD COLUMN billDay INTEGER');
+      }
     },
   ];
 

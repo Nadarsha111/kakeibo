@@ -13,9 +13,31 @@ export interface LoanBalanceRow {
     | null;
 }
 
+export type AccountCategory = Exclude<AccountBalanceRow['type'], 'loan'>;
+
+export interface BalanceCategory {
+  type: AccountCategory;
+  label: string;
+  /** The sum of exactly the rows in `accounts`; negative for credit cards, which are money owed. */
+  total: number;
+  /** The category's accounts, biggest balance first (whether positive or negative). */
+  accounts: AccountBalanceRow[];
+}
+
+// The order categories appear in: money you can spend first, then what is set aside, then debt
+const CATEGORIES: Array<{ type: AccountCategory; label: string }> = [
+  { type: 'checking', label: 'Checking' },
+  { type: 'cash', label: 'Cash' },
+  { type: 'savings', label: 'Savings' },
+  { type: 'investment', label: 'Investments' },
+  { type: 'credit_card', label: 'Credit Cards' },
+];
+
 export interface GroupedBalances {
   /** Every account except loans, in the order given. */
   accounts: AccountBalanceRow[];
+  /** The same accounts grouped by type; categories with no accounts are left out. */
+  categories: BalanceCategory[];
   /** The sum of exactly the rows in `accounts`, so the list always adds up to it. */
   accountsTotal: number;
   /** Loans you borrowed and are still paying back. */
@@ -62,5 +84,12 @@ export function groupAccountBalances(rows: AccountBalanceRow[]): GroupedBalances
   const totalOwed = sum(youOwe);
   const totalLent = sum(owedToYou);
 
-  return { accounts, accountsTotal, youOwe, owedToYou, totalOwed, totalLent, netWorth: round2(accountsTotal + totalLent - totalOwed) };
+  const categories = CATEGORIES.map(({ type, label }) => {
+    const members = accounts
+      .filter((row) => row.type === type)
+      .sort((a, b) => Math.abs(b.closingBalance) - Math.abs(a.closingBalance));
+    return { type, label, total: round2(members.reduce((total, row) => total + row.closingBalance, 0)), accounts: members };
+  }).filter((category) => category.accounts.length > 0);
+
+  return { accounts, categories, accountsTotal, youOwe, owedToYou, totalOwed, totalLent, netWorth: round2(accountsTotal + totalLent - totalOwed) };
 }

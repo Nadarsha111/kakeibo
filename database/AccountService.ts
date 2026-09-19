@@ -69,8 +69,8 @@ class AccountService {
       const result = this.db.runSync(
         `INSERT INTO accounts (profileId, name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt,
           isLending, loanPrincipal, loanReturnedAmount, loanStatus, loanCounterpartyName, loanCounterpartyContact, loanLentDate, loanExpectedReturnDate, description,
-          loanInterestRate, loanTermMonths, loanInstallmentAmount, loanPaymentDay, loanNextDueDate, loanInterestPaid, creditLimit)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          loanInterestRate, loanTermMonths, loanInstallmentAmount, loanPaymentDay, loanNextDueDate, loanInterestPaid, creditLimit, billDay)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           account.profileId,
           account.name,
@@ -98,6 +98,7 @@ class AccountService {
           account.loanNextDueDate ?? null,
           account.loanInterestPaid ?? null,
           account.creditLimit ?? null,
+          account.billDay ?? null,
         ]
       );
 
@@ -174,6 +175,10 @@ class AccountService {
       if (account.creditLimit !== undefined) {
         fields.push('creditLimit = ?');
         values.push(account.creditLimit);
+      }
+      if (account.billDay !== undefined) {
+        fields.push('billDay = ?');
+        values.push(account.billDay);
       }
       if (account.loanInterestPaid !== undefined) {
         fields.push('loanInterestPaid = ?');

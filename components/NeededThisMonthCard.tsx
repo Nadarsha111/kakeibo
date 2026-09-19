@@ -85,7 +85,7 @@ export default function NeededThisMonthCard({ refreshKey }: NeededThisMonthCardP
                 <Text style={styles.lineLabel} numberOfLines={1}>{line.label}</Text>
                 <Text style={[styles.lineDate, line.overdue && { color: theme.colors.error, fontWeight: '600' }]}>
                   {line.overdue ? `Overdue since ${formatDay(line.dueDate)}` : `Due ${formatDay(line.dueDate)}`}
-                  {line.kind === 'savings' ? ' · savings' : ''}
+                  {line.kind === 'savings' ? ' · savings' : line.kind === 'card' ? ' · credit card' : ''}
                 </Text>
               </View>
               <Text style={styles.lineAmount}>{formatCurrency(line.amount)}</Text>

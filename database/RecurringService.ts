@@ -2,7 +2,7 @@ import DatabaseConnector from './DatabaseConnector';
 import AccountService from './AccountService';
 import TransactionService from './TransactionService';
 import { Account, RecurringItem } from '../types';
-import { FREQUENCIES, advanceDueDate, countDue, endOfMonth, monthlyEquivalent } from '../utils/recurring';
+import { FREQUENCIES, advanceDueDate, countDue, endOfMonth, monthlyEquivalent, nextBillDate } from '../utils/recurring';
 import { interestDue, isValidDate, round2 } from '../utils/loanMath';
 
 export interface MonthlyEmi {
@@ -34,7 +34,7 @@ export interface NeededLine {
   /** The first date it falls due (in the past when it is overdue). */
   dueDate: string;
   overdue: boolean;
-  kind: 'bill' | 'savings' | 'loan';
+  kind: 'bill' | 'savings' | 'loan' | 'card';
 }
 
 export interface NeededSummary {
@@ -313,8 +313,9 @@ class RecurringService {
    * How much money is needed from today to the end of the month. Every occurrence still to come
    * counts (a weekly bill due twice counts twice, a daily deposit counts once per remaining day),
    * as does anything overdue. Installment loans count their installments; money borrowed with no
-   * installments counts in full when its return date is by month end. It is compared with what is
-   * in cash, bank and savings accounts. Credit card balances are not included.
+   * installments counts in full when its return date is by month end. A credit card with a bill
+   * day counts what is owed on it when that day falls by month end. It is compared with what is in
+   * cash, bank and savings accounts.
    */
   getNeededThisMonth(profileId?: number, today: string = new Date().toISOString().split('T')[0]): NeededSummary {
     const monthEnd = endOfMonth(today);
@@ -376,6 +377,29 @@ class RecurringService {
           kind: 'loan',
         });
       }
+    });
+
+    // A credit card with a bill day and something owed is a bill: what is owed now, due on that day.
+    // A bill day already past this month means the next bill falls next month, so it is not needed yet.
+    let cardQuery = `SELECT id, name, balance, billDay FROM accounts
+      WHERE type = 'credit_card' AND isActive = 1 AND billDay IS NOT NULL AND balance < 0`;
+    const cardParams: any[] = [];
+    if (profileId) {
+      cardQuery += ' AND profileId = ?';
+      cardParams.push(profileId);
+    }
+
+    (this.db.getAllSync(cardQuery, cardParams) as any[]).forEach((card) => {
+      const dueDate = nextBillDate(card.billDay, today);
+      if (dueDate > monthEnd) return;
+      lines.push({
+        key: `card-${card.id}`,
+        label: `${card.name} bill`,
+        amount: round2(-card.balance),
+        dueDate,
+        overdue: false,
+        kind: 'card',
+      });
     });
 
     // Overdue first, then by date, then the biggest
