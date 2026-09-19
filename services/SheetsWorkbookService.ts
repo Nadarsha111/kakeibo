@@ -13,40 +13,47 @@ const TAB_ORDER = [TAB.DASHBOARD, TAB.TRANSACTIONS, TAB.ACCOUNTS, TAB.CATEGORIES
 
 type SheetIds = Record<string, number>;
 
-// Dark theme. Everything visual is defined here so re-theming means editing this block only.
-const THEME = {
-  background: { red: 0.067, green: 0.094, blue: 0.153 }, // #111827 sheet background
-  text: { red: 0.898, green: 0.906, blue: 0.922 }, // #e5e7eb
-  muted: { red: 0.612, green: 0.639, blue: 0.686 }, // #9ca3af notes and captions
-  faint: { red: 0.533, green: 0.565, blue: 0.624 }, // #88909f the ID column
-  accent: { red: 0.96, green: 0.62, blue: 0.043 }, // #f59e0b header rows (amber)
-  section: { red: 0.122, green: 0.161, blue: 0.216 }, // #1f2937 section + total rows
-  rule: { red: 0.216, green: 0.255, blue: 0.318 }, // #374151 row separators
-  // Chart legends and axis labels can't be recolored through the API, so charts stay light
-  // cards on the dark sheet rather than dark charts with unreadable labels.
-  chartCard: { red: 0.953, green: 0.957, blue: 0.965 }, // #f3f4f6
-};
-
-// Meaning, not theme: brighter than a light-theme red/green so they read on a dark background.
-const RED = { red: 0.973, green: 0.443, blue: 0.443 }; // #f87171
-const GREEN = { red: 0.204, green: 0.827, blue: 0.6 }; // #34d399
+// Colors. Backgrounds and normal text are deliberately left unset ("automatic") so the sheet
+// follows the viewer's own light or dark theme in Google Sheets. Only colors that carry meaning
+// are set explicitly, each picked to stay readable (about 4:1 or better) on white AND on black.
+const AMBER = { red: 0.96, green: 0.62, blue: 0.043 }; // #f59e0b header rows
+const BLACK = { red: 0, green: 0, blue: 0 };
+const MUTED = { red: 0.451, green: 0.451, blue: 0.451 }; // #737373 notes and the ID column
+const RED = { red: 0.863, green: 0.149, blue: 0.149 }; // #dc2626
+const GREEN = { red: 0.082, green: 0.502, blue: 0.239 }; // #15803d
 const MONEY = "#,##0.00";
 
-// Base look of every cell. Formats that replace a whole textFormat must include the text color,
-// or the cell falls back to the default black and disappears against the dark background.
-const BASE_FORMAT = { backgroundColor: THEME.background, textFormat: { foregroundColor: THEME.text } };
-const text = (extra: object = {}) => ({ foregroundColor: THEME.text, ...extra });
+// Google's default spreadsheet theme (white background, black text). An earlier version of this
+// service forced a black theme onto the spreadsheet, so it is restored once on those files.
+// Google requires all nine color pairs whenever the theme is updated.
+const rgb = (hex: string) => ({
+  rgbColor: {
+    red: parseInt(hex.slice(1, 3), 16) / 255,
+    green: parseInt(hex.slice(3, 5), 16) / 255,
+    blue: parseInt(hex.slice(5, 7), 16) / 255,
+  },
+});
+const DEFAULT_SPREADSHEET_THEME = {
+  themeColors: [
+    { colorType: "TEXT", color: rgb("#000000") },
+    { colorType: "BACKGROUND", color: rgb("#ffffff") },
+    { colorType: "ACCENT1", color: rgb("#4285f4") },
+    { colorType: "ACCENT2", color: rgb("#ea4335") },
+    { colorType: "ACCENT3", color: rgb("#fbbc04") },
+    { colorType: "ACCENT4", color: rgb("#34a853") },
+    { colorType: "ACCENT5", color: rgb("#ff6d01") },
+    { colorType: "ACCENT6", color: rgb("#46bdc6") },
+    { colorType: "LINK", color: rgb("#1155cc") },
+  ],
+};
 
-// Amber is a light color, so header text is the dark background color rather than white.
+// The header is amber with black text; both are explicit, so it looks the same in either theme.
 const HEADER_FORMAT = {
-  backgroundColor: THEME.accent,
-  textFormat: { bold: true, foregroundColor: THEME.background },
+  backgroundColor: AMBER,
+  textFormat: { bold: true, foregroundColor: BLACK },
 };
 
-const SECTION_FORMAT = {
-  backgroundColor: THEME.section,
-  textFormat: text({ bold: true, fontSize: 12 }),
-};
+const SECTION_TEXT = { bold: true, fontSize: 12 };
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -87,9 +94,45 @@ class SheetsWorkbookService {
     const transactionsSheet = existing.sheets.find((s) => s.properties.sheetId === sheetIds[TAB.TRANSACTIONS]);
     const hasTransactionFilter = !!transactionsSheet?.basicFilter;
 
+    // A black spreadsheet background means an earlier version of this service forced a dark
+    // theme onto the file. That needs undoing once so the sheet can follow the viewer's theme.
+    // (Google omits zero color channels from its JSON, so a missing channel means 0.)
+    const background = existing.properties?.spreadsheetTheme?.themeColors?.find((c) => c.colorType === "BACKGROUND")?.color;
+    const backgroundRgb = background?.rgbColor;
+    const hadBlackTheme =
+      !!background && !background.themeColor && (backgroundRgb?.red ?? 0) + (backgroundRgb?.green ?? 0) + (backgroundRgb?.blue ?? 0) < 0.3;
+
+    // Not every earlier dark version touched the theme (the navy one only colored cells), so the
+    // Transactions cleanup can't key off the theme - it looks at the cells themselves.
+    const hadDarkCells = await this.hasForcedDarkCells(accessToken, spreadsheetId);
+
     await this.clearRanges(accessToken, spreadsheetId);
     await this.writeData(accessToken, spreadsheetId, data, dashboard);
-    await this.applyFormattingAndCharts(accessToken, spreadsheetId, sheetIds, data, dashboard, hasTransactionFilter);
+    await this.applyFormattingAndCharts(accessToken, spreadsheetId, sheetIds, data, dashboard, hasTransactionFilter, hadBlackTheme, hadDarkCells);
+  }
+
+  /**
+   * True when a Transactions data cell has a dark background color, which no current version sets:
+   * it means an earlier version forced a dark look onto the tab. Google leaves out zero color
+   * channels, so a present-but-empty color means black. Any failure reads as "no", since the
+   * cleanup this triggers is only worth doing when we are sure.
+   */
+  private async hasForcedDarkCells(accessToken: string, spreadsheetId: string): Promise<boolean> {
+    try {
+      const probe = encodeURIComponent(`${TAB.TRANSACTIONS}!B2`);
+      const fields = "sheets(data(rowData(values(userEnteredFormat(backgroundColor)))))";
+      const response = await fetch(`${SHEETS_API}/${spreadsheetId}?ranges=${probe}&fields=${fields}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) return false;
+
+      const json = await response.json();
+      const bg = json.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values?.[0]?.userEnteredFormat?.backgroundColor;
+      if (!bg) return false;
+      return (bg.red ?? 0) + (bg.green ?? 0) + (bg.blue ?? 0) < 0.9;
+    } catch {
+      return false;
+    }
   }
 
   // ---- Data gathering -----------------------------------------------------
@@ -163,12 +206,17 @@ class SheetsWorkbookService {
   // ---- Structure (tabs) -----------------------------------------------------
 
   private async getExistingStructure(accessToken: string, spreadsheetId: string) {
-    const url = `${SHEETS_API}/${spreadsheetId}?fields=sheets(properties,charts.chartId,conditionalFormats,basicFilter)`;
+    const url = `${SHEETS_API}/${spreadsheetId}?fields=properties.spreadsheetTheme,sheets(properties,charts.chartId,conditionalFormats,basicFilter)`;
     const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) {
       throw new Error("Failed to read spreadsheet structure.");
     }
     return (await response.json()) as {
+      properties?: {
+        spreadsheetTheme?: {
+          themeColors?: Array<{ colorType: string; color?: { rgbColor?: { red?: number; green?: number; blue?: number }; themeColor?: string } }>;
+        };
+      };
       sheets: Array<{
         properties: { sheetId: number; title: string };
         charts?: Array<{ chartId: number }>;
@@ -219,7 +267,7 @@ class SheetsWorkbookService {
               sheetId,
               title,
               index,
-              gridProperties: { frozenRowCount: frozenRows(title), hideGridlines: true },
+              gridProperties: { frozenRowCount: frozenRows(title), hideGridlines: false },
             },
             fields: "title,index,gridProperties.frozenRowCount,gridProperties.hideGridlines",
           },
@@ -230,7 +278,7 @@ class SheetsWorkbookService {
             properties: {
               title,
               index,
-              gridProperties: { frozenRowCount: frozenRows(title), hideGridlines: true },
+              gridProperties: { frozenRowCount: frozenRows(title), hideGridlines: false },
             },
           },
         });
@@ -314,6 +362,12 @@ class SheetsWorkbookService {
     // The apostrophe stops Sheets from turning "Sep 2026" into a date.
     data.monthlyTrend.forEach((m) => add([`'${monthLabel(m.month)}`, m.income, m.expenses, m.income - m.expenses]));
     const trendEnd = values.length;
+    add();
+
+    // The charts float over the empty rows below this title, so they are always anchored
+    // relative to the tables above them instead of at a fixed spot that can drift off-screen.
+    const chartsTitle = add(["Charts"]);
+    const chartsRow = chartsTitle + 1;
 
     return {
       values,
@@ -330,6 +384,8 @@ class SheetsWorkbookService {
         trendHeader,
         trendFirst,
         trendEnd,
+        chartsTitle,
+        chartsRow,
       },
     };
   }
@@ -404,6 +460,8 @@ class SheetsWorkbookService {
     data: ReturnType<SheetsWorkbookService["gatherData"]>,
     dashboard: ReturnType<SheetsWorkbookService["buildDashboard"]>,
     hasTransactionFilter: boolean,
+    hadBlackTheme: boolean,
+    hadDarkCells: boolean,
   ) {
     const requests: any[] = [];
 
@@ -424,8 +482,11 @@ class SheetsWorkbookService {
     const headerRow = (sheetId: number, row: number, columnCount: number) =>
       format(range(sheetId, row, row + 1, 0, columnCount), HEADER_FORMAT, "userEnteredFormat(backgroundColor,textFormat)");
 
-    const sectionRow = (sheetId: number, row: number) =>
-      format(range(sheetId, row, row + 1, 0, 5), SECTION_FORMAT, "userEnteredFormat(backgroundColor,textFormat)");
+    // Section titles are bold with an amber underline (no filled band, which would not adapt to a dark theme).
+    const sectionRow = (sheetId: number, row: number) => [
+      format(range(sheetId, row, row + 1, 0, 5), { textFormat: SECTION_TEXT }, "userEnteredFormat.textFormat"),
+      { updateBorders: { range: range(sheetId, row, row + 1, 0, 5), bottom: { style: "SOLID_MEDIUM", colorStyle: { rgbColor: AMBER } } } },
+    ];
 
     const number = (r: ReturnType<typeof range>, type: "NUMBER" | "PERCENT" | "DATE", pattern: string) =>
       format(r, { numberFormat: { type, pattern } }, "userEnteredFormat.numberFormat");
@@ -470,42 +531,43 @@ class SheetsWorkbookService {
       },
     });
 
-    // Thin separators between rows. Gridlines are hidden (light lines look harsh on a dark
-    // background), so these keep long tables easy to follow.
-    const rowRules = (sheetId: number, firstRow: number, endRow: number, columnCount: number) => {
-      if (endRow <= firstRow) return [];
-      const line = { style: "SOLID", width: 1, colorStyle: { rgbColor: THEME.rule } };
-      return [{ updateBorders: { range: range(sheetId, firstRow, endRow, 0, columnCount), innerHorizontal: line, bottom: line } }];
-    };
-
-    // Dark theme base. The Dashboard, Accounts and Categories tabs are generated from scratch
-    // each time, so replace their formatting entirely - otherwise colors and merges from a
-    // previous layout linger. Transactions only gets its background, text color and borders
-    // reset, so other formatting the user adds there survives a sync.
+    // The Dashboard, Accounts and Categories tabs are generated from scratch each time, so wipe
+    // their formatting first - otherwise colors and merges from a previous layout linger.
     const dashSheetId = sheetIds[TAB.DASHBOARD];
     const acctSheetId = sheetIds[TAB.ACCOUNTS];
     const catSheetId = sheetIds[TAB.CATEGORIES];
     const txSheetId = sheetIds[TAB.TRANSACTIONS];
     [dashSheetId, acctSheetId, catSheetId].forEach((sheetId) => {
-      requests.push({ repeatCell: { range: { sheetId }, cell: { userEnteredFormat: BASE_FORMAT }, fields: "userEnteredFormat" } });
+      requests.push({ repeatCell: { range: { sheetId }, cell: {}, fields: "userEnteredFormat" } });
     });
-    requests.push({
-      repeatCell: {
-        range: { sheetId: txSheetId },
-        cell: { userEnteredFormat: BASE_FORMAT },
-        fields: "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.foregroundColor",
-      },
-    });
-    const noBorder = { style: "NONE" };
-    requests.push({
-      updateBorders: { range: { sheetId: txSheetId }, top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, innerHorizontal: noBorder, innerVertical: noBorder },
-    });
+
+    // One-time cleanups for spreadsheets that were forced dark by an earlier version.
+    if (hadBlackTheme) {
+      requests.push({
+        updateSpreadsheetProperties: { properties: { spreadsheetTheme: DEFAULT_SPREADSHEET_THEME }, fields: "spreadsheetTheme" },
+      });
+    }
+    // Transactions is normally left alone so formatting you add there survives a sync, but here its
+    // forced background, text color and borders have to go so it can follow the viewer's theme again.
+    if (hadDarkCells) {
+      requests.push({
+        repeatCell: {
+          range: { sheetId: txSheetId },
+          cell: {},
+          fields: "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.foregroundColor",
+        },
+      });
+      const noBorder = { style: "NONE" };
+      requests.push({
+        updateBorders: { range: { sheetId: txSheetId }, top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, innerHorizontal: noBorder, innerVertical: noBorder },
+      });
+    }
     requests.push({ unmergeCells: { range: { sheetId: dashSheetId } } });
 
     // --- Transactions sheet ---
     requests.push(headerRow(txSheetId, 0, 9));
     [50, 100, 80, 120, 100, 240, 120, 170, 110].forEach((pixels, column) => requests.push(columnWidth(txSheetId, column, pixels)));
-    requests.push(format(range(txSheetId, 1, undefined, 0, 1), { textFormat: { foregroundColor: THEME.faint } }, "userEnteredFormat.textFormat.foregroundColor")); // ID: needed for sync, not for reading
+    requests.push(format(range(txSheetId, 1, undefined, 0, 1), { textFormat: { foregroundColor: MUTED } }, "userEnteredFormat.textFormat.foregroundColor")); // ID: needed for sync, not for reading
     requests.push(number(range(txSheetId, 1, undefined, 1, 2), "DATE", "yyyy-mm-dd")); // ISO so Pull can read it back
     requests.push(number(range(txSheetId, 1, undefined, 4, 5), "NUMBER", MONEY));
     requests.push(colorRule([range(txSheetId, 1, undefined, 4, 5)], { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: '=$C2="expense"' }] }, RED));
@@ -524,18 +586,14 @@ class SheetsWorkbookService {
       requests.push({ setBasicFilter: { filter: { range: range(txSheetId, 0, undefined, 0, 9) } } });
     }
 
-    requests.push(...rowRules(txSheetId, 1, data.transactions.length + 1, 9));
-
     // --- Accounts sheet ---
     requests.push(headerRow(acctSheetId, 0, 6));
-    requests.push(...rowRules(acctSheetId, 1, data.accounts.length + 1, 6));
     [110, 180, 110, 110, 80, 220].forEach((pixels, column) => requests.push(columnWidth(acctSheetId, column, pixels)));
     requests.push(number(range(acctSheetId, 1, undefined, 3, 4), "NUMBER", MONEY));
     requests.push(colorRule([range(acctSheetId, 1, undefined, 3, 4)], { type: "NUMBER_LESS", values: [{ userEnteredValue: "0" }] }, RED));
 
     // --- Categories sheet ---
     requests.push(headerRow(catSheetId, 0, 3));
-    requests.push(...rowRules(catSheetId, 1, data.categorySummary.length + 1, 3));
     [160, 140, 100].forEach((pixels, column) => requests.push(columnWidth(catSheetId, column, pixels)));
     requests.push(number(range(catSheetId, 1, undefined, 1, 2), "NUMBER", MONEY));
     requests.push(number(range(catSheetId, 1, undefined, 2, 3), "PERCENT", "0.0%"));
@@ -545,26 +603,26 @@ class SheetsWorkbookService {
     const columnCount = 5;
 
     requests.push({ mergeCells: { range: range(dashSheetId, 0, 1, 0, columnCount), mergeType: "MERGE_ALL" } });
-    requests.push(format(range(dashSheetId, 0, 1, 0, columnCount), { textFormat: text({ bold: true, fontSize: 18 }) }, "userEnteredFormat.textFormat"));
-    requests.push(format(range(dashSheetId, 1, 2, 0, columnCount), { textFormat: text({ italic: true, foregroundColor: THEME.muted }) }, "userEnteredFormat.textFormat"));
+    requests.push(format(range(dashSheetId, 0, 1, 0, columnCount), { textFormat: { bold: true, fontSize: 18 } }, "userEnteredFormat.textFormat"));
+    requests.push(format(range(dashSheetId, 1, 2, 0, columnCount), { textFormat: { italic: true, foregroundColor: MUTED } }, "userEnteredFormat.textFormat"));
 
     requests.push({ mergeCells: { range: range(dashSheetId, 2, 3, 0, columnCount), mergeType: "MERGE_ALL" } });
     requests.push(
       format(
         range(dashSheetId, 2, 3, 0, columnCount),
-        { textFormat: text({ italic: true, foregroundColor: THEME.muted }), wrapStrategy: "WRAP", verticalAlignment: "TOP" },
+        { textFormat: { italic: true, foregroundColor: MUTED }, wrapStrategy: "WRAP", verticalAlignment: "TOP" },
         "userEnteredFormat(textFormat,wrapStrategy,verticalAlignment)",
       ),
     );
     requests.push(rowHeight(dashSheetId, 2, 40));
 
-    [r.glanceTitle, r.profileTitle, r.trendTitle].forEach((row) => requests.push(sectionRow(dashSheetId, row)));
+    [r.glanceTitle, r.profileTitle, r.trendTitle, r.chartsTitle].forEach((row) => requests.push(...sectionRow(dashSheetId, row)));
     requests.push(headerRow(dashSheetId, r.glanceHeader, 5));
     requests.push(headerRow(dashSheetId, r.profileHeader, 5));
     requests.push(headerRow(dashSheetId, r.trendHeader, 4));
 
     // At a glance: big numbers, money in the first four, a percentage in the last.
-    const bigNumber = { textFormat: text({ bold: true, fontSize: 14 }) };
+    const bigNumber = { textFormat: { bold: true, fontSize: 14 } };
     requests.push(format(range(dashSheetId, r.glanceValues, r.glanceValues + 1, 0, 4), { ...bigNumber, numberFormat: { type: "NUMBER", pattern: MONEY } }, "userEnteredFormat(numberFormat,textFormat)"));
     requests.push(format(range(dashSheetId, r.glanceValues, r.glanceValues + 1, 4, 5), { ...bigNumber, numberFormat: { type: "PERCENT", pattern: "0%" } }, "userEnteredFormat(numberFormat,textFormat)"));
     requests.push(rowHeight(dashSheetId, r.glanceValues, 32));
@@ -577,18 +635,19 @@ class SheetsWorkbookService {
       requests.push(
         format(
           range(dashSheetId, r.profileTotal, r.profileTotal + 1, 0, 5),
-          { textFormat: text({ bold: true }), numberFormat: { type: "NUMBER", pattern: MONEY }, backgroundColor: THEME.section },
-          "userEnteredFormat(textFormat,numberFormat,backgroundColor)",
+          { textFormat: { bold: true }, numberFormat: { type: "NUMBER", pattern: MONEY } },
+          "userEnteredFormat(textFormat,numberFormat)",
         ),
       );
+      requests.push({
+        updateBorders: { range: range(dashSheetId, r.profileTotal, r.profileTotal + 1, 0, 5), top: { style: "SOLID", colorStyle: { rgbColor: MUTED } } },
+      });
     }
     if (r.trendEnd > r.trendFirst) {
       requests.push(number(range(dashSheetId, r.trendFirst, r.trendEnd, 1, 4), "NUMBER", MONEY));
     }
 
     const profileLastRow = r.profileTotal !== null ? r.profileTotal + 1 : r.profileEnd;
-    requests.push(...rowRules(dashSheetId, r.profileFirst, profileLastRow, 5));
-    requests.push(...rowRules(dashSheetId, r.trendFirst, r.trendEnd, 4));
 
     // Red/green: net + savings rate, each profile's balance and net, and the trend's net column.
     redGreen([
@@ -598,9 +657,20 @@ class SheetsWorkbookService {
       range(dashSheetId, r.trendFirst, r.trendEnd, 3, 4),
     ]).forEach((rule) => requests.push(rule));
 
-    [200, 160, 160, 160, 160, 30].forEach((pixels, column) => requests.push(columnWidth(dashSheetId, column, pixels)));
+    [200, 160, 160, 160, 160].forEach((pixels, column) => requests.push(columnWidth(dashSheetId, column, pixels)));
 
-    // Charts sit to the right of the tables (column G onward), one above the other.
+    // Charts sit side by side under the tables, inside their 840px width (200 + 4 x 160), so
+    // they are visible without horizontal scrolling. Each is 410px wide with a 20px gap.
+    const chartHeight = 280;
+    const chartPosition = (offsetXPixels: number) => ({
+      overlayPosition: {
+        anchorCell: { sheetId: dashSheetId, rowIndex: r.chartsRow, columnIndex: 0 },
+        offsetXPixels,
+        offsetYPixels: 8,
+        widthPixels: 410,
+        heightPixels: chartHeight,
+      },
+    });
     if (r.trendEnd > r.trendFirst) {
       const source = (column: number) => ({
         sourceRange: { sources: [range(dashSheetId, r.trendHeader, r.trendEnd, column, column + 1)] },
@@ -610,7 +680,6 @@ class SheetsWorkbookService {
           chart: {
             spec: {
               title: "Income vs Expenses (last 6 months)",
-              backgroundColorStyle: { rgbColor: THEME.chartCard },
               basicChart: {
                 chartType: "COLUMN",
                 legendPosition: "BOTTOM_LEGEND",
@@ -623,7 +692,7 @@ class SheetsWorkbookService {
                 headerCount: 1,
               },
             },
-            position: { overlayPosition: { anchorCell: { sheetId: dashSheetId, rowIndex: 3, columnIndex: 6 }, widthPixels: 520, heightPixels: 280 } },
+            position: chartPosition(0),
           },
         },
       });
@@ -638,10 +707,9 @@ class SheetsWorkbookService {
           chart: {
             spec: {
               title: "Spending by category (this month)",
-              backgroundColorStyle: { rgbColor: THEME.chartCard },
               pieChart: { legendPosition: "RIGHT_LEGEND", domain: source(0), series: source(1) },
             },
-            position: { overlayPosition: { anchorCell: { sheetId: dashSheetId, rowIndex: 18, columnIndex: 6 }, widthPixels: 520, heightPixels: 280 } },
+            position: chartPosition(430),
           },
         },
       });
