@@ -3,6 +3,7 @@ import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { useTabSwipe } from '../../hooks/useTabSwipe';
 import { TransactionModalProvider, useTransactionModal } from '../../context/TransactionModalContext';
 
 function Fab() {
@@ -28,10 +29,11 @@ function Fab() {
 
 export default function TabLayout() {
   const { theme } = useTheme();
+  const swipeHandlers = useTabSwipe();
 
   return (
     <TransactionModalProvider>
-      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }} {...swipeHandlers}>
         <Tabs
           screenOptions={{
             tabBarActiveTintColor: theme.colors.primary,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
-  FlatList,
+  SectionList,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
@@ -34,6 +34,15 @@ interface LoanSummary {
   overdueLoans: number;
   overdueBorrowings: number;
 }
+
+const isLendingLoan = (loan: Account) => loan.isLending === 1 || loan.isLending === true;
+
+const outstandingOf = (loan: Account) =>
+  loan.loanStatus === "fully_paid" ? 0 : (loan.loanPrincipal || 0) - (loan.loanReturnedAmount || 0);
+
+// Loans that need attention come first and paid-off ones sink to the bottom
+const loanRank = (loan: Account) =>
+  ({ overdue: 0, active: 1, partially_paid: 1, fully_paid: 2 } as Record<string, number>)[loan.loanStatus || "active"] ?? 1;
 
 export default function AccountsScreen() {
   const { theme } = useTheme();
@@ -69,11 +78,10 @@ export default function AccountsScreen() {
 
   // Shared state
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"accounts" | "loans">("accounts");
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-  const [loanType, setLoanType] = useState<"lendings" | "borrowings">("lendings");
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   const loadData = useCallback(() => {
     const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
@@ -94,7 +102,7 @@ export default function AccountsScreen() {
 
   useEffect(() => {
     setSelectedAccountId(null);
-  }, [activeTab, debouncedSearchTerm]
+  }, [debouncedSearchTerm]
   );
 
   const loadAccounts = (profileId?: number) => {
@@ -482,15 +490,56 @@ export default function AccountsScreen() {
     [allAccounts]
   );
 
-  const regularAccounts = useMemo(() => displayedAccounts.filter((a) => a.type !== "loan"), [displayedAccounts]);
+  // Everything on one page, grouped so there is nothing to switch between. Empty groups are left out.
+  const sections = useMemo(() => {
+    const sum = (items: Account[], value: (a: Account) => number) => items.reduce((total, a) => total + value(a), 0);
+    const byUrgency = (a: Account, b: Account) => loanRank(a) - loanRank(b);
 
-  const filteredLoans = useMemo(() => displayedAccounts.filter(account => account.type === 'loan').filter(loan => {
-    const isLending = loan.isLending === 1 || loan.isLending === true;
-    return loanType === 'lendings' ? isLending : !isLending;
-  }), [displayedAccounts, loanType]);
+    const cashAccounts = displayedAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card");
+    const cards = displayedAccounts.filter((a) => a.type === "credit_card");
+    const loans = displayedAccounts.filter((a) => a.type === "loan");
+    const borrowed = loans.filter((l) => !isLendingLoan(l)).sort(byUrgency);
+    const lent = loans.filter(isLendingLoan).sort(byUrgency);
+    const cardsOwed = sum(cards, (a) => Math.max(0, -a.balance));
 
-  const data = activeTab === "accounts" ? regularAccounts : filteredLoans;
-  const renderItem = activeTab === "accounts" ? renderAccountItem : renderLoanItem;
+    return [
+      { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)) },
+      { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed" },
+      { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding` },
+      { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding` },
+    ]
+      .filter((group) => group.items.length > 0)
+      .map((group) => ({
+        key: group.key,
+        title: group.title,
+        meta: group.meta,
+        count: group.items.length,
+        data: collapsedSections[group.key] ? [] : group.items,
+      }));
+  }, [displayedAccounts, collapsedSections, formatCurrency]);
+
+  const toggleSection = (key: string) => setCollapsedSections((previous) => ({ ...previous, [key]: !previous[key] }));
+
+  const renderSectionHeader = ({ section }: { section: { key: string; title: string; meta: string; count: number } }) => (
+    <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(section.key)} activeOpacity={0.7}>
+      <View style={styles.sectionHeaderText}>
+        <Text style={styles.sectionTitle}>
+          {section.title} <Text style={styles.sectionCount}>({section.count})</Text>
+        </Text>
+        <Text style={styles.sectionMeta}>{section.meta}</Text>
+      </View>
+      <MaterialCommunityIcons
+        name={collapsedSections[section.key] ? "chevron-down" : "chevron-up"}
+        size={22}
+        color={theme.colors.textSecondary}
+      />
+    </TouchableOpacity>
+  );
+
+  const renderItem = ({ item }: { item: Account }) =>
+    item.type === "loan" ? renderLoanItem({ item }) : renderAccountItem({ item });
+
+  const overdueLoans = loanSummary.overdueLoans + loanSummary.overdueBorrowings;
 
   const listHeaderComponent = useMemo(() => (
     <>
@@ -505,127 +554,45 @@ export default function AccountsScreen() {
           clearButtonMode="while-editing"
         />
       </View>
-      {/* Tab Switcher */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "accounts" && styles.activeTab]}
-          onPress={() => setActiveTab("accounts")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "accounts" && styles.activeTabText,
-            ]}
-          >
-            Accounts
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "loans" && styles.activeTab]}
-          onPress={() => setActiveTab("loans")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "loans" && styles.activeTabText,
-            ]}
-          >
-            Loans
-          </Text>
-        </TouchableOpacity>
-      </View>
       {/* Summary Card */}
       <View style={styles.summaryCard}>
-        {activeTab === "accounts" ? (
-          <>
-            <Text style={styles.summaryLabel}>Total Balance</Text>
-            <Text
-              style={[
-                styles.summaryAmount,
-                totalBalance < 0 && styles.negativeBalance,
-              ]}
-            >
-              {formatCurrency(totalBalance)}
-            </Text>
-            {cardDebt > 0 && (
-              <Text style={[styles.accountCount, styles.negativeBalance]}>
-                Owed on credit cards: {formatCurrency(cardDebt)}
-              </Text>
-            )}
-            <Text style={styles.accountCount}>
-              {regularAccounts.length} {regularAccounts.length === 1 ? "Account" : "Accounts"}
-            </Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.summaryLabel}>
-              {loanType === "lendings" ? "Total Money Lent" : "Total Money Borrowed"}
-            </Text>
-            <Text
-              style={[
-                styles.summaryAmount,
-                { color: '#ef4444' }
-              ]}
-            >
-              {formatCurrency(loanType === "lendings" ? loanSummary.totalLoaned : loanSummary.totalBorrowed)}
-            </Text>
-            <View style={styles.loanStats}>
-              <View style={styles.loanStatItem}>
-                <Text style={styles.loanStatLabel}>
-                  {loanType === "lendings" ? "Outstanding" : "Debt"}
-                </Text>
-                <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>
-                  {formatCurrency(loanType === "lendings" ? loanSummary.outstandingLoans : loanSummary.outstandingBorrowings)}
-                </Text>
-              </View>
-              <View style={styles.loanStatItem}>
-                <Text style={styles.loanStatLabel}>Repaid</Text>
-                <Text style={[styles.loanStatValue, { color: '#10b981' }]}>
-                  {formatCurrency(loanType === "lendings" ? loanSummary.totalLoanedReturned : loanSummary.totalBorrowedReturned)}
-                </Text>
-              </View>
-              <View style={styles.loanStatItem}>
-                <Text style={styles.loanStatLabel}>Overdue</Text>
-                <Text style={[styles.loanStatValue, { color: '#f59e0b' }]}>
-                  {loanType === "lendings" ? loanSummary.overdueLoans : loanSummary.overdueBorrowings}
-                </Text>
-              </View>
-            </View>
-          </>
+        <Text style={styles.summaryLabel}>Total Balance</Text>
+        <Text
+          style={[
+            styles.summaryAmount,
+            totalBalance < 0 && styles.negativeBalance,
+          ]}
+        >
+          {formatCurrency(totalBalance)}
+        </Text>
+        <View style={styles.loanStats}>
+          <View style={styles.loanStatItem}>
+            <Text style={styles.loanStatLabel}>On credit cards</Text>
+            <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>{formatCurrency(cardDebt)}</Text>
+          </View>
+          <View style={styles.loanStatItem}>
+            <Text style={styles.loanStatLabel}>You owe</Text>
+            <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>{formatCurrency(loanSummary.outstandingBorrowings)}</Text>
+          </View>
+          <View style={styles.loanStatItem}>
+            <Text style={styles.loanStatLabel}>Owed to you</Text>
+            <Text style={[styles.loanStatValue, { color: '#10b981' }]}>{formatCurrency(loanSummary.outstandingLoans)}</Text>
+          </View>
+        </View>
+        {overdueLoans > 0 && (
+          <Text style={[styles.accountCount, { color: '#f59e0b', marginTop: 12 }]}>
+            {overdueLoans} overdue {overdueLoans === 1 ? "loan" : "loans"}
+          </Text>
         )}
       </View>
-
-      {/* Loan Type Switcher */}
-      {activeTab === "loans" && (
-        <View style={styles.loanTypeContainer}>
-          <TouchableOpacity
-            style={[styles.loanTypeTab, loanType === "lendings" && styles.activeLoanType]}
-            onPress={() => setLoanType("lendings")}
-          >
-            <Text style={[styles.loanTypeText, loanType === "lendings" && styles.activeLoanTypeText]}>
-              Money Lent
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.loanTypeTab, loanType === "borrowings" && styles.activeLoanType]}
-            onPress={() => setLoanType("borrowings")}
-          >
-            <Text style={[styles.loanTypeText, loanType === "borrowings" && styles.activeLoanTypeText]}>
-              Money Borrowed
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </>
   ), [
     theme,
     searchTerm,
-    activeTab,
     totalBalance,
     cardDebt,
-    regularAccounts,
     loanSummary,
-    loanType,
+    overdueLoans,
     formatCurrency,
   ]);
 
@@ -639,23 +606,14 @@ export default function AccountsScreen() {
         </View>
       );
     }
-    if (activeTab === "accounts") {
-      return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>🏦</Text>
-          <Text style={styles.emptyTitle}>No Accounts</Text>
-          <Text style={styles.emptyText}>Add your bank accounts, credit cards, and cash to track your finances</Text>
-        </View>
-      );
-    }
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyEmoji}>💸</Text>
-        <Text style={styles.emptyTitle}>{loanType === "lendings" ? "No Money Lent" : "No Money Borrowed"}</Text>
-        <Text style={styles.emptyText}>{loanType === "lendings" ? "Track money you lend to friends and family" : "Track money you borrow from others"}</Text>
+        <Text style={styles.emptyEmoji}>🏦</Text>
+        <Text style={styles.emptyTitle}>No Accounts</Text>
+        <Text style={styles.emptyText}>Add your bank accounts, credit cards, cash and loans to track your finances</Text>
       </View>
     );
-  }, [debouncedSearchTerm, activeTab, loanType, theme]);
+  }, [debouncedSearchTerm, theme]);
 
   return (
     <View style={styles.container}>
@@ -683,9 +641,11 @@ export default function AccountsScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={data}
+      <SectionList
+        sections={sections}
         renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        stickySectionHeadersEnabled={false}
         keyExtractor={(item) => item.id.toString()}
         ListHeaderComponent={listHeaderComponent}
         ListEmptyComponent={emptyComponent}
@@ -747,32 +707,6 @@ const createStyles = (theme: any) =>
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
-    },
-    tabContainer: {
-      flexDirection: "row",
-      backgroundColor: theme.colors.surface,
-      marginHorizontal: 0,
-      marginTop: 16,
-      borderRadius: 8,
-      padding: 4,
-    },
-    tab: {
-      flex: 1,
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-      borderRadius: 6,
-      alignItems: "center",
-    },
-    activeTab: {
-      backgroundColor: theme.colors.primary,
-    },
-    tabText: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: theme.colors.textSecondary,
-    },
-    activeTabText: {
-      color: "#fff",
     },
     header: {
       flexDirection: "row",
@@ -1020,30 +954,31 @@ const createStyles = (theme: any) =>
       fontSize: 12,
       color: theme.colors.textSecondary,
     },
-    loanTypeContainer: {
+    sectionHeader: {
       flexDirection: 'row',
-      backgroundColor: theme.colors.surface,
-      marginHorizontal: 0,
-      marginTop: 10,
-      marginBottom: 16,
-      borderRadius: 8,
-      overflow: 'hidden',
-    },
-    loanTypeTab: {
-      flex: 1,
-      paddingVertical: 12,
       alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingTop: 16,
+      paddingBottom: 8,
+      paddingHorizontal: 4,
     },
-    activeLoanType: {
-      backgroundColor: theme.colors.primary,
+    sectionHeaderText: {
+      flex: 1,
     },
-    loanTypeText: {
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: theme.colors.text,
+    },
+    sectionCount: {
       fontSize: 14,
-      fontWeight: '600',
+      fontWeight: '500',
       color: theme.colors.textSecondary,
     },
-    activeLoanTypeText: {
-      color: 'white',
+    sectionMeta: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginTop: 2,
     },
     loanStats: {
       marginTop: 8,
