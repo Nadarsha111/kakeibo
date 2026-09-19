@@ -68,6 +68,12 @@ class DatabaseConnector {
           loanLentDate TEXT,
           loanExpectedReturnDate TEXT,
           loanActualReturnDate TEXT,
+          loanInterestRate REAL,
+          loanTermMonths INTEGER,
+          loanInstallmentAmount REAL,
+          loanPaymentDay INTEGER,
+          loanNextDueDate TEXT,
+          loanInterestPaid REAL,
           description TEXT,
 
           bankName TEXT,
@@ -161,7 +167,24 @@ class DatabaseConnector {
    *     }
    *   }
    */
-  private static readonly MIGRATIONS: Array<(db: SQLite.SQLiteDatabase) => void> = [];
+  private static readonly MIGRATIONS: Array<(db: SQLite.SQLiteDatabase) => void> = [
+    // 1: installment-loan fields (interest rate, term, monthly payment, due dates)
+    (db) => {
+      const columns: Array<[string, string]> = [
+        ['loanInterestRate', 'REAL'],
+        ['loanTermMonths', 'INTEGER'],
+        ['loanInstallmentAmount', 'REAL'],
+        ['loanPaymentDay', 'INTEGER'],
+        ['loanNextDueDate', 'TEXT'],
+        ['loanInterestPaid', 'REAL'],
+      ];
+      columns.forEach(([name, sqlType]) => {
+        if (!DatabaseConnector.hasColumn(db, 'accounts', name)) {
+          db.execSync(`ALTER TABLE accounts ADD COLUMN ${name} ${sqlType}`);
+        }
+      });
+    },
+  ];
 
   private static hasColumn(db: SQLite.SQLiteDatabase, table: string, column: string): boolean {
     const columns = db.getAllSync(`PRAGMA table_info(${table})`) as Array<{ name: string }>;

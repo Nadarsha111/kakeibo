@@ -32,6 +32,13 @@ export interface Account {
   loanLentDate?: string | null;
   loanExpectedReturnDate?: string | null;
   loanActualReturnDate?: string | null;
+  // Installment-loan fields; a loan is an installment loan when loanTermMonths is set
+  loanInterestRate?: number | null; // annual percentage, charged monthly on the outstanding principal
+  loanTermMonths?: number | null;
+  loanInstallmentAmount?: number | null;
+  loanPaymentDay?: number | null; // day of month payments fall due
+  loanNextDueDate?: string | null;
+  loanInterestPaid?: number | null;
   description?: string | null;
   createdAt: string;
   updatedAt: string;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 import { getAccountService, getTransactionService } from '../database';
 import { Account } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { useSettings } from '../context/SettingsContext';
+import { addMonths, isValidDate, monthlyPayment, totalInterest } from '../utils/loanMath';
 
 interface AddAccountScreenProps {
   visible: boolean;
@@ -27,6 +29,7 @@ export default function AddAccountScreen({
   profileId,
 }: AddAccountScreenProps) {
   const { theme } = useTheme();
+  const { formatCurrency } = useSettings();
   const styles = createStyles(theme);
   
   const [name, setName] = useState('');
@@ -43,6 +46,12 @@ export default function AddAccountScreen({
   const [loanPrincipal, setLoanPrincipal] = useState('');
   const [loanExpectedReturnDate, setLoanExpectedReturnDate] = useState('');
   const [loanDescription, setLoanDescription] = useState('');
+  // Installment plan (monthly payments with optional interest)
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [interestRate, setInterestRate] = useState('');
+  const [termMonths, setTermMonths] = useState('');
+  const [firstPaymentDate, setFirstPaymentDate] = useState('');
+  const [installmentOverride, setInstallmentOverride] = useState('');
   // Account that receives the borrowed cash (or pays out the lent cash); null records the debt only
   const [fundingAccountId, setFundingAccountId] = useState<number | null>(null);
   const [fundingAccounts, setFundingAccounts] = useState<Account[]>([]);
@@ -53,6 +62,16 @@ export default function AddAccountScreen({
       getAccountService().getAccounts(profileId).filter((account) => account.type !== 'loan'),
     );
   }, [visible, type, profileId]);
+
+  const installmentPlan = useMemo(() => {
+    const principal = parseFloat(loanPrincipal);
+    const rate = parseFloat(interestRate || '0');
+    const months = parseInt(termMonths, 10);
+    if (!isInstallment || !(principal > 0) || isNaN(rate) || rate < 0 || !(months >= 1)) return null;
+    const override = parseFloat(installmentOverride);
+    const payment = override > 0 ? override : monthlyPayment(principal, rate, months);
+    return { payment, months, interest: totalInterest(principal, payment, months) };
+  }, [isInstallment, loanPrincipal, interestRate, termMonths, installmentOverride]);
 
   const resetForm = () => {
     setName('');
@@ -69,6 +88,11 @@ export default function AddAccountScreen({
     setLoanExpectedReturnDate('');
     setLoanDescription('');
     setFundingAccountId(null);
+    setIsInstallment(false);
+    setInterestRate('');
+    setTermMonths('');
+    setFirstPaymentDate('');
+    setInstallmentOverride('');
   };
 
   const handleSubmit = () => {
@@ -81,6 +105,26 @@ export default function AddAccountScreen({
       if (!loanPrincipal || isNaN(parseFloat(loanPrincipal)) || parseFloat(loanPrincipal) <= 0) {
         Alert.alert('Error', 'Please enter a valid loan amount.');
         return;
+      }
+      if (isInstallment) {
+        const rate = parseFloat(interestRate || '0');
+        const months = Number(termMonths);
+        if (isNaN(rate) || rate < 0 || rate > 100) {
+          Alert.alert('Error', 'Enter a yearly interest rate between 0 and 100.');
+          return;
+        }
+        if (!Number.isInteger(months) || months < 1 || months > 600) {
+          Alert.alert('Error', 'Enter the term as a whole number of months (1 to 600).');
+          return;
+        }
+        if (firstPaymentDate.trim() && !isValidDate(firstPaymentDate.trim())) {
+          Alert.alert('Error', 'Enter the first payment date as YYYY-MM-DD.');
+          return;
+        }
+        if (installmentOverride.trim() && !(parseFloat(installmentOverride) > 0)) {
+          Alert.alert('Error', 'Enter a valid monthly payment amount.');
+          return;
+        }
       }
     } else {
       if (!name.trim()) {
@@ -102,6 +146,21 @@ export default function AddAccountScreen({
       let accountData: Omit<Account, 'id' | 'createdAt' | 'updatedAt'>;
 
       if (type === 'loan') {
+        let installmentFields: Partial<Account> = {};
+        if (isInstallment && installmentPlan) {
+          const today = new Date().toISOString().split('T')[0];
+          const firstDue = firstPaymentDate.trim() || addMonths(today, 1);
+          const paymentDay = parseInt(firstDue.slice(8), 10);
+          const months = installmentPlan.months;
+          installmentFields = {
+            loanInterestRate: parseFloat(interestRate || '0'),
+            loanTermMonths: months,
+            loanInstallmentAmount: installmentPlan.payment,
+            loanPaymentDay: paymentDay,
+            loanNextDueDate: firstDue,
+            loanExpectedReturnDate: addMonths(firstDue, months - 1, paymentDay),
+          };
+        }
         accountData = {
           profileId,
           name: `${isLending ? 'Loan to' : 'Loan from'} ${loanCounterpartyName.trim()}`,
@@ -116,6 +175,7 @@ export default function AddAccountScreen({
           loanLentDate: new Date().toISOString().split('T')[0],
           loanExpectedReturnDate: loanExpectedReturnDate.trim() || undefined,
           description: loanDescription.trim() || undefined,
+          ...installmentFields,
         };
       } else {
         accountData = {
@@ -269,13 +329,76 @@ export default function AddAccountScreen({
                   keyboardType="decimal-pad"
                   placeholderTextColor={theme.colors.textSecondary}
                 />
-                <TextInput
-                  style={[styles.textInput, { marginTop: 12 }]}
-                  value={loanExpectedReturnDate}
-                  onChangeText={setLoanExpectedReturnDate}
-                  placeholder="Expected Return Date (YYYY-MM-DD)"
-                  placeholderTextColor={theme.colors.textSecondary}
-                />
+                <View style={[styles.loanTypeContainer, { marginTop: 12, marginBottom: 0 }]}>
+                  <TouchableOpacity
+                    style={[styles.loanTypeTab, !isInstallment && styles.activeLoanType]}
+                    onPress={() => setIsInstallment(false)}
+                  >
+                    <Text style={[styles.loanTypeText, !isInstallment && styles.activeLoanTypeText]}>
+                      Flexible
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.loanTypeTab, isInstallment && styles.activeLoanType]}
+                    onPress={() => setIsInstallment(true)}
+                  >
+                    <Text style={[styles.loanTypeText, isInstallment && styles.activeLoanTypeText]}>
+                      Monthly Installments
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {isInstallment ? (
+                  <>
+                    <TextInput
+                      style={[styles.textInput, { marginTop: 12 }]}
+                      value={interestRate}
+                      onChangeText={setInterestRate}
+                      placeholder="Interest Rate % per year (0 if none)"
+                      keyboardType="decimal-pad"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                    <TextInput
+                      style={[styles.textInput, { marginTop: 12 }]}
+                      value={termMonths}
+                      onChangeText={setTermMonths}
+                      placeholder="Term in Months"
+                      keyboardType="number-pad"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                    <TextInput
+                      style={[styles.textInput, { marginTop: 12 }]}
+                      value={firstPaymentDate}
+                      onChangeText={setFirstPaymentDate}
+                      placeholder="First Payment Date (YYYY-MM-DD, default next month)"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                    <TextInput
+                      style={[styles.textInput, { marginTop: 12 }]}
+                      value={installmentOverride}
+                      onChangeText={setInstallmentOverride}
+                      placeholder={
+                        installmentPlan
+                          ? `Monthly Payment (calculated: ${installmentPlan.payment.toFixed(2)})`
+                          : 'Monthly Payment (calculated from the above)'
+                      }
+                      keyboardType="decimal-pad"
+                      placeholderTextColor={theme.colors.textSecondary}
+                    />
+                    {installmentPlan && (
+                      <Text style={styles.helperText}>
+                        {`About ${formatCurrency(installmentPlan.payment)} a month for ${installmentPlan.months} months, ${formatCurrency(installmentPlan.interest)} total interest. Interest is charged monthly on what is still owed.`}
+                      </Text>
+                    )}
+                  </>
+                ) : (
+                  <TextInput
+                    style={[styles.textInput, { marginTop: 12 }]}
+                    value={loanExpectedReturnDate}
+                    onChangeText={setLoanExpectedReturnDate}
+                    placeholder="Expected Return Date (YYYY-MM-DD)"
+                    placeholderTextColor={theme.colors.textSecondary}
+                  />
+                )}
                 <TextInput
                   style={[styles.textInput, styles.multilineInput, { marginTop: 12 }]}
                   value={loanDescription}

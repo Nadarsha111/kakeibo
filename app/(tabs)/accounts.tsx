@@ -17,6 +17,7 @@ import { Account, Profile } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
+import LoanPaymentModal from "../../components/LoanPaymentModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 
@@ -44,6 +45,7 @@ export default function AccountsScreen() {
   const [allAccounts, setAllAccounts] = useState<Account[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -152,7 +154,12 @@ export default function AccountsScreen() {
   }, [allAccounts, debouncedSearchTerm]);
 
   const handleRecordPayment = (loanAccount: Account) => {
-    openModal({ loanForRepayment: loanAccount });
+    if (loanAccount.loanTermMonths) {
+      // Installment loans split each payment into interest and principal
+      setPaymentLoan(loanAccount);
+    } else {
+      openModal({ loanForRepayment: loanAccount });
+    }
   };
 
   const handleDeleteAccount = (account: Account) => {
@@ -355,6 +362,33 @@ export default function AccountsScreen() {
               {formatCurrency(outstandingAmount)}
             </Text>
           </View>
+          {!!loanAccount.loanTermMonths && (
+            <>
+              <View style={styles.loanAmountRow}>
+                <Text style={styles.loanAmountLabel}>
+                  {`Monthly (${loanAccount.loanInterestRate || 0}% for ${loanAccount.loanTermMonths} mo):`}
+                </Text>
+                <Text style={styles.loanAmountValue}>{formatCurrency(loanAccount.loanInstallmentAmount || 0)}</Text>
+              </View>
+              {!!loanAccount.loanNextDueDate && (
+                <View style={styles.loanAmountRow}>
+                  <Text style={styles.loanAmountLabel}>Next due:</Text>
+                  <Text style={[
+                    styles.loanAmountValue,
+                    loanAccount.loanStatus === 'overdue' && { color: '#ef4444' }
+                  ]}>
+                    {new Date(loanAccount.loanNextDueDate).toLocaleDateString()}
+                  </Text>
+                </View>
+              )}
+              {(loanAccount.loanInterestPaid || 0) > 0 && (
+                <View style={styles.loanAmountRow}>
+                  <Text style={styles.loanAmountLabel}>Interest paid:</Text>
+                  <Text style={styles.loanAmountValue}>{formatCurrency(loanAccount.loanInterestPaid || 0)}</Text>
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {(loanAccount.loanReturnedAmount || 0) > 0 && (
@@ -628,6 +662,14 @@ export default function AccountsScreen() {
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
+      />
+
+      {/* Installment Loan Payment Modal */}
+      <LoanPaymentModal
+        visible={paymentLoan !== null}
+        loan={paymentLoan}
+        onClose={() => setPaymentLoan(null)}
+        onPaymentRecorded={loadData}
       />
 
       {/* Profile Selection Modal */}

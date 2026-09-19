@@ -420,7 +420,7 @@ class SheetsWorkbookService {
         a.balance,
         a.currency,
         a.type === "loan"
-          ? `${a.isLending ? "Lent to" : "Borrowed from"} ${a.loanCounterpartyName || "?"}`
+          ? `${a.isLending ? "Lent to" : "Borrowed from"} ${a.loanCounterpartyName || "?"}${a.loanTermMonths ? ` (${a.loanInterestRate || 0}% for ${a.loanTermMonths} months)` : ""}`
           : a.bankName || "",
       ]),
     ];

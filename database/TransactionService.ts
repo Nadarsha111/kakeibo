@@ -1,6 +1,7 @@
 import DatabaseConnector from './DatabaseConnector';
 import { Account, Transaction } from '../types';
 import AccountService from './AccountService';
+import { addMonths, interestDue, round2 } from '../utils/loanMath';
 
 /**
  * Service class for handling transactions, triggers, and derived data
@@ -86,64 +87,160 @@ class TransactionService {
     profileId: number;
   }): void {
     try {
-      DatabaseConnector.getInstance().withTransaction(() => {
-        const fromAccount = this.accountService.getAccountById(data.fromAccountId);
-        const toAccount = this.accountService.getAccountById(data.toAccountId);
-
-        // Expense from the source account
-        this.addTransactionUnsafe({
-          profileId: data.profileId,
-          amount: data.amount,
-          type: 'expense',
-          category: 'Transfer Out',
-          description: `Transfer to ${toAccount?.name}. ${data.description || ''}`.trim(),
-          date: data.date,
-          paymentMethod: 'cash', // Internal transfer, method is nominal
-          accountId: data.fromAccountId,
-        });
-
-        // Income to the destination account
-        this.addTransactionUnsafe({
-          profileId: data.profileId,
-          amount: data.amount,
-          type: 'income',
-          category: 'Transfer In',
-          description: `Transfer from ${fromAccount?.name}. ${data.description || ''}`.trim(),
-          date: data.date,
-          paymentMethod: 'cash', // Internal transfer, method is nominal
-          accountId: data.toAccountId,
-        });
-
-        // If money is flowing INTO a loan account
-        if (toAccount?.type === 'loan') {
-          if (toAccount.isLending) {
-            // Transfer TO a "Loan To" account (e.g. Checking -> Loan to Bob)
-            // This means I am lending MORE money.
-            this.accountService.increaseLoanPrincipal(data.toAccountId, data.amount);
-          } else {
-            // Transfer TO a "Loan From" account (e.g. Checking -> Loan from Bank)
-            // This means I am REPAYING my debt.
-            this.accountService.recordRepaymentOnLoanAccount(data.toAccountId, data.amount);
-          }
-        }
-
-        // If money is flowing FROM a loan account
-        if (fromAccount?.type === 'loan') {
-          if (fromAccount.isLending) {
-            // Transfer FROM a "Loan To" account (e.g. Loan to Bob -> Checking)
-            // This means I am receiving a REPAYMENT.
-            this.accountService.recordRepaymentOnLoanAccount(data.fromAccountId, data.amount);
-          } else {
-            // Transfer FROM a "Loan From" account (e.g. Loan from Bank -> Checking)
-            // This means I am borrowing MORE money.
-            this.accountService.increaseLoanPrincipal(data.fromAccountId, data.amount);
-          }
-        }
-
-        console.log(`Transfer of ${data.amount} from account ${data.fromAccountId} to ${data.toAccountId} successful.`);
-      });
+      DatabaseConnector.getInstance().withTransaction(() => this.addTransferUnsafe(data));
     } catch (error) {
       console.error('Error processing transfer:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Transfer logic without starting a new DB transaction.
+   * This should only be called from a method that already manages a transaction.
+   */
+  private addTransferUnsafe(data: {
+    fromAccountId: number;
+    toAccountId: number;
+    amount: number;
+    date: string;
+    description?: string;
+    profileId: number;
+  }): void {
+    const fromAccount = this.accountService.getAccountById(data.fromAccountId);
+    const toAccount = this.accountService.getAccountById(data.toAccountId);
+
+    // Expense from the source account
+    this.addTransactionUnsafe({
+      profileId: data.profileId,
+      amount: data.amount,
+      type: 'expense',
+      category: 'Transfer Out',
+      description: `Transfer to ${toAccount?.name}. ${data.description || ''}`.trim(),
+      date: data.date,
+      paymentMethod: 'cash', // Internal transfer, method is nominal
+      accountId: data.fromAccountId,
+    });
+
+    // Income to the destination account
+    this.addTransactionUnsafe({
+      profileId: data.profileId,
+      amount: data.amount,
+      type: 'income',
+      category: 'Transfer In',
+      description: `Transfer from ${fromAccount?.name}. ${data.description || ''}`.trim(),
+      date: data.date,
+      paymentMethod: 'cash', // Internal transfer, method is nominal
+      accountId: data.toAccountId,
+    });
+
+    // If money is flowing INTO a loan account
+    if (toAccount?.type === 'loan') {
+      if (toAccount.isLending) {
+        // Transfer TO a "Loan To" account (e.g. Checking -> Loan to Bob)
+        // This means I am lending MORE money.
+        this.accountService.increaseLoanPrincipal(data.toAccountId, data.amount);
+      } else {
+        // Transfer TO a "Loan From" account (e.g. Checking -> Loan from Bank)
+        // This means I am REPAYING my debt.
+        this.accountService.recordRepaymentOnLoanAccount(data.toAccountId, data.amount);
+      }
+    }
+
+    // If money is flowing FROM a loan account
+    if (fromAccount?.type === 'loan') {
+      if (fromAccount.isLending) {
+        // Transfer FROM a "Loan To" account (e.g. Loan to Bob -> Checking)
+        // This means I am receiving a REPAYMENT.
+        this.accountService.recordRepaymentOnLoanAccount(data.fromAccountId, data.amount);
+      } else {
+        // Transfer FROM a "Loan From" account (e.g. Loan from Bank -> Checking)
+        // This means I am borrowing MORE money.
+        this.accountService.increaseLoanPrincipal(data.fromAccountId, data.amount);
+      }
+    }
+
+    console.log(`Transfer of ${data.amount} from account ${data.fromAccountId} to ${data.toAccountId} successful.`);
+  }
+
+  /**
+   * Records a payment on a loan, splitting it into interest and principal. Interest is a real
+   * expense (or income when lending) under the "Loan Interest" category; the principal part is a
+   * transfer that reduces what is owed. For an installment loan, a payment that covers the
+   * monthly amount also moves the next due date forward one month.
+   */
+  recordLoanPayment(data: {
+    loanAccountId: number;
+    accountId: number;
+    amount: number;
+    date: string;
+  }): { interest: number; principal: number } {
+    try {
+      return DatabaseConnector.getInstance().withTransaction(() => {
+        const loan = this.accountService.getAccountById(data.loanAccountId);
+        const account = this.accountService.getAccountById(data.accountId);
+        if (!loan || loan.type !== 'loan') {
+          throw new Error('Invalid loan account specified.');
+        }
+        if (!account || account.type === 'loan' || account.profileId !== loan.profileId) {
+          throw new Error('Invalid account for this payment.');
+        }
+        if (!(data.amount > 0)) {
+          throw new Error('Enter a payment amount greater than zero.');
+        }
+
+        const isLending = !!loan.isLending;
+        const outstanding = round2((loan.loanPrincipal || 0) - (loan.loanReturnedAmount || 0));
+        const interest = interestDue(outstanding, loan.loanInterestRate || 0);
+        if (data.amount < interest) {
+          throw new Error(`The payment must cover at least the ${interest.toFixed(2)} interest due.`);
+        }
+        const principal = round2(data.amount - interest);
+        if (principal > outstanding + 0.005) {
+          throw new Error(`The payment exceeds the ${round2(outstanding + interest).toFixed(2)} needed to pay off this loan.`);
+        }
+
+        if (interest > 0) {
+          this.addTransactionUnsafe({
+            profileId: loan.profileId,
+            amount: interest,
+            type: isLending ? 'income' : 'expense',
+            category: 'Loan Interest',
+            description: `Interest on ${loan.name}`,
+            date: data.date,
+            paymentMethod: 'cash',
+            accountId: account.id,
+          });
+        }
+
+        if (principal > 0) {
+          this.addTransferUnsafe({
+            fromAccountId: isLending ? loan.id : account.id,
+            toAccountId: isLending ? account.id : loan.id,
+            amount: Math.min(principal, outstanding),
+            date: data.date,
+            description: 'Loan payment',
+            profileId: loan.profileId,
+          });
+        }
+
+        const settled = round2(outstanding - principal) <= 0.005;
+        const coversInstallment = data.amount >= (loan.loanInstallmentAmount || 0) - 0.005;
+        let nextDueDate = loan.loanNextDueDate;
+        if (settled) {
+          nextDueDate = null;
+        } else if (nextDueDate && coversInstallment) {
+          nextDueDate = addMonths(nextDueDate, 1, loan.loanPaymentDay || undefined);
+        }
+
+        this.accountService.updateAccount(loan.id, {
+          loanInterestPaid: round2((loan.loanInterestPaid || 0) + interest),
+          loanNextDueDate: nextDueDate,
+        });
+
+        return { interest, principal };
+      });
+    } catch (error) {
+      console.error('Error recording loan payment:', error);
       throw error;
     }
   }

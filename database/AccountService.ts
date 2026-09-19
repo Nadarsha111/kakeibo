@@ -61,13 +61,15 @@ class AccountService {
         }
         account.loanReturnedAmount = 0;
         account.loanStatus = 'active';
+        account.loanInterestPaid = 0;
       }
 
       const now = new Date().toISOString();
       const result = this.db.runSync(
-        `INSERT INTO accounts (profileId, name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt, 
-          isLending, loanPrincipal, loanReturnedAmount, loanStatus, loanCounterpartyName, loanCounterpartyContact, loanLentDate, loanExpectedReturnDate, description) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts (profileId, name, type, balance, currency, bankName, accountNumber, isActive, createdAt, updatedAt,
+          isLending, loanPrincipal, loanReturnedAmount, loanStatus, loanCounterpartyName, loanCounterpartyContact, loanLentDate, loanExpectedReturnDate, description,
+          loanInterestRate, loanTermMonths, loanInstallmentAmount, loanPaymentDay, loanNextDueDate, loanInterestPaid)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           account.profileId,
           account.name,
@@ -88,9 +90,15 @@ class AccountService {
           account.loanLentDate,
           account.loanExpectedReturnDate,
           account.description,
+          account.loanInterestRate ?? null,
+          account.loanTermMonths ?? null,
+          account.loanInstallmentAmount ?? null,
+          account.loanPaymentDay ?? null,
+          account.loanNextDueDate ?? null,
+          account.loanInterestPaid ?? null,
         ]
       );
-      
+
       console.log('Account added:', { id: result.lastInsertRowId, name: account.name });
       return result.lastInsertRowId;
     } catch (error) {
@@ -160,6 +168,14 @@ class AccountService {
       if (account.loanExpectedReturnDate !== undefined) {
         fields.push('loanExpectedReturnDate = ?');
         values.push(account.loanExpectedReturnDate);
+      }
+      if (account.loanInterestPaid !== undefined) {
+        fields.push('loanInterestPaid = ?');
+        values.push(account.loanInterestPaid);
+      }
+      if (account.loanNextDueDate !== undefined) {
+        fields.push('loanNextDueDate = ?');
+        values.push(account.loanNextDueDate);
       }
       if (account.description !== undefined) {
         fields.push('description = ?');
@@ -418,9 +434,11 @@ class AccountService {
          SET loanStatus = 'overdue', updatedAt = ? 
          WHERE type = 'loan' 
          AND loanStatus IN ('active', 'partially_paid') 
-         AND loanExpectedReturnDate IS NOT NULL 
-         AND DATE(loanExpectedReturnDate) < DATE(?)`,
-        [new Date().toISOString(), today]
+         AND (
+           (loanExpectedReturnDate IS NOT NULL AND DATE(loanExpectedReturnDate) < DATE(?))
+           OR (loanNextDueDate IS NOT NULL AND DATE(loanNextDueDate) < DATE(?))
+         )`,
+        [new Date().toISOString(), today, today]
       );
       
       const updatedCount = result.changes || 0;
@@ -444,13 +462,16 @@ class AccountService {
       throw new Error('Invalid loan account specified.');
     }
 
-    const newReturnedAmount = (loanAccount.loanReturnedAmount || 0) + paymentAmount;
-    if (newReturnedAmount > (loanAccount.loanPrincipal || 0)) {
+    // Half a cent of tolerance so floating-point drift cannot block or miss a final payoff
+    const principal = loanAccount.loanPrincipal || 0;
+    let newReturnedAmount = (loanAccount.loanReturnedAmount || 0) + paymentAmount;
+    if (newReturnedAmount > principal + 0.005) {
       throw new Error('Payment exceeds outstanding loan amount.');
     }
 
     let newStatus: Account['loanStatus'] = 'partially_paid';
-    if (newReturnedAmount >= (loanAccount.loanPrincipal || 0)) {
+    if (newReturnedAmount >= principal - 0.005) {
+      newReturnedAmount = principal;
       newStatus = 'fully_paid';
     }
 
