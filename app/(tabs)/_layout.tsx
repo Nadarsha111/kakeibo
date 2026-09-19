@@ -3,6 +3,7 @@ import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import { useTabScrub } from '../../hooks/useTabScrub';
 import { useTabSwipe } from '../../hooks/useTabSwipe';
 import PebbleTabBar, { tabBarOffset } from '../../components/PebbleTabBar';
 import { TransactionModalProvider, useTransactionModal } from '../../context/TransactionModalContext';
@@ -30,12 +31,13 @@ function Fab() {
 
 export default function TabLayout() {
   const { theme } = useTheme();
-  const swipeHandlers = useTabSwipe();
+  const scrub = useTabScrub();
+  const swipeHandlers = useTabSwipe(scrub);
 
   return (
     <TransactionModalProvider>
       <View style={{ flex: 1, backgroundColor: theme.colors.background }} {...swipeHandlers}>
-        <Tabs tabBar={(props) => <PebbleTabBar {...props} />} screenOptions={{ headerShown: false }}>
+        <Tabs tabBar={(props) => <PebbleTabBar {...props} scrub={scrub} />} screenOptions={{ headerShown: false }}>
           <Tabs.Screen
             name="index"
             options={{
