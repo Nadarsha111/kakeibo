@@ -618,9 +618,10 @@ class TransactionService {
    */
   getCategorySummary(startDate: string, endDate: string, profileId?: number): { category: string; amount: number; color: string }[] {
     try {
-      let query = `SELECT t.category, SUM(t.amount) as amount, c.color 
+      // LEFT JOIN so spending in a category without a row of its own (e.g. "Loan Interest") still counts
+      let query = `SELECT t.category, SUM(t.amount) as amount, COALESCE(c.color, '#6b7280') as color 
          FROM transactions t 
-         JOIN categories c ON t.category = c.name 
+         LEFT JOIN categories c ON t.category = c.name 
          WHERE t.type = 'expense' AND t.category != 'Transfer Out' AND DATE(t.date) BETWEEN DATE(?) AND DATE(?)`;
       const params: any[] = [startDate, endDate];
 

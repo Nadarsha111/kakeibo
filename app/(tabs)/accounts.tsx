@@ -18,6 +18,7 @@ import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import LoanPaymentModal from "../../components/LoanPaymentModal";
+import CreditLimitModal from "../../components/CreditLimitModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 
@@ -46,6 +47,7 @@ export default function AccountsScreen() {
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
+  const [limitAccount, setLimitAccount] = useState<Account | null>(null);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -248,6 +250,29 @@ export default function AccountsScreen() {
     return new Date(loan.loanExpectedReturnDate) < new Date();
   };
 
+  // How much of a credit card's limit is used: the bar fills as the amount owed approaches the limit
+  const renderCardUsage = (account: Account) => {
+    const limit = account.creditLimit || 0;
+    const used = Math.max(0, -account.balance);
+    const percent = Math.min(100, (used / limit) * 100);
+    const color = percent >= 90 ? '#ef4444' : percent >= 70 ? '#f59e0b' : '#10b981';
+    return (
+      <View style={{ marginTop: 12 }}>
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: color }]} />
+          </View>
+          <Text style={styles.progressText}>{percent.toFixed(0)}%</Text>
+        </View>
+        <Text style={styles.accountType}>
+          {used > limit
+            ? `${formatCurrency(used - limit)} over the ${formatCurrency(limit)} limit`
+            : `${formatCurrency(limit - used)} available of ${formatCurrency(limit)}`}
+        </Text>
+      </View>
+    );
+  };
+
   const renderAccountItem = ({ item: account }: { item: Account }) => {
     const isSelected = selectedAccountId === account.id;
     return (
@@ -276,12 +301,15 @@ export default function AccountsScreen() {
                   account.balance < 0 && styles.negativeBalance,
                 ]}
               >
-                {formatCurrency(account.balance)}
+                {formatCurrency(account.type === 'credit_card' ? Math.abs(account.balance) : account.balance)}
               </Text>
-              <Text style={styles.currency}>{account.currency}</Text>
+              <Text style={styles.currency}>
+                {account.type === 'credit_card' ? (account.balance < 0 ? 'owed' : 'credit') : account.currency}
+              </Text>
             </View>
           </View>
         </View>
+        {account.type === 'credit_card' && (account.creditLimit || 0) > 0 && renderCardUsage(account)}
         {isSelected && (
           <View style={styles.cardActions}>
             <TouchableOpacity
@@ -291,6 +319,17 @@ export default function AccountsScreen() {
               <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.error} />
               <Text style={[styles.cardActionButtonText, { color: theme.colors.error }]}>Delete</Text>
             </TouchableOpacity>
+            {account.type === 'credit_card' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => setLimitAccount(account)}
+              >
+                <MaterialCommunityIcons name="speedometer" size={20} color={theme.colors.primary} />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>
+                  {account.creditLimit ? "Change Limit" : "Set Limit"}
+                </Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.cardActionButton}
               onPress={() => openModal({ initialFromAccount: account })}
@@ -437,6 +476,12 @@ export default function AccountsScreen() {
     );
   };
 
+  // Money owed on credit cards; already subtracted inside Total Balance, shown here so it is visible
+  const cardDebt = useMemo(
+    () => allAccounts.reduce((sum, a) => (a.type === "credit_card" && a.balance < 0 ? sum - a.balance : sum), 0),
+    [allAccounts]
+  );
+
   const regularAccounts = useMemo(() => displayedAccounts.filter((a) => a.type !== "loan"), [displayedAccounts]);
 
   const filteredLoans = useMemo(() => displayedAccounts.filter(account => account.type === 'loan').filter(loan => {
@@ -502,6 +547,11 @@ export default function AccountsScreen() {
             >
               {formatCurrency(totalBalance)}
             </Text>
+            {cardDebt > 0 && (
+              <Text style={[styles.accountCount, styles.negativeBalance]}>
+                Owed on credit cards: {formatCurrency(cardDebt)}
+              </Text>
+            )}
             <Text style={styles.accountCount}>
               {regularAccounts.length} {regularAccounts.length === 1 ? "Account" : "Accounts"}
             </Text>
@@ -572,6 +622,7 @@ export default function AccountsScreen() {
     searchTerm,
     activeTab,
     totalBalance,
+    cardDebt,
     regularAccounts,
     loanSummary,
     loanType,
@@ -657,6 +708,14 @@ export default function AccountsScreen() {
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
+      />
+
+      {/* Credit Limit Modal */}
+      <CreditLimitModal
+        visible={limitAccount !== null}
+        account={limitAccount}
+        onClose={() => setLimitAccount(null)}
+        onSaved={loadData}
       />
 
       {/* Installment Loan Payment Modal */}

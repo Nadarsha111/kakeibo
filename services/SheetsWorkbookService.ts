@@ -9,7 +9,20 @@ const TAB = {
   CATEGORIES: "Categories",
 } as const;
 
-const TAB_ORDER = [TAB.DASHBOARD, TAB.TRANSACTIONS, TAB.ACCOUNTS, TAB.CATEGORIES];
+// Every profile also gets its own dashboard tab. The prefix marks tabs this service owns, so ones
+// left behind by a deleted or renamed profile can be found and removed.
+const PROFILE_TAB_PREFIX = "Profile - ";
+
+/** Sheet names in A1 ranges must be quoted when they contain spaces or punctuation. */
+const quoteTab = (title: string) => `'${title.replace(/'/g, "''")}'`;
+
+/** A unique tab title for a profile. Sheets compares titles case-insensitively and caps them at 100 characters. */
+const profileTabTitle = (name: string, id: number, used: Set<string>) => {
+  const base = `${PROFILE_TAB_PREFIX}${name.trim() || `Profile ${id}`}`.slice(0, 90);
+  const title = used.has(base.toLowerCase()) ? `${base} (${id})` : base;
+  used.add(title.toLowerCase());
+  return title;
+};
 
 type SheetIds = Record<string, number>;
 
@@ -73,8 +86,11 @@ const monthLabel = (key: string) => {
 };
 
 /**
- * Builds and refreshes the Google Sheets workbook. Four tabs, each with one job:
- *  - Dashboard: this month at a glance, a per-profile breakdown, a 6-month trend and two charts.
+ * Builds and refreshes the Google Sheets workbook. Each tab has one job:
+ *  - Dashboard: this month at a glance, a per-profile breakdown, a 6-month trend and two charts,
+ *    all profiles combined.
+ *  - Profile - <name>: the same numbers and charts for a single profile, plus its accounts. One
+ *    tab per profile, created and removed as profiles come and go (read-only).
  *  - Transactions: every transaction, one row each. This is the only tab that can be edited and
  *    pulled back into the app, so it has dropdowns, a filter and readable Account/Profile names.
  *  - Accounts: balances per profile (read-only).
@@ -85,10 +101,12 @@ const monthLabel = (key: string) => {
 class SheetsWorkbookService {
   public async refresh(accessToken: string, spreadsheetId: string): Promise<void> {
     const existing = await this.getExistingStructure(accessToken, spreadsheetId);
-    const sheetIds = await this.ensureStructure(accessToken, spreadsheetId, existing);
 
     const data = this.gatherData();
+    const titles = [TAB.DASHBOARD, ...data.profileTabs.map((p) => p.title), TAB.TRANSACTIONS, TAB.ACCOUNTS, TAB.CATEGORIES];
+    const sheetIds = await this.ensureStructure(accessToken, spreadsheetId, existing, titles);
     const dashboard = this.buildDashboard(data);
+    const profileDashboards = data.profileTabs.map((profile) => this.buildProfileDashboard(profile));
 
     // Re-setting a basic filter wipes whatever filter the user has applied, so only create it once.
     const transactionsSheet = existing.sheets.find((s) => s.properties.sheetId === sheetIds[TAB.TRANSACTIONS]);
@@ -106,9 +124,9 @@ class SheetsWorkbookService {
     // Transactions cleanup can't key off the theme - it looks at the cells themselves.
     const hadDarkCells = await this.hasForcedDarkCells(accessToken, spreadsheetId);
 
-    await this.clearRanges(accessToken, spreadsheetId);
-    await this.writeData(accessToken, spreadsheetId, data, dashboard);
-    await this.applyFormattingAndCharts(accessToken, spreadsheetId, sheetIds, data, dashboard, hasTransactionFilter, hadBlackTheme, hadDarkCells);
+    await this.clearRanges(accessToken, spreadsheetId, titles);
+    await this.writeData(accessToken, spreadsheetId, data, dashboard, profileDashboards);
+    await this.applyFormattingAndCharts(accessToken, spreadsheetId, sheetIds, data, dashboard, profileDashboards, hasTransactionFilter, hadBlackTheme, hadDarkCells);
   }
 
   /**
@@ -169,6 +187,22 @@ class SheetsWorkbookService {
       };
     });
 
+    // Everything the Dashboard shows, but for one profile at a time (one tab each).
+    const usedTitles = new Set<string>();
+    const profileTabs = profiles.map((p, index) => {
+      const row = profileRows[index];
+      const summary = transactionService.getCategorySummary(monthStart, monthEnd, p.id);
+      const summaryTotal = summary.reduce((sum, c) => sum + c.amount, 0);
+      return {
+        ...row,
+        title: profileTabTitle(p.name, p.id, usedTitles),
+        savingsRate: row.income > 0 ? row.net / row.income : 0,
+        monthlyTrend: transactionService.getMonthlyTrend(6, p.id),
+        categorySummary: summary.map((c) => ({ ...c, percentage: summaryTotal > 0 ? c.amount / summaryTotal : 0 })),
+        accounts: accountService.getAccounts(p.id),
+      };
+    });
+
     const accounts = accountService
       .getAccounts()
       .slice()
@@ -195,6 +229,7 @@ class SheetsWorkbookService {
         percentage: categoryTotal > 0 ? c.amount / categoryTotal : 0,
       })),
       profileRows,
+      profileTabs,
       profileNameById,
       accounts,
       accountNameById,
@@ -230,14 +265,24 @@ class SheetsWorkbookService {
     accessToken: string,
     spreadsheetId: string,
     existing: Awaited<ReturnType<SheetsWorkbookService["getExistingStructure"]>>,
+    titles: string[],
   ): Promise<SheetIds> {
     const byTitle = new Map(existing.sheets.map((s) => [s.properties.title, s.properties.sheetId]));
     const existingBySheetId = new Map(existing.sheets.map((s) => [s.properties.sheetId, s]));
     const requests: any[] = [];
     const sheetIds: SheetIds = {};
 
-    // Title + "last updated" stay visible on the Dashboard; every other tab keeps its header row visible.
-    const frozenRows = (title: string) => (title === TAB.DASHBOARD ? 2 : 1);
+    // Title + "last updated" stay visible on the dashboards; every other tab keeps its header row visible.
+    const isDashboard = (title: string) => title === TAB.DASHBOARD || title.startsWith(PROFILE_TAB_PREFIX);
+    const frozenRows = (title: string) => (isDashboard(title) ? 2 : 1);
+
+    // Profile tabs whose profile was deleted or renamed. Removed first so the indexes below stay right.
+    existing.sheets.forEach((sheet) => {
+      const { title, sheetId } = sheet.properties;
+      if (title.startsWith(PROFILE_TAB_PREFIX) && !titles.includes(title)) {
+        requests.push({ deleteSheet: { sheetId } });
+      }
+    });
 
     // A pre-existing "Sheet1" is the old flat layout - rename it to keep its
     // transaction IDs intact instead of losing sync continuity.
@@ -247,7 +292,7 @@ class SheetsWorkbookService {
       byTitle.delete("Sheet1");
     }
 
-    TAB_ORDER.forEach((title, index) => {
+    titles.forEach((title, index) => {
       if (byTitle.has(title)) {
         const sheetId = byTitle.get(title)!;
         sheetIds[title] = sheetId;
@@ -285,12 +330,15 @@ class SheetsWorkbookService {
       }
     });
 
-    // Remove any charts we previously drew on the Dashboard so re-adding
-    // them below doesn't pile up duplicates.
-    const dashboardSheet = existing.sheets.find((s) => s.properties.title === TAB.DASHBOARD);
-    dashboardSheet?.charts?.forEach((chart) => {
-      requests.push({ deleteEmbeddedObject: { objectId: chart.chartId } });
-    });
+    // Remove any charts we previously drew on the dashboards so re-adding
+    // them below doesn't pile up duplicates. (Deleted tabs take their charts with them.)
+    existing.sheets
+      .filter((s) => titles.includes(s.properties.title) && isDashboard(s.properties.title))
+      .forEach((sheet) => {
+        sheet.charts?.forEach((chart) => {
+          requests.push({ deleteEmbeddedObject: { objectId: chart.chartId } });
+        });
+      });
 
     const response = await fetch(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
       method: "POST",
@@ -316,11 +364,11 @@ class SheetsWorkbookService {
 
   // ---- Writing data -----------------------------------------------------
 
-  private async clearRanges(accessToken: string, spreadsheetId: string) {
+  private async clearRanges(accessToken: string, spreadsheetId: string, titles: string[]) {
     await fetch(`${SHEETS_API}/${spreadsheetId}/values:batchClear`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ ranges: TAB_ORDER }),
+      body: JSON.stringify({ ranges: titles.map(quoteTab) }),
     });
   }
 
@@ -390,11 +438,80 @@ class SheetsWorkbookService {
     };
   }
 
+  /**
+   * The same layout as the Dashboard, for a single profile: at a glance, the 6-month trend, this
+   * month's spending by category (the pie chart reads it from this tab), its accounts, and charts.
+   */
+  private buildProfileDashboard(profile: ReturnType<SheetsWorkbookService["gatherData"]>["profileTabs"][number]) {
+    const values: any[][] = [];
+    const add = (row: any[] = []) => values.push(row) - 1;
+
+    add([`Kakeibo Dashboard - ${profile.name}`]);
+    add([`Last updated: ${new Date().toLocaleString()}`]);
+    add([`This tab shows ${profile.name} only. The Dashboard tab has all profiles together. Edit transactions on the Transactions tab.`]);
+    add();
+
+    const glanceTitle = add(["At a glance"]);
+    const glanceHeader = add(["Total balance", "Income this month", "Expenses this month", "Net this month", "Savings rate"]);
+    const glanceValues = add([profile.balance, profile.income, profile.expenses, profile.net, profile.savingsRate]);
+    add();
+
+    const trendTitle = add(["Last 6 months"]);
+    const trendHeader = add(["Month", "Income", "Expenses", "Net"]);
+    const trendFirst = values.length;
+    profile.monthlyTrend.forEach((m) => add([`'${monthLabel(m.month)}`, m.income, m.expenses, m.income - m.expenses]));
+    const trendEnd = values.length;
+    add();
+
+    const categoryTitle = add(["Spending by category (this month)"]);
+    const categoryHeader = add(["Category", "Spent this month", "% of total"]);
+    const categoryFirst = values.length;
+    profile.categorySummary.forEach((c) => add([c.category, c.amount, c.percentage]));
+    const categoryEnd = values.length;
+    if (categoryEnd === categoryFirst) add(["Nothing spent this month"]);
+    add();
+
+    const accountsTitle = add(["Accounts"]);
+    const accountsHeader = add(["Account", "Type", "Balance"]);
+    const accountsFirst = values.length;
+    profile.accounts.forEach((a) => add([a.name, ACCOUNT_TYPE_LABELS[a.type] ?? a.type, a.balance]));
+    const accountsEnd = values.length;
+    if (accountsEnd === accountsFirst) add(["No accounts"]);
+    add();
+
+    // The charts float over the empty rows below this title, like on the Dashboard.
+    const chartsTitle = add(["Charts"]);
+
+    return {
+      values,
+      rows: {
+        glanceTitle,
+        glanceHeader,
+        glanceValues,
+        trendTitle,
+        trendHeader,
+        trendFirst,
+        trendEnd,
+        categoryTitle,
+        categoryHeader,
+        categoryFirst,
+        categoryEnd,
+        accountsTitle,
+        accountsHeader,
+        accountsFirst,
+        accountsEnd,
+        chartsTitle,
+        chartsRow: chartsTitle + 1,
+      },
+    };
+  }
+
   private async writeData(
     accessToken: string,
     spreadsheetId: string,
     data: ReturnType<SheetsWorkbookService["gatherData"]>,
     dashboard: ReturnType<SheetsWorkbookService["buildDashboard"]>,
+    profileDashboards: Array<ReturnType<SheetsWorkbookService["buildProfileDashboard"]>>,
   ) {
     const transactionsValues = [
       ["ID", "Date", "Type", "Category", "Amount", "Description", "Payment method", "Account", "Profile"],
@@ -437,6 +554,7 @@ class SheetsWorkbookService {
         valueInputOption: "USER_ENTERED",
         data: [
           { range: TAB.DASHBOARD, values: dashboard.values },
+          ...data.profileTabs.map((profile, index) => ({ range: quoteTab(profile.title), values: profileDashboards[index].values })),
           { range: TAB.TRANSACTIONS, values: transactionsValues },
           { range: TAB.ACCOUNTS, values: accountsValues },
           { range: TAB.CATEGORIES, values: categoriesValues },
@@ -459,6 +577,7 @@ class SheetsWorkbookService {
     sheetIds: SheetIds,
     data: ReturnType<SheetsWorkbookService["gatherData"]>,
     dashboard: ReturnType<SheetsWorkbookService["buildDashboard"]>,
+    profileDashboards: Array<ReturnType<SheetsWorkbookService["buildProfileDashboard"]>>,
     hasTransactionFilter: boolean,
     hadBlackTheme: boolean,
     hadDarkCells: boolean,
@@ -537,7 +656,8 @@ class SheetsWorkbookService {
     const acctSheetId = sheetIds[TAB.ACCOUNTS];
     const catSheetId = sheetIds[TAB.CATEGORIES];
     const txSheetId = sheetIds[TAB.TRANSACTIONS];
-    [dashSheetId, acctSheetId, catSheetId].forEach((sheetId) => {
+    const profileSheetIds = data.profileTabs.map((profile) => sheetIds[profile.title]);
+    [dashSheetId, acctSheetId, catSheetId, ...profileSheetIds].forEach((sheetId) => {
       requests.push({ repeatCell: { range: { sheetId }, cell: {}, fields: "userEnteredFormat" } });
     });
 
@@ -562,7 +682,7 @@ class SheetsWorkbookService {
         updateBorders: { range: { sheetId: txSheetId }, top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, innerHorizontal: noBorder, innerVertical: noBorder },
       });
     }
-    requests.push({ unmergeCells: { range: { sheetId: dashSheetId } } });
+    [dashSheetId, ...profileSheetIds].forEach((sheetId) => requests.push({ unmergeCells: { range: { sheetId } } }));
 
     // --- Transactions sheet ---
     requests.push(headerRow(txSheetId, 0, 9));
@@ -662,58 +782,118 @@ class SheetsWorkbookService {
     // Charts sit side by side under the tables, inside their 840px width (200 + 4 x 160), so
     // they are visible without horizontal scrolling. Each is 410px wide with a 20px gap.
     const chartHeight = 280;
-    const chartPosition = (offsetXPixels: number) => ({
-      overlayPosition: {
-        anchorCell: { sheetId: dashSheetId, rowIndex: r.chartsRow, columnIndex: 0 },
-        offsetXPixels,
-        offsetYPixels: 8,
-        widthPixels: 410,
-        heightPixels: chartHeight,
-      },
-    });
-    if (r.trendEnd > r.trendFirst) {
-      const source = (column: number) => ({
-        sourceRange: { sources: [range(dashSheetId, r.trendHeader, r.trendEnd, column, column + 1)] },
-      });
-      requests.push({
-        addChart: {
-          chart: {
-            spec: {
-              title: "Income vs Expenses (last 6 months)",
-              basicChart: {
-                chartType: "COLUMN",
-                legendPosition: "BOTTOM_LEGEND",
-                axis: [{ position: "BOTTOM_AXIS" }, { position: "LEFT_AXIS" }],
-                domains: [{ domain: source(0) }],
-                series: [
-                  { series: source(1), targetAxis: "LEFT_AXIS", colorStyle: { rgbColor: GREEN } },
-                  { series: source(2), targetAxis: "LEFT_AXIS", colorStyle: { rgbColor: RED } },
-                ],
-                headerCount: 1,
-              },
-            },
-            position: chartPosition(0),
-          },
+    const addDashboardCharts = (chart: {
+      sheetId: number;
+      chartsRow: number;
+      trend: { header: number; first: number; end: number };
+      category: { sheetId: number; first: number; end: number };
+    }) => {
+      const chartPosition = (offsetXPixels: number) => ({
+        overlayPosition: {
+          anchorCell: { sheetId: chart.sheetId, rowIndex: chart.chartsRow, columnIndex: 0 },
+          offsetXPixels,
+          offsetYPixels: 8,
+          widthPixels: 410,
+          heightPixels: chartHeight,
         },
       });
-    }
 
-    if (data.categorySummary.length > 0) {
-      const source = (column: number) => ({
-        sourceRange: { sources: [range(catSheetId, 1, data.categorySummary.length + 1, column, column + 1)] },
-      });
-      requests.push({
-        addChart: {
-          chart: {
-            spec: {
-              title: "Spending by category (this month)",
-              pieChart: { legendPosition: "RIGHT_LEGEND", domain: source(0), series: source(1) },
+      if (chart.trend.end > chart.trend.first) {
+        const source = (column: number) => ({
+          sourceRange: { sources: [range(chart.sheetId, chart.trend.header, chart.trend.end, column, column + 1)] },
+        });
+        requests.push({
+          addChart: {
+            chart: {
+              spec: {
+                title: "Income vs Expenses (last 6 months)",
+                basicChart: {
+                  chartType: "COLUMN",
+                  legendPosition: "BOTTOM_LEGEND",
+                  axis: [{ position: "BOTTOM_AXIS" }, { position: "LEFT_AXIS" }],
+                  domains: [{ domain: source(0) }],
+                  series: [
+                    { series: source(1), targetAxis: "LEFT_AXIS", colorStyle: { rgbColor: GREEN } },
+                    { series: source(2), targetAxis: "LEFT_AXIS", colorStyle: { rgbColor: RED } },
+                  ],
+                  headerCount: 1,
+                },
+              },
+              position: chartPosition(0),
             },
-            position: chartPosition(430),
           },
-        },
+        });
+      }
+
+      if (chart.category.end > chart.category.first) {
+        const source = (column: number) => ({
+          sourceRange: { sources: [range(chart.category.sheetId, chart.category.first, chart.category.end, column, column + 1)] },
+        });
+        requests.push({
+          addChart: {
+            chart: {
+              spec: {
+                title: "Spending by category (this month)",
+                pieChart: { legendPosition: "RIGHT_LEGEND", domain: source(0), series: source(1) },
+              },
+              position: chartPosition(430),
+            },
+          },
+        });
+      }
+    };
+
+    addDashboardCharts({
+      sheetId: dashSheetId,
+      chartsRow: r.chartsRow,
+      trend: { header: r.trendHeader, first: r.trendFirst, end: r.trendEnd },
+      // The Categories tab holds the header on row 0, so its data rows are 1..n.
+      category: { sheetId: catSheetId, first: 1, end: data.categorySummary.length + 1 },
+    });
+
+    // --- One dashboard tab per profile: same look as the Dashboard, for that profile only ---
+    data.profileTabs.forEach((profile, index) => {
+      const sheetId = sheetIds[profile.title];
+      const pr = profileDashboards[index].rows;
+
+      requests.push({ mergeCells: { range: range(sheetId, 0, 1, 0, columnCount), mergeType: "MERGE_ALL" } });
+      requests.push(format(range(sheetId, 0, 1, 0, columnCount), { textFormat: { bold: true, fontSize: 18 } }, "userEnteredFormat.textFormat"));
+      requests.push(format(range(sheetId, 1, 3, 0, columnCount), { textFormat: { italic: true, foregroundColor: MUTED } }, "userEnteredFormat.textFormat"));
+
+      [pr.glanceTitle, pr.trendTitle, pr.categoryTitle, pr.accountsTitle, pr.chartsTitle].forEach((row) => requests.push(...sectionRow(sheetId, row)));
+      requests.push(headerRow(sheetId, pr.glanceHeader, 5));
+      requests.push(headerRow(sheetId, pr.trendHeader, 4));
+      requests.push(headerRow(sheetId, pr.categoryHeader, 3));
+      requests.push(headerRow(sheetId, pr.accountsHeader, 3));
+
+      requests.push(format(range(sheetId, pr.glanceValues, pr.glanceValues + 1, 0, 4), { ...bigNumber, numberFormat: { type: "NUMBER", pattern: MONEY } }, "userEnteredFormat(numberFormat,textFormat)"));
+      requests.push(format(range(sheetId, pr.glanceValues, pr.glanceValues + 1, 4, 5), { ...bigNumber, numberFormat: { type: "PERCENT", pattern: "0%" } }, "userEnteredFormat(numberFormat,textFormat)"));
+      requests.push(rowHeight(sheetId, pr.glanceValues, 32));
+
+      if (pr.trendEnd > pr.trendFirst) requests.push(number(range(sheetId, pr.trendFirst, pr.trendEnd, 1, 4), "NUMBER", MONEY));
+      if (pr.categoryEnd > pr.categoryFirst) {
+        requests.push(number(range(sheetId, pr.categoryFirst, pr.categoryEnd, 1, 2), "NUMBER", MONEY));
+        requests.push(number(range(sheetId, pr.categoryFirst, pr.categoryEnd, 2, 3), "PERCENT", "0.0%"));
+      }
+      if (pr.accountsEnd > pr.accountsFirst) {
+        requests.push(number(range(sheetId, pr.accountsFirst, pr.accountsEnd, 2, 3), "NUMBER", MONEY));
+        requests.push(colorRule([range(sheetId, pr.accountsFirst, pr.accountsEnd, 2, 3)], { type: "NUMBER_LESS", values: [{ userEnteredValue: "0" }] }, RED));
+      }
+
+      redGreen([
+        range(sheetId, pr.glanceValues, pr.glanceValues + 1, 3, 5),
+        range(sheetId, pr.trendFirst, pr.trendEnd, 3, 4),
+      ]).forEach((rule) => requests.push(rule));
+
+      [200, 160, 160, 160, 160].forEach((pixels, column) => requests.push(columnWidth(sheetId, column, pixels)));
+
+      addDashboardCharts({
+        sheetId,
+        chartsRow: pr.chartsRow,
+        trend: { header: pr.trendHeader, first: pr.trendFirst, end: pr.trendEnd },
+        category: { sheetId, first: pr.categoryFirst, end: pr.categoryEnd },
       });
-    }
+    });
 
     const response = await fetch(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
       method: "POST",

@@ -21,6 +21,7 @@ export interface Account {
   currency: string;
   bankName?: string | null;
   accountNumber?: string | null;
+  creditLimit?: number | null; // credit cards only
   isActive: boolean | number; // SQLite uses 1/0 for boolean
   // Loan-specific fields
   isLending?: boolean | number | null;

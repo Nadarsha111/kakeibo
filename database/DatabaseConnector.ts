@@ -78,6 +78,7 @@ class DatabaseConnector {
 
           bankName TEXT,
           accountNumber TEXT,
+          creditLimit REAL,
           isActive INTEGER NOT NULL DEFAULT 1,
           createdAt TEXT NOT NULL,
           updatedAt TEXT NOT NULL
@@ -183,6 +184,25 @@ class DatabaseConnector {
           db.execSync(`ALTER TABLE accounts ADD COLUMN ${name} ${sqlType}`);
         }
       });
+    },
+    // 2: a credit card is money owed, so a positive starting balance was entered the wrong way
+    // round. The starting balance is the current balance minus the net of the card's transactions;
+    // flipping only that part keeps every later purchase and payment correctly applied.
+    (db) => {
+      const netOfTransactions = `COALESCE((SELECT SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE -t.amount END)
+        FROM transactions t WHERE t.accountId = accounts.id), 0)`;
+      db.runSync(
+        `UPDATE accounts
+         SET balance = ROUND(balance - 2 * (balance - ${netOfTransactions}), 2), updatedAt = ?
+         WHERE type = 'credit_card' AND balance - ${netOfTransactions} > 0.005`,
+        [new Date().toISOString()],
+      );
+    },
+    // 3: credit card limit
+    (db) => {
+      if (!DatabaseConnector.hasColumn(db, 'accounts', 'creditLimit')) {
+        db.execSync('ALTER TABLE accounts ADD COLUMN creditLimit REAL');
+      }
     },
   ];
 
