@@ -7,8 +7,10 @@ import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
 import { useTransactionModal } from '../../context/TransactionModalContext';
+import { useTabBarInset } from '../../components/PebbleTabBar';
 
 export default function TransactionsScreen() {
+  const tabInset = useTabBarInset();
   const { theme } = useTheme();
   const { formatCurrency, selectedProfileId } = useSettings();
   const styles = createStyles(theme);
@@ -266,7 +268,7 @@ export default function TransactionsScreen() {
               ))}
             </ScrollView>
           </View>
-          <View style={styles.transactionsContainer}>
+          <View style={[styles.transactionsContainer, { paddingBottom: tabInset }]}>
             <Text style={styles.transactionsTitle}>
               Recent Transactions ({getFilteredTransactions().length})
             </Text>

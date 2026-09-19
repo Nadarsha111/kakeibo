@@ -21,6 +21,7 @@ import LoanPaymentModal from "../../components/LoanPaymentModal";
 import CreditLimitModal from "../../components/CreditLimitModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
+import { useTabBarInset } from '../../components/PebbleTabBar';
 
 interface LoanSummary {
   totalLoaned: number;
@@ -45,6 +46,7 @@ const loanRank = (loan: Account) =>
   ({ overdue: 0, active: 1, partially_paid: 1, fully_paid: 2 } as Record<string, number>)[loan.loanStatus || "active"] ?? 1;
 
 export default function AccountsScreen() {
+  const tabInset = useTabBarInset();
   const { theme } = useTheme();
   const { formatCurrency, selectedProfileId, updateSelectedProfileId } = useSettings();
   const styles = createStyles(theme);
@@ -649,7 +651,7 @@ export default function AccountsScreen() {
         keyExtractor={(item) => item.id.toString()}
         ListHeaderComponent={listHeaderComponent}
         ListEmptyComponent={emptyComponent}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={[styles.listContainer, { paddingBottom: tabInset }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

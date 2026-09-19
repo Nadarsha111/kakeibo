@@ -16,8 +16,10 @@ import { getProfileService } from '../../database';
 import { Profile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import AddProfileScreen from '../../components/AddProfileScreen';
+import { useTabBarInset } from '../../components/PebbleTabBar';
 
 export default function ProfilesScreen() {
+  const tabInset = useTabBarInset();
   const { theme } = useTheme();
   const styles = createStyles(theme);
 
@@ -130,7 +132,7 @@ export default function ProfilesScreen() {
         data={profiles}
         renderItem={renderProfileItem}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={[styles.listContainer, { paddingBottom: 20 + tabInset }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

@@ -22,8 +22,10 @@ import {
   getAppVersionInfo,
 } from "../../utils/appVersion";
 import type { User } from "@react-native-google-signin/google-signin";
+import { useTabBarInset } from '../../components/PebbleTabBar';
 
 export default function SettingsScreen() {
+  const tabInset = useTabBarInset();
   const {
     theme,
     themePreference,
@@ -161,7 +163,7 @@ export default function SettingsScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style={isDark ? "light" : "dark"} />
-      <ScrollView style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: tabInset }}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Settings</Text>
         </View>

@@ -14,6 +14,7 @@ import { router } from "expo-router";
 import { Account } from "../../types";
 import DonutChart from "../../components/DonutChart";
 import TrendChart from "../../components/TrendChart";
+import { useTabBarInset } from '../../components/PebbleTabBar';
 
 interface DashboardData {
   totalBalance: number;
@@ -38,6 +39,7 @@ interface DashboardData {
 const TREND_MONTHS = 6;
 
 export default function OverviewScreen() {
+  const tabInset = useTabBarInset();
   const { theme } = useTheme();
   const { formatCurrency, selectedProfileId } = useSettings();
   const [data, setData] = useState<DashboardData>({
@@ -491,6 +493,7 @@ export default function OverviewScreen() {
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: tabInset }}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}

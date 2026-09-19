@@ -6,8 +6,10 @@ import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { getBudgetService, getAccountService, BudgetSummary } from '../../database';
 import AddEditBudgetModal from '../../components/AddEditBudgetModal';
+import { useTabBarInset } from '../../components/PebbleTabBar';
 
 export default function BudgetScreen() {
+  const tabInset = useTabBarInset();
   const { theme } = useTheme();
   const { formatCurrency, selectedProfileId } = useSettings();
   const styles = createStyles(theme);
@@ -95,6 +97,7 @@ export default function BudgetScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.container}
+        contentContainerStyle={{ paddingBottom: tabInset }}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={loadBudgetData} tintColor={theme.colors.primary} />
         }

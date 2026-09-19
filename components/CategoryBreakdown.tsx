@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } 
 import { useTheme } from "../context/ThemeContext";
 import { useSettings } from "../context/SettingsContext";
 import DonutChart from "./DonutChart";
+import { useTabBarInset } from './PebbleTabBar';
 
 interface CategorySummary {
   category: string;
@@ -166,9 +167,11 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const {formatCurrency} =useSettings();
+  const tabInset = useTabBarInset();
   return (
     <ScrollView 
       style={styles.container} 
+      contentContainerStyle={{ paddingBottom: tabInset }}
       showsVerticalScrollIndicator={false}
       refreshControl={refreshControl}>
       <View style={styles.header}>

@@ -13,8 +13,10 @@ import { useTheme } from '../../context/ThemeContext';
 import ManageCategoriesScreen from '../../components/ManageCategoriesScreen';
 import ExportDataScreen from '../../components/ExportDataScreen';
 import { router } from 'expo-router';
+import { useTabBarInset } from '../../components/PebbleTabBar';
 
 export default function ManageTab() {
+  const tabInset = useTabBarInset();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [showManageCategories, setShowManageCategories] = useState(false);
@@ -84,6 +86,7 @@ export default function ManageTab() {
 
       <ScrollView 
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: tabInset }}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.optionsGrid}>
