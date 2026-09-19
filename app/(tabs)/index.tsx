@@ -11,19 +11,17 @@ import { getAccountService, getTransactionService } from "../../database";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import { router } from "expo-router";
-import { Account } from "../../types";
+import { Account, AccountBalanceRow } from "../../types";
 import DonutChart from "../../components/DonutChart";
 import TrendChart from "../../components/TrendChart";
 import { useTabBarInset } from '../../components/PebbleTabBar';
+import NeededThisMonthCard from '../../components/NeededThisMonthCard';
+import { groupAccountBalances, type LoanBalanceRow } from '../../utils/accountBalances';
+import { formatDay } from '../../utils/recurring';
 
 interface DashboardData {
   totalBalance: number;
-  monthlyAccountBalances: Array<{
-    accountId: number;
-    name: string;
-    type: Account['type'];
-    closingBalance: number;
-  }>;
+  monthlyAccountBalances: AccountBalanceRow[];
   weeklyExpenses: number;
   weeklyIncome: number;
   monthlyExpenses: number;
@@ -417,6 +415,42 @@ export default function OverviewScreen() {
   };
 
   const renderAccountBalances = () => {
+    const groups = groupAccountBalances(data.monthlyAccountBalances);
+    const hasLoans = groups.youOwe.length + groups.owedToYou.length > 0;
+
+    const loanDetail = (loan: LoanBalanceRow) => {
+      if (loan.detail?.kind === 'installment') {
+        return `EMI ${formatCurrency(loan.detail.amount)}${loan.detail.dueDate ? ` · due ${formatDay(loan.detail.dueDate)}` : ''}`;
+      }
+      return loan.detail?.kind === 'dueBack' ? `Due back ${formatDay(loan.detail.dueDate)}` : null;
+    };
+
+    const renderLoanRows = (loans: LoanBalanceRow[], color: string) =>
+      loans.map((loan) => {
+        const detail = loanDetail(loan);
+        return (
+          <View
+            key={loan.accountId}
+            className="flex-row justify-between items-center py-3 border-b border-opacity-30"
+            style={{ borderBottomColor: theme.colors.border }}
+          >
+            <View className="flex-1">
+              <Text className="text-sm" style={{ color: theme.colors.text }}>
+                {loan.name}
+              </Text>
+              {detail && (
+                <Text className="text-xs mt-0.5" style={{ color: theme.colors.textSecondary }}>
+                  {detail}
+                </Text>
+              )}
+            </View>
+            <Text className="text-base font-semibold" style={{ color }}>
+              {formatCurrency(loan.outstanding)}
+            </Text>
+          </View>
+        );
+      });
+
     return (
       <View
         className="m-5 bg-white rounded-xl p-5 border border-gray-200"
@@ -429,11 +463,11 @@ export default function OverviewScreen() {
           className="text-lg font-bold mb-5"
           style={{ color: theme.colors.text }}
         >
-          Monthly Account Balances
+          Account Balances
         </Text>
         {data.monthlyAccountBalances.length > 0 ? (
           <View className="mt-2.5">
-            {data.monthlyAccountBalances.map((account, index) => (
+            {groups.accounts.map((account) => (
               <View
                 key={account.accountId}
                 className="flex-row justify-between items-center py-3 border-b border-opacity-30"
@@ -448,14 +482,14 @@ export default function OverviewScreen() {
                 <Text
                   className="text-base font-semibold"
                   style={{
-                    color:
-                      account.type === 'loan' || account.closingBalance < 0 ? theme.colors.error : theme.colors.text,
+                    color: account.closingBalance < 0 ? theme.colors.error : theme.colors.text,
                   }}
                 >
                   {formatCurrency(account.closingBalance)}
                 </Text>
               </View>
             ))}
+            {/* Exactly the rows above added together */}
             <View
               className="flex-row justify-between items-center pt-4 mt-2 border-t-2"
               style={{ borderTopColor: theme.colors.primary }}
@@ -470,9 +504,54 @@ export default function OverviewScreen() {
                 className="text-lg font-bold"
                 style={{ color: theme.colors.primary }}
               >
-                {formatCurrency(data.totalBalance)}
+                {formatCurrency(groups.accountsTotal)}
               </Text>
             </View>
+
+            {hasLoans && (
+              <View className="mt-6">
+                <Text
+                  className="text-xs uppercase mb-1"
+                  style={{ color: theme.colors.textSecondary }}
+                >
+                  Loans (not part of the total above)
+                </Text>
+                {groups.youOwe.length > 0 && (
+                  <>
+                    <Text className="text-xs mt-2" style={{ color: theme.colors.textSecondary }}>
+                      You owe
+                    </Text>
+                    {renderLoanRows(groups.youOwe, theme.colors.error)}
+                  </>
+                )}
+                {groups.owedToYou.length > 0 && (
+                  <>
+                    <Text className="text-xs mt-3" style={{ color: theme.colors.textSecondary }}>
+                      Owed to you
+                    </Text>
+                    {renderLoanRows(groups.owedToYou, theme.colors.success)}
+                  </>
+                )}
+                {/* Total, plus what is owed to you, minus what you owe */}
+                <View
+                  className="flex-row justify-between items-center pt-4 mt-2 border-t-2"
+                  style={{ borderTopColor: theme.colors.primary }}
+                >
+                  <Text
+                    className="text-base font-bold flex-1"
+                    style={{ color: theme.colors.text }}
+                  >
+                    Net worth
+                  </Text>
+                  <Text
+                    className="text-lg font-bold"
+                    style={{ color: groups.netWorth < 0 ? theme.colors.error : theme.colors.primary }}
+                  >
+                    {formatCurrency(groups.netWorth)}
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         ) : (
           <Text
@@ -623,6 +702,9 @@ export default function OverviewScreen() {
             </View>
           </View>
         </View>
+
+        {/* What has to be paid before the month ends, against what you have */}
+        <NeededThisMonthCard refreshKey={data.totalBalance} />
 
         {/* Weekly Chart */}
         {renderWeeklyChart()}

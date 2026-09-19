@@ -1,3 +1,5 @@
+import type { RecurringFrequency } from "../utils/recurring";
+
 /**
  * Profile for separating personal and business finances
  */
@@ -41,6 +43,65 @@ export interface Account {
   loanNextDueDate?: string | null;
   loanInterestPaid?: number | null;
   description?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * One account as shown in the balances card on Home, with the loan details it needs for loans.
+ */
+export interface AccountBalanceRow {
+  accountId: number;
+  name: string;
+  type: Account["type"];
+  closingBalance: number;
+  isLending?: boolean | number | null;
+  loanPrincipal?: number | null;
+  loanReturnedAmount?: number | null;
+  loanStatus?: Account["loanStatus"];
+  loanTermMonths?: number | null;
+  loanInstallmentAmount?: number | null;
+  loanNextDueDate?: string | null;
+  loanExpectedReturnDate?: string | null;
+}
+
+/**
+ * One line of the assets-against-liabilities picture: an account, or a loan still being paid off.
+ */
+export interface NetWorthItem {
+  id: number;
+  name: string;
+  type: Account["type"];
+  amount: number; // always positive; which list it is in says whether it is owned or owed
+}
+
+export interface NetWorthSummary {
+  assets: NetWorthItem[];
+  liabilities: NetWorthItem[];
+  totalAssets: number;
+  totalLiabilities: number;
+  netWorth: number;
+}
+
+/**
+ * Something that repeats on a schedule, like rent, a subscription or a salary. It is tracked as a
+ * commitment and marked paid; the app does not post it automatically.
+ */
+export interface RecurringItem {
+  id: number;
+  profileId: number;
+  name: string;
+  amount: number;
+  type: "income" | "expense" | "transfer"; // a transfer moves money between two of your accounts, e.g. into an FD
+  category: string;
+  frequency: RecurringFrequency;
+  dueDay?: number | null; // day of the month it falls on, kept so a short month does not shift it
+  nextDueDate: string;
+  accountId?: number | null; // the account it is normally paid from (for a transfer, the one it leaves)
+  toAccountId?: number | null; // for a transfer, the account the money goes into
+  autoPost: boolean | number; // record it by itself when it falls due
+  isActive: boolean | number;
+  lastPaidDate?: string | null;
   createdAt: string;
   updatedAt: string;
 }

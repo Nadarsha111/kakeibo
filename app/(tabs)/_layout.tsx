@@ -82,6 +82,13 @@ export default function TabLayout() {
             }}
           />
           <Tabs.Screen
+            name="worth"
+            options={{
+              title: 'Assets & Liabilities',
+              href: null
+            }}
+          />
+          <Tabs.Screen
             name="profiles"
             options={{
               title: 'Profiles',

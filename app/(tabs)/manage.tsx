@@ -52,6 +52,16 @@ export default function ManageTab() {
       },
     },
     {
+      id: 'worth',
+      title: 'Assets & Liabilities',
+      subtitle: 'Net worth and monthly commitments',
+      icon: 'scale-balance',
+      color: '#f59e0b',
+      onPress: () => {
+        router.push('/worth');
+      },
+    },
+    {
       id: 'export',
       title: 'Export Data',
       subtitle: 'Download your transaction data',

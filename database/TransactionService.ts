@@ -98,7 +98,7 @@ class TransactionService {
    * Transfer logic without starting a new DB transaction.
    * This should only be called from a method that already manages a transaction.
    */
-  private addTransferUnsafe(data: {
+  addTransferUnsafe(data: {
     fromAccountId: number;
     toAccountId: number;
     amount: number;

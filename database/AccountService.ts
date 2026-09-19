@@ -1,5 +1,6 @@
 import DatabaseConnector from './DatabaseConnector';
-import { Account } from '../types';
+import { Account, AccountBalanceRow, NetWorthItem, NetWorthSummary } from '../types';
+import { round2 } from '../utils/loanMath';
 
 /**
  * Service class for managing accounts and account balances
@@ -244,6 +245,37 @@ class AccountService {
   }
 
   /**
+   * What you own against what you owe. Assets are the positive balances of bank, cash, savings and
+   * investment accounts plus money others still owe you. Liabilities are what you owe on credit
+   * cards, on money you borrowed, and any account that is overdrawn.
+   */
+  getNetWorthSummary(profileId?: number): NetWorthSummary {
+    const assets: NetWorthItem[] = [];
+    const liabilities: NetWorthItem[] = [];
+
+    this.getAccounts(profileId).forEach((account) => {
+      const item = { id: account.id, name: account.name, type: account.type };
+      if (account.type === 'loan') {
+        const outstanding = account.loanStatus === 'fully_paid' ? 0 : round2((account.loanPrincipal || 0) - (account.loanReturnedAmount || 0));
+        if (outstanding > 0) (account.isLending ? assets : liabilities).push({ ...item, amount: outstanding });
+      } else if (account.balance > 0) {
+        assets.push({ ...item, amount: account.balance });
+      } else if (account.balance < 0) {
+        liabilities.push({ ...item, amount: -account.balance });
+      }
+    });
+
+    const byAmount = (a: NetWorthItem, b: NetWorthItem) => b.amount - a.amount;
+    assets.sort(byAmount);
+    liabilities.sort(byAmount);
+    const total = (items: NetWorthItem[]) => round2(items.reduce((sum, i) => sum + i.amount, 0));
+    const totalAssets = total(assets);
+    const totalLiabilities = total(liabilities);
+
+    return { assets, liabilities, totalAssets, totalLiabilities, netWorth: round2(totalAssets - totalLiabilities) };
+  }
+
+  /**
    * Update account balance for a transaction
    */
   updateAccountBalanceForTransaction(accountId: number, amount: number, type: 'income' | 'expense'): void {
@@ -263,9 +295,12 @@ class AccountService {
   /**
    * Get monthly account balances for a specific year/month
    */
-  getMonthlyAccountBalances(profileId?: number): Array<{ accountId: number, name: string, type: Account['type'], closingBalance: number }> {
+  getMonthlyAccountBalances(profileId?: number): AccountBalanceRow[] {
     try {
-      let query = `SELECT id as accountId, name, type, balance as closingBalance FROM accounts WHERE isActive = 1`;
+      let query = `SELECT id as accountId, name, type, balance as closingBalance,
+          isLending, loanPrincipal, loanReturnedAmount, loanStatus, loanTermMonths,
+          loanInstallmentAmount, loanNextDueDate, loanExpectedReturnDate
+        FROM accounts WHERE isActive = 1`;
       const params: any[] = [];
 
       if (profileId) {
@@ -275,10 +310,7 @@ class AccountService {
 
       query += ' ORDER BY name';
 
-      return this.db.getAllSync(
-        query,
-        params
-      ) as Array<{ accountId: number, name: string, type: Account['type'], closingBalance: number }>;
+      return this.db.getAllSync(query, params) as AccountBalanceRow[];
     } catch (error) {
       console.error('Error getting monthly account balances:', error);
       return [];

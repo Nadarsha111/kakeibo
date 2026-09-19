@@ -6,6 +6,7 @@ import TransactionService from './TransactionService';
 import CategoryService from './CategoryService';
 import BudgetService from './BudgetService';
 import SettingsService from './SettingsService';
+import RecurringService from './RecurringService';
 
 // Re-export the DatabaseConnector and all services for easy access
 export { default as DatabaseConnector } from './DatabaseConnector';
@@ -15,6 +16,7 @@ export { default as TransactionService } from './TransactionService';
 export { default as CategoryService } from './CategoryService';
 export { default as BudgetService, type BudgetSummary } from './BudgetService';
 export { default as SettingsService } from './SettingsService';
+export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine } from './RecurringService';
 
 /**
  * Service Factory - provides easy access to all services with a single instance
@@ -27,6 +29,7 @@ export class ServiceFactory {
   private static _categoryService: CategoryService;
   private static _budgetService: BudgetService;
   private static _settingsService: SettingsService;
+  private static _recurringService: RecurringService;
 
   /**
    * Get AccountService instance
@@ -89,6 +92,16 @@ export class ServiceFactory {
   }
 
   /**
+   * Get RecurringService instance
+   */
+  static getRecurringService(): RecurringService {
+    if (!this._recurringService) {
+      this._recurringService = new RecurringService();
+    }
+    return this._recurringService;
+  }
+
+  /**
    * Get all services at once
    */
   static getAllServices() {
@@ -99,6 +112,7 @@ export class ServiceFactory {
       categoryService: this.getCategoryService(),
       budgetService: this.getBudgetService(),
       settingsService: this.getSettingsService(),
+      recurringService: this.getRecurringService(),
     };
   }
 
@@ -112,6 +126,7 @@ export class ServiceFactory {
     this._categoryService = undefined as any;
     this._budgetService = undefined as any;
     this._settingsService = undefined as any;
+    this._recurringService = undefined as any;
   }
 }
 
@@ -122,6 +137,7 @@ export const getTransactionService = () => ServiceFactory.getTransactionService(
 export const getCategoryService = () => ServiceFactory.getCategoryService();
 export const getBudgetService = () => ServiceFactory.getBudgetService();
 export const getSettingsService = () => ServiceFactory.getSettingsService();
+export const getRecurringService = () => ServiceFactory.getRecurringService();
 
 /**
  * Database utility functions
@@ -156,6 +172,9 @@ export class DatabaseUtils {
       // Mark overdue loans
       const accountServiceWithLoans = ServiceFactory.getAccountService();
       accountServiceWithLoans.markOverdueLoans();
+
+      // Record recurring items set to post by themselves that have fallen due since the last run
+      ServiceFactory.getRecurringService().postDue();
       
       console.log('Database services initialized successfully');
     } catch (error) {

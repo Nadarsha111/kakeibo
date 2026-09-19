@@ -139,7 +139,8 @@ class DatabaseConnector {
         );
       `);
 
-
+      // Recurring items (rent, subscriptions, salary, savings deposits...)
+      this.db.execSync(DatabaseConnector.recurringItemsSql(true));
 
       this.runMigrations();
 
@@ -156,10 +157,36 @@ class DatabaseConnector {
  
   
 
+  /** The recurring_items table. Shared by first-time creation and by the migration that rebuilds an older shape. */
+  private static recurringItemsSql(ifNotExists: boolean): string {
+    return `
+      CREATE TABLE ${ifNotExists ? 'IF NOT EXISTS ' : ''}recurring_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        profileId INTEGER REFERENCES profiles(id) NOT NULL,
+        name TEXT NOT NULL,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'transfer')),
+        category TEXT NOT NULL,
+        frequency TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'quarterly', 'yearly')),
+        dueDay INTEGER,
+        nextDueDate TEXT NOT NULL,
+        accountId INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+        toAccountId INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+        autoPost INTEGER NOT NULL DEFAULT 0,
+        isActive INTEGER NOT NULL DEFAULT 1,
+        lastPaidDate TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+    `;
+  }
+
   /**
    * Schema changes for existing installs. CREATE TABLE IF NOT EXISTS never alters a table that
-   * already exists, so every new column or table must also be added here or upgraded users lose
-   * access to it. Append a new entry per schema change; never edit or reorder existing ones.
+   * already exists, so every new column on an existing table must also be added here or upgraded
+   * users lose access to it. (A brand new table needs nothing here: CREATE TABLE IF NOT EXISTS
+   * creates it on upgraded installs too.) Append a new entry per schema change; never edit or
+   * reorder existing ones.
    * PRAGMA user_version records how many have run. Fresh installs (version 0) run them all too,
    * so each must be safe on a schema that already has the change, e.g.:
    *   (db) => {
@@ -203,6 +230,20 @@ class DatabaseConnector {
       if (!DatabaseConnector.hasColumn(db, 'accounts', 'creditLimit')) {
         db.execSync('ALTER TABLE accounts ADD COLUMN creditLimit REAL');
       }
+    },
+    // 4: recurring items gain daily repeats, transfers between accounts and automatic posting.
+    // SQLite cannot change the allowed values of a column in place, so a table made with the older
+    // shape is rebuilt, keeping every row.
+    (db) => {
+      if (!DatabaseConnector.hasColumn(db, 'recurring_items', 'id') || DatabaseConnector.hasColumn(db, 'recurring_items', 'toAccountId')) return;
+      db.execSync('ALTER TABLE recurring_items RENAME TO recurring_items_old');
+      db.execSync(DatabaseConnector.recurringItemsSql(false));
+      db.execSync(`
+        INSERT INTO recurring_items (id, profileId, name, amount, type, category, frequency, dueDay, nextDueDate, accountId, isActive, lastPaidDate, createdAt, updatedAt)
+        SELECT id, profileId, name, amount, type, category, frequency, dueDay, nextDueDate, accountId, isActive, lastPaidDate, createdAt, updatedAt
+        FROM recurring_items_old
+      `);
+      db.execSync('DROP TABLE recurring_items_old');
     },
   ];
 
