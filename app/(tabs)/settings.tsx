@@ -292,8 +292,7 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
-          <SettingItem title="Version" subtitle={appVersion.version} />
-          <SettingItem title="Update" subtitle={appVersion.update} />
+          <SettingItem title="Version" subtitle={`${appVersion.version} · ${appVersion.update}`} />
           <SettingItem
             title="Check for Updates"
             subtitle={checkingForUpdate ? "Checking..." : undefined}
