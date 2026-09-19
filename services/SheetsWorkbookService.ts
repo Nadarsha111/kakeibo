@@ -1,4 +1,4 @@
-import { getAccountService, getTransactionService } from "../database";
+import { getAccountService, getCategoryService, getProfileService, getTransactionService } from "../database";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -13,22 +13,67 @@ const TAB_ORDER = [TAB.DASHBOARD, TAB.TRANSACTIONS, TAB.ACCOUNTS, TAB.CATEGORIES
 
 type SheetIds = Record<string, number>;
 
+// Dark theme. Everything visual is defined here so re-theming means editing this block only.
+const THEME = {
+  background: { red: 0.067, green: 0.094, blue: 0.153 }, // #111827 sheet background
+  text: { red: 0.898, green: 0.906, blue: 0.922 }, // #e5e7eb
+  muted: { red: 0.612, green: 0.639, blue: 0.686 }, // #9ca3af notes and captions
+  faint: { red: 0.533, green: 0.565, blue: 0.624 }, // #88909f the ID column
+  accent: { red: 0.96, green: 0.62, blue: 0.043 }, // #f59e0b header rows (amber)
+  section: { red: 0.122, green: 0.161, blue: 0.216 }, // #1f2937 section + total rows
+  rule: { red: 0.216, green: 0.255, blue: 0.318 }, // #374151 row separators
+  // Chart legends and axis labels can't be recolored through the API, so charts stay light
+  // cards on the dark sheet rather than dark charts with unreadable labels.
+  chartCard: { red: 0.953, green: 0.957, blue: 0.965 }, // #f3f4f6
+};
+
+// Meaning, not theme: brighter than a light-theme red/green so they read on a dark background.
+const RED = { red: 0.973, green: 0.443, blue: 0.443 }; // #f87171
+const GREEN = { red: 0.204, green: 0.827, blue: 0.6 }; // #34d399
+const MONEY = "#,##0.00";
+
+// Base look of every cell. Formats that replace a whole textFormat must include the text color,
+// or the cell falls back to the default black and disappears against the dark background.
+const BASE_FORMAT = { backgroundColor: THEME.background, textFormat: { foregroundColor: THEME.text } };
+const text = (extra: object = {}) => ({ foregroundColor: THEME.text, ...extra });
+
+// Amber is a light color, so header text is the dark background color rather than white.
 const HEADER_FORMAT = {
-  backgroundColor: { red: 0.078, green: 0.722, blue: 0.651 }, // matches app primary #14b8a6
-  textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+  backgroundColor: THEME.accent,
+  textFormat: { bold: true, foregroundColor: THEME.background },
 };
 
 const SECTION_FORMAT = {
-  backgroundColor: { red: 0.9, green: 0.97, blue: 0.96 },
-  textFormat: { bold: true, fontSize: 12 },
+  backgroundColor: THEME.section,
+  textFormat: text({ bold: true, fontSize: 12 }),
+};
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  cash: "Cash",
+  checking: "Checking",
+  savings: "Savings",
+  credit_card: "Credit card",
+  loan: "Loan",
+  investment: "Investment",
+};
+
+/** "2026-09" -> "Sep 2026". */
+const monthLabel = (key: string) => {
+  const [year, month] = key.split("-");
+  return `${MONTH_NAMES[parseInt(month, 10) - 1] ?? month} ${year}`;
 };
 
 /**
- * Builds and refreshes the Google Sheets workbook: a Dashboard tab with key
- * stats and charts, plus Transactions/Accounts/Categories tabs holding the
- * underlying data. Recreates formatting and charts on every push rather than
- * trying to diff them, since that's far simpler than tracking what changed
- * and the cost is just a few extra API calls.
+ * Builds and refreshes the Google Sheets workbook. Four tabs, each with one job:
+ *  - Dashboard: this month at a glance, a per-profile breakdown, a 6-month trend and two charts.
+ *  - Transactions: every transaction, one row each. This is the only tab that can be edited and
+ *    pulled back into the app, so it has dropdowns, a filter and readable Account/Profile names.
+ *  - Accounts: balances per profile (read-only).
+ *  - Categories: this month's spending by category (read-only, feeds the pie chart).
+ * Formatting and charts are recreated on every push rather than diffed, since that's far simpler
+ * than tracking what changed and the cost is just a few extra API calls.
  */
 class SheetsWorkbookService {
   public async refresh(accessToken: string, spreadsheetId: string): Promise<void> {
@@ -36,10 +81,15 @@ class SheetsWorkbookService {
     const sheetIds = await this.ensureStructure(accessToken, spreadsheetId, existing);
 
     const data = this.gatherData();
+    const dashboard = this.buildDashboard(data);
+
+    // Re-setting a basic filter wipes whatever filter the user has applied, so only create it once.
+    const transactionsSheet = existing.sheets.find((s) => s.properties.sheetId === sheetIds[TAB.TRANSACTIONS]);
+    const hasTransactionFilter = !!transactionsSheet?.basicFilter;
 
     await this.clearRanges(accessToken, spreadsheetId);
-    await this.writeData(accessToken, spreadsheetId, data);
-    await this.applyFormattingAndCharts(accessToken, spreadsheetId, sheetIds, data);
+    await this.writeData(accessToken, spreadsheetId, data, dashboard);
+    await this.applyFormattingAndCharts(accessToken, spreadsheetId, sheetIds, data, dashboard, hasTransactionFilter);
   }
 
   // ---- Data gathering -----------------------------------------------------
@@ -62,8 +112,33 @@ class SheetsWorkbookService {
     const categorySummary = transactionService.getCategorySummary(monthStart, monthEnd);
     const categoryTotal = categorySummary.reduce((sum, c) => sum + c.amount, 0);
 
-    const accounts = accountService.getAccounts();
+    const profiles = getProfileService().getProfiles();
+    const profileNameById = new Map(profiles.map((p) => [p.id, p.name]));
+    const profileRows = profiles.map((p) => {
+      const income = transactionService.getTotalIncome(monthStart, monthEnd, p.id);
+      const expenses = transactionService.getTotalExpenses(monthStart, monthEnd, p.id);
+      return {
+        name: p.name,
+        balance: accountService.getTotalAccountsBalance(p.id),
+        income,
+        expenses,
+        net: income - expenses,
+      };
+    });
+
+    const accounts = accountService
+      .getAccounts()
+      .slice()
+      .sort((a, b) => {
+        const byProfile = (profileNameById.get(a.profileId) ?? "").localeCompare(profileNameById.get(b.profileId) ?? "");
+        return byProfile !== 0 ? byProfile : a.name.localeCompare(b.name);
+      });
+    const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
+
     const transactions = transactionService.getAllTransactionsForExport();
+    const categoryNames = getCategoryService()
+      .getCategories()
+      .map((c) => c.name);
 
     return {
       totalBalance,
@@ -76,15 +151,19 @@ class SheetsWorkbookService {
         ...c,
         percentage: categoryTotal > 0 ? c.amount / categoryTotal : 0,
       })),
+      profileRows,
+      profileNameById,
       accounts,
+      accountNameById,
       transactions,
+      categoryNames,
     };
   }
 
   // ---- Structure (tabs) -----------------------------------------------------
 
   private async getExistingStructure(accessToken: string, spreadsheetId: string) {
-    const url = `${SHEETS_API}/${spreadsheetId}?fields=sheets(properties,charts.chartId,conditionalFormats)`;
+    const url = `${SHEETS_API}/${spreadsheetId}?fields=sheets(properties,charts.chartId,conditionalFormats,basicFilter)`;
     const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) {
       throw new Error("Failed to read spreadsheet structure.");
@@ -94,6 +173,7 @@ class SheetsWorkbookService {
         properties: { sheetId: number; title: string };
         charts?: Array<{ chartId: number }>;
         conditionalFormats?: unknown[];
+        basicFilter?: unknown;
       }>;
     };
   }
@@ -107,6 +187,9 @@ class SheetsWorkbookService {
     const existingBySheetId = new Map(existing.sheets.map((s) => [s.properties.sheetId, s]));
     const requests: any[] = [];
     const sheetIds: SheetIds = {};
+
+    // Title + "last updated" stay visible on the Dashboard; every other tab keeps its header row visible.
+    const frozenRows = (title: string) => (title === TAB.DASHBOARD ? 2 : 1);
 
     // A pre-existing "Sheet1" is the old flat layout - rename it to keep its
     // transaction IDs intact instead of losing sync continuity.
@@ -136,9 +219,9 @@ class SheetsWorkbookService {
               sheetId,
               title,
               index,
-              gridProperties: { frozenRowCount: title === TAB.DASHBOARD ? 3 : 1 },
+              gridProperties: { frozenRowCount: frozenRows(title), hideGridlines: true },
             },
-            fields: "title,index,gridProperties.frozenRowCount",
+            fields: "title,index,gridProperties.frozenRowCount,gridProperties.hideGridlines",
           },
         });
       } else {
@@ -147,7 +230,7 @@ class SheetsWorkbookService {
             properties: {
               title,
               index,
-              gridProperties: { frozenRowCount: title === TAB.DASHBOARD ? 3 : 1 },
+              gridProperties: { frozenRowCount: frozenRows(title), hideGridlines: true },
             },
           },
         });
@@ -193,25 +276,72 @@ class SheetsWorkbookService {
     });
   }
 
-  private async writeData(accessToken: string, spreadsheetId: string, data: ReturnType<SheetsWorkbookService["gatherData"]>) {
-    const dashboardValues: any[][] = [
-      ["📊 Kakeibo Dashboard", "", "", ""],
-      [`Last updated: ${new Date().toLocaleString()}`, "", "", ""],
-      [],
-      ["💰 This Month", "", "", ""],
-      ["Income", "Expenses", "Net", "Savings Rate"],
-      [data.monthlyIncome, data.monthlyExpenses, data.net, data.savingsRate],
-      [],
-      ["🏦 Total Balance", "", "", ""],
-      [data.totalBalance, "", "", ""],
-      [],
-      ["📈 6-Month Trend (drives the chart to the right)", "", "", ""],
-      ["Month", "Income", "Expenses"],
-      ...data.monthlyTrend.map((m) => [m.month, m.income, m.expenses]),
-    ];
+  /**
+   * Lays out the Dashboard top to bottom and records which row each block landed on, so the
+   * formatting and charts never depend on hard-coded row numbers (the number of profiles varies).
+   */
+  private buildDashboard(data: ReturnType<SheetsWorkbookService["gatherData"]>) {
+    const values: any[][] = [];
+    const add = (row: any[] = []) => values.push(row) - 1;
 
+    add(["Kakeibo Dashboard"]);
+    add([`Last updated: ${new Date().toLocaleString()}`]);
+    add([
+      "A copy of your Kakeibo app data. To change transactions, edit the Transactions tab, then tap Pull in the app. Leave the ID blank when adding a new row.",
+    ]);
+    add();
+
+    const glanceTitle = add(["At a glance"]);
+    const glanceHeader = add(["Total balance", "Income this month", "Expenses this month", "Net this month", "Savings rate"]);
+    const glanceValues = add([data.totalBalance, data.monthlyIncome, data.monthlyExpenses, data.net, data.savingsRate]);
+    add();
+
+    const profileTitle = add(["By profile"]);
+    const profileHeader = add(["Profile", "Balance", "Income this month", "Expenses this month", "Net this month"]);
+    const profileFirst = values.length;
+    data.profileRows.forEach((p) => add([p.name, p.balance, p.income, p.expenses, p.net]));
+    const profileEnd = values.length;
+    // A total row only adds something when there is more than one profile to add up.
+    const profileTotal =
+      data.profileRows.length > 1
+        ? add(["All profiles", data.totalBalance, data.monthlyIncome, data.monthlyExpenses, data.net])
+        : null;
+    add();
+
+    const trendTitle = add(["Last 6 months"]);
+    const trendHeader = add(["Month", "Income", "Expenses", "Net"]);
+    const trendFirst = values.length;
+    // The apostrophe stops Sheets from turning "Sep 2026" into a date.
+    data.monthlyTrend.forEach((m) => add([`'${monthLabel(m.month)}`, m.income, m.expenses, m.income - m.expenses]));
+    const trendEnd = values.length;
+
+    return {
+      values,
+      rows: {
+        glanceTitle,
+        glanceHeader,
+        glanceValues,
+        profileTitle,
+        profileHeader,
+        profileFirst,
+        profileEnd,
+        profileTotal,
+        trendTitle,
+        trendHeader,
+        trendFirst,
+        trendEnd,
+      },
+    };
+  }
+
+  private async writeData(
+    accessToken: string,
+    spreadsheetId: string,
+    data: ReturnType<SheetsWorkbookService["gatherData"]>,
+    dashboard: ReturnType<SheetsWorkbookService["buildDashboard"]>,
+  ) {
     const transactionsValues = [
-      ["ID", "Date", "Type", "Category", "Amount", "Description", "Payment Method", "Account ID", "Profile ID"],
+      ["ID", "Date", "Type", "Category", "Amount", "Description", "Payment method", "Account", "Profile"],
       ...data.transactions.map((t) => [
         t.id,
         t.date,
@@ -220,16 +350,17 @@ class SheetsWorkbookService {
         t.amount,
         t.description,
         t.paymentMethod,
-        t.accountId,
-        t.profileId,
+        t.accountId != null ? (data.accountNameById.get(t.accountId) ?? "") : "",
+        data.profileNameById.get(t.profileId) ?? "",
       ]),
     ];
 
     const accountsValues = [
-      ["Name", "Type", "Balance", "Currency", "Notes"],
+      ["Profile", "Account", "Type", "Balance", "Currency", "Notes"],
       ...data.accounts.map((a) => [
+        data.profileNameById.get(a.profileId) ?? "",
         a.name,
-        a.type,
+        ACCOUNT_TYPE_LABELS[a.type] ?? a.type,
         a.balance,
         a.currency,
         a.type === "loan"
@@ -239,7 +370,7 @@ class SheetsWorkbookService {
     ];
 
     const categoriesValues = [
-      ["Category", "Amount", "% of Month"],
+      ["Category", "Spent this month", "% of total"],
       ...data.categorySummary.map((c) => [c.category, c.amount, c.percentage]),
     ];
 
@@ -249,7 +380,7 @@ class SheetsWorkbookService {
       body: JSON.stringify({
         valueInputOption: "USER_ENTERED",
         data: [
-          { range: TAB.DASHBOARD, values: dashboardValues },
+          { range: TAB.DASHBOARD, values: dashboard.values },
           { range: TAB.TRANSACTIONS, values: transactionsValues },
           { range: TAB.ACCOUNTS, values: accountsValues },
           { range: TAB.CATEGORIES, values: categoriesValues },
@@ -271,231 +402,246 @@ class SheetsWorkbookService {
     spreadsheetId: string,
     sheetIds: SheetIds,
     data: ReturnType<SheetsWorkbookService["gatherData"]>,
+    dashboard: ReturnType<SheetsWorkbookService["buildDashboard"]>,
+    hasTransactionFilter: boolean,
   ) {
     const requests: any[] = [];
 
-    const headerRow = (sheetId: number, columnCount: number) => ({
-      repeatCell: {
-        range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: columnCount },
-        cell: { userEnteredFormat: HEADER_FORMAT },
-        fields: "userEnteredFormat(backgroundColor,textFormat)",
-      },
+    // Range helpers. Leaving the end row/column out means "to the end of the sheet", which is
+    // what we want for anything the user might extend by typing new rows.
+    const range = (sheetId: number, r0: number, r1: number | undefined, c0: number, c1: number) => ({
+      sheetId,
+      startRowIndex: r0,
+      endRowIndex: r1,
+      startColumnIndex: c0,
+      endColumnIndex: c1,
     });
 
-    const columnWidth = (sheetId: number, startColumnIndex: number, endColumnIndex: number, pixelSize: number) => ({
+    const format = (r: ReturnType<typeof range>, userEnteredFormat: object, fields: string) => ({
+      repeatCell: { range: r, cell: { userEnteredFormat }, fields },
+    });
+
+    const headerRow = (sheetId: number, row: number, columnCount: number) =>
+      format(range(sheetId, row, row + 1, 0, columnCount), HEADER_FORMAT, "userEnteredFormat(backgroundColor,textFormat)");
+
+    const sectionRow = (sheetId: number, row: number) =>
+      format(range(sheetId, row, row + 1, 0, 5), SECTION_FORMAT, "userEnteredFormat(backgroundColor,textFormat)");
+
+    const number = (r: ReturnType<typeof range>, type: "NUMBER" | "PERCENT" | "DATE", pattern: string) =>
+      format(r, { numberFormat: { type, pattern } }, "userEnteredFormat.numberFormat");
+
+    const columnWidth = (sheetId: number, column: number, pixelSize: number) => ({
       updateDimensionProperties: {
-        range: { sheetId, dimension: "COLUMNS", startColumnIndex, endColumnIndex },
+        range: { sheetId, dimension: "COLUMNS", startIndex: column, endIndex: column + 1 },
         properties: { pixelSize },
         fields: "pixelSize",
       },
     });
 
-    const numberFormat = (
-      sheetId: number,
-      startRowIndex: number,
-      endRowIndex: number,
-      startColumnIndex: number,
-      endColumnIndex: number,
-      pattern: string,
-    ) => ({
-      repeatCell: {
-        range: { sheetId, startRowIndex, endRowIndex, startColumnIndex, endColumnIndex },
-        cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern } } },
-        fields: "userEnteredFormat.numberFormat",
+    const rowHeight = (sheetId: number, row: number, pixelSize: number) => ({
+      updateDimensionProperties: {
+        range: { sheetId, dimension: "ROWS", startIndex: row, endIndex: row + 1 },
+        properties: { pixelSize },
+        fields: "pixelSize",
       },
     });
+
+    const colorRule = (ranges: Array<ReturnType<typeof range>>, condition: object, color: object) => ({
+      addConditionalFormatRule: {
+        rule: { ranges, booleanRule: { condition, format: { textFormat: { foregroundColor: color } } } },
+        index: 0,
+      },
+    });
+
+    // Negative numbers red, zero or positive green.
+    const redGreen = (ranges: Array<ReturnType<typeof range>>) => [
+      colorRule(ranges, { type: "NUMBER_LESS", values: [{ userEnteredValue: "0" }] }, RED),
+      colorRule(ranges, { type: "NUMBER_GREATER_THAN_EQ", values: [{ userEnteredValue: "0" }] }, GREEN),
+    ];
+
+    const dropdown = (sheetId: number, column: number, options: string[]) => ({
+      setDataValidation: {
+        range: range(sheetId, 1, undefined, column, column + 1),
+        rule: {
+          condition: { type: "ONE_OF_LIST", values: options.map((userEnteredValue) => ({ userEnteredValue })) },
+          showCustomUi: true,
+          strict: false, // flag odd values instead of refusing them
+        },
+      },
+    });
+
+    // Thin separators between rows. Gridlines are hidden (light lines look harsh on a dark
+    // background), so these keep long tables easy to follow.
+    const rowRules = (sheetId: number, firstRow: number, endRow: number, columnCount: number) => {
+      if (endRow <= firstRow) return [];
+      const line = { style: "SOLID", width: 1, colorStyle: { rgbColor: THEME.rule } };
+      return [{ updateBorders: { range: range(sheetId, firstRow, endRow, 0, columnCount), innerHorizontal: line, bottom: line } }];
+    };
+
+    // Dark theme base. The Dashboard, Accounts and Categories tabs are generated from scratch
+    // each time, so replace their formatting entirely - otherwise colors and merges from a
+    // previous layout linger. Transactions only gets its background, text color and borders
+    // reset, so other formatting the user adds there survives a sync.
+    const dashSheetId = sheetIds[TAB.DASHBOARD];
+    const acctSheetId = sheetIds[TAB.ACCOUNTS];
+    const catSheetId = sheetIds[TAB.CATEGORIES];
+    const txSheetId = sheetIds[TAB.TRANSACTIONS];
+    [dashSheetId, acctSheetId, catSheetId].forEach((sheetId) => {
+      requests.push({ repeatCell: { range: { sheetId }, cell: { userEnteredFormat: BASE_FORMAT }, fields: "userEnteredFormat" } });
+    });
+    requests.push({
+      repeatCell: {
+        range: { sheetId: txSheetId },
+        cell: { userEnteredFormat: BASE_FORMAT },
+        fields: "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.foregroundColor",
+      },
+    });
+    const noBorder = { style: "NONE" };
+    requests.push({
+      updateBorders: { range: { sheetId: txSheetId }, top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, innerHorizontal: noBorder, innerVertical: noBorder },
+    });
+    requests.push({ unmergeCells: { range: { sheetId: dashSheetId } } });
 
     // --- Transactions sheet ---
-    const txSheetId = sheetIds[TAB.TRANSACTIONS];
-    requests.push(headerRow(txSheetId, 9));
-    requests.push(columnWidth(txSheetId, 5, 6, 220)); // Description
-    requests.push(numberFormat(txSheetId, 1, data.transactions.length + 1, 4, 5, "#,##0.00"));
-    requests.push({
-      addConditionalFormatRule: {
-        rule: {
-          ranges: [{ sheetId: txSheetId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 }],
-          booleanRule: {
-            condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: '=$C2="expense"' }] },
-            format: { textFormat: { foregroundColor: { red: 0.94, green: 0.27, blue: 0.27 } } },
-          },
-        },
-        index: 0,
-      },
-    });
-    requests.push({
-      addConditionalFormatRule: {
-        rule: {
-          ranges: [{ sheetId: txSheetId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 }],
-          booleanRule: {
-            condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: '=$C2="income"' }] },
-            format: { textFormat: { foregroundColor: { red: 0.06, green: 0.72, blue: 0.51 } } },
-          },
-        },
-        index: 0,
-      },
-    });
+    requests.push(headerRow(txSheetId, 0, 9));
+    [50, 100, 80, 120, 100, 240, 120, 170, 110].forEach((pixels, column) => requests.push(columnWidth(txSheetId, column, pixels)));
+    requests.push(format(range(txSheetId, 1, undefined, 0, 1), { textFormat: { foregroundColor: THEME.faint } }, "userEnteredFormat.textFormat.foregroundColor")); // ID: needed for sync, not for reading
+    requests.push(number(range(txSheetId, 1, undefined, 1, 2), "DATE", "yyyy-mm-dd")); // ISO so Pull can read it back
+    requests.push(number(range(txSheetId, 1, undefined, 4, 5), "NUMBER", MONEY));
+    requests.push(colorRule([range(txSheetId, 1, undefined, 4, 5)], { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: '=$C2="expense"' }] }, RED));
+    requests.push(colorRule([range(txSheetId, 1, undefined, 4, 5)], { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: '=$C2="income"' }] }, GREEN));
+
+    // Dropdowns make adding a row in the sheet a matter of picking values instead of typing exact names.
+    requests.push(dropdown(txSheetId, 2, ["income", "expense"]));
+    if (data.categoryNames.length > 0) requests.push(dropdown(txSheetId, 3, data.categoryNames));
+    requests.push(dropdown(txSheetId, 6, ["cash", "credit_card", "debit_card"]));
+    const accountNames = Array.from(new Set(data.accounts.map((a) => a.name)));
+    if (accountNames.length > 0) requests.push(dropdown(txSheetId, 7, accountNames));
+    const profileNames = data.profileRows.map((p) => p.name);
+    if (profileNames.length > 0) requests.push(dropdown(txSheetId, 8, profileNames));
+
+    if (!hasTransactionFilter) {
+      requests.push({ setBasicFilter: { filter: { range: range(txSheetId, 0, undefined, 0, 9) } } });
+    }
+
+    requests.push(...rowRules(txSheetId, 1, data.transactions.length + 1, 9));
 
     // --- Accounts sheet ---
-    const acctSheetId = sheetIds[TAB.ACCOUNTS];
-    requests.push(headerRow(acctSheetId, 5));
-    requests.push(columnWidth(acctSheetId, 4, 5, 220)); // Notes
-    requests.push(numberFormat(acctSheetId, 1, data.accounts.length + 1, 2, 3, "#,##0.00"));
-    requests.push({
-      addConditionalFormatRule: {
-        rule: {
-          ranges: [{ sheetId: acctSheetId, startRowIndex: 1, startColumnIndex: 2, endColumnIndex: 3 }],
-          booleanRule: {
-            condition: { type: "NUMBER_LESS", values: [{ userEnteredValue: "0" }] },
-            format: { textFormat: { foregroundColor: { red: 0.94, green: 0.27, blue: 0.27 } } },
-          },
-        },
-        index: 0,
-      },
-    });
+    requests.push(headerRow(acctSheetId, 0, 6));
+    requests.push(...rowRules(acctSheetId, 1, data.accounts.length + 1, 6));
+    [110, 180, 110, 110, 80, 220].forEach((pixels, column) => requests.push(columnWidth(acctSheetId, column, pixels)));
+    requests.push(number(range(acctSheetId, 1, undefined, 3, 4), "NUMBER", MONEY));
+    requests.push(colorRule([range(acctSheetId, 1, undefined, 3, 4)], { type: "NUMBER_LESS", values: [{ userEnteredValue: "0" }] }, RED));
 
     // --- Categories sheet ---
-    const catSheetId = sheetIds[TAB.CATEGORIES];
-    requests.push(headerRow(catSheetId, 3));
-    requests.push(numberFormat(catSheetId, 1, data.categorySummary.length + 1, 1, 2, "#,##0.00"));
-    requests.push({
-      repeatCell: {
-        range: { sheetId: catSheetId, startRowIndex: 1, endRowIndex: data.categorySummary.length + 1, startColumnIndex: 2, endColumnIndex: 3 },
-        cell: { userEnteredFormat: { numberFormat: { type: "PERCENT", pattern: "0.0%" } } },
-        fields: "userEnteredFormat.numberFormat",
-      },
-    });
+    requests.push(headerRow(catSheetId, 0, 3));
+    requests.push(...rowRules(catSheetId, 1, data.categorySummary.length + 1, 3));
+    [160, 140, 100].forEach((pixels, column) => requests.push(columnWidth(catSheetId, column, pixels)));
+    requests.push(number(range(catSheetId, 1, undefined, 1, 2), "NUMBER", MONEY));
+    requests.push(number(range(catSheetId, 1, undefined, 2, 3), "PERCENT", "0.0%"));
 
     // --- Dashboard sheet ---
-    const dashSheetId = sheetIds[TAB.DASHBOARD];
-    const trendStartRow = 11; // 0-indexed row of the "Month | Income | Expenses" header
-    const trendDataEndRow = trendStartRow + 1 + data.monthlyTrend.length;
+    const r = dashboard.rows;
+    const columnCount = 5;
 
-    requests.push({
-      mergeCells: { range: { sheetId: dashSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 }, mergeType: "MERGE_ALL" },
-    });
-    requests.push({
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 },
-        cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 18 } } },
-        fields: "userEnteredFormat.textFormat",
-      },
-    });
-    requests.push({
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 1, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 },
-        cell: { userEnteredFormat: { textFormat: { italic: true, foregroundColor: { red: 0.5, green: 0.5, blue: 0.5 } } } },
-        fields: "userEnteredFormat.textFormat",
-      },
-    });
-    [3, 7, 10].forEach((rowIndex) => {
-      requests.push({
-        repeatCell: {
-          range: { sheetId: dashSheetId, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: 0, endColumnIndex: 6 },
-          cell: { userEnteredFormat: SECTION_FORMAT },
-          fields: "userEnteredFormat(backgroundColor,textFormat)",
-        },
+    requests.push({ mergeCells: { range: range(dashSheetId, 0, 1, 0, columnCount), mergeType: "MERGE_ALL" } });
+    requests.push(format(range(dashSheetId, 0, 1, 0, columnCount), { textFormat: text({ bold: true, fontSize: 18 }) }, "userEnteredFormat.textFormat"));
+    requests.push(format(range(dashSheetId, 1, 2, 0, columnCount), { textFormat: text({ italic: true, foregroundColor: THEME.muted }) }, "userEnteredFormat.textFormat"));
+
+    requests.push({ mergeCells: { range: range(dashSheetId, 2, 3, 0, columnCount), mergeType: "MERGE_ALL" } });
+    requests.push(
+      format(
+        range(dashSheetId, 2, 3, 0, columnCount),
+        { textFormat: text({ italic: true, foregroundColor: THEME.muted }), wrapStrategy: "WRAP", verticalAlignment: "TOP" },
+        "userEnteredFormat(textFormat,wrapStrategy,verticalAlignment)",
+      ),
+    );
+    requests.push(rowHeight(dashSheetId, 2, 40));
+
+    [r.glanceTitle, r.profileTitle, r.trendTitle].forEach((row) => requests.push(sectionRow(dashSheetId, row)));
+    requests.push(headerRow(dashSheetId, r.glanceHeader, 5));
+    requests.push(headerRow(dashSheetId, r.profileHeader, 5));
+    requests.push(headerRow(dashSheetId, r.trendHeader, 4));
+
+    // At a glance: big numbers, money in the first four, a percentage in the last.
+    const bigNumber = { textFormat: text({ bold: true, fontSize: 14 }) };
+    requests.push(format(range(dashSheetId, r.glanceValues, r.glanceValues + 1, 0, 4), { ...bigNumber, numberFormat: { type: "NUMBER", pattern: MONEY } }, "userEnteredFormat(numberFormat,textFormat)"));
+    requests.push(format(range(dashSheetId, r.glanceValues, r.glanceValues + 1, 4, 5), { ...bigNumber, numberFormat: { type: "PERCENT", pattern: "0%" } }, "userEnteredFormat(numberFormat,textFormat)"));
+    requests.push(rowHeight(dashSheetId, r.glanceValues, 32));
+
+    // By profile / trend tables.
+    if (r.profileEnd > r.profileFirst) {
+      requests.push(number(range(dashSheetId, r.profileFirst, r.profileEnd, 1, 5), "NUMBER", MONEY));
+    }
+    if (r.profileTotal !== null) {
+      requests.push(
+        format(
+          range(dashSheetId, r.profileTotal, r.profileTotal + 1, 0, 5),
+          { textFormat: text({ bold: true }), numberFormat: { type: "NUMBER", pattern: MONEY }, backgroundColor: THEME.section },
+          "userEnteredFormat(textFormat,numberFormat,backgroundColor)",
+        ),
+      );
+    }
+    if (r.trendEnd > r.trendFirst) {
+      requests.push(number(range(dashSheetId, r.trendFirst, r.trendEnd, 1, 4), "NUMBER", MONEY));
+    }
+
+    const profileLastRow = r.profileTotal !== null ? r.profileTotal + 1 : r.profileEnd;
+    requests.push(...rowRules(dashSheetId, r.profileFirst, profileLastRow, 5));
+    requests.push(...rowRules(dashSheetId, r.trendFirst, r.trendEnd, 4));
+
+    // Red/green: net + savings rate, each profile's balance and net, and the trend's net column.
+    redGreen([
+      range(dashSheetId, r.glanceValues, r.glanceValues + 1, 3, 5),
+      range(dashSheetId, r.profileFirst, profileLastRow, 1, 2),
+      range(dashSheetId, r.profileFirst, profileLastRow, 4, 5),
+      range(dashSheetId, r.trendFirst, r.trendEnd, 3, 4),
+    ]).forEach((rule) => requests.push(rule));
+
+    [200, 160, 160, 160, 160, 30].forEach((pixels, column) => requests.push(columnWidth(dashSheetId, column, pixels)));
+
+    // Charts sit to the right of the tables (column G onward), one above the other.
+    if (r.trendEnd > r.trendFirst) {
+      const source = (column: number) => ({
+        sourceRange: { sources: [range(dashSheetId, r.trendHeader, r.trendEnd, column, column + 1)] },
       });
-    });
-    // "Income | Expenses | Net | Savings Rate" row (row index 4)
-    requests.push({
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 4 },
-        cell: { userEnteredFormat: HEADER_FORMAT },
-        fields: "userEnteredFormat(backgroundColor,textFormat)",
-      },
-    });
-    requests.push({
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 0, endColumnIndex: 3 },
-        cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "#,##0.00" }, textFormat: { bold: true, fontSize: 14 } } },
-        fields: "userEnteredFormat(numberFormat,textFormat)",
-      },
-    });
-    requests.push({
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 3, endColumnIndex: 4 },
-        cell: { userEnteredFormat: { numberFormat: { type: "PERCENT", pattern: "0%" }, textFormat: { bold: true, fontSize: 14 } } },
-        fields: "userEnteredFormat(numberFormat,textFormat)",
-      },
-    });
-    requests.push({
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 8, endRowIndex: 9, startColumnIndex: 0, endColumnIndex: 1 },
-        cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "#,##0.00" }, textFormat: { bold: true, fontSize: 20 } } },
-        fields: "userEnteredFormat(numberFormat,textFormat)",
-      },
-    });
-    requests.push({
-      addConditionalFormatRule: {
-        rule: {
-          ranges: [{ sheetId: dashSheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 2, endColumnIndex: 4 }],
-          booleanRule: {
-            condition: { type: "NUMBER_LESS", values: [{ userEnteredValue: "0" }] },
-            format: { textFormat: { foregroundColor: { red: 0.94, green: 0.27, blue: 0.27 } } },
-          },
-        },
-        index: 0,
-      },
-    });
-    requests.push({
-      addConditionalFormatRule: {
-        rule: {
-          ranges: [{ sheetId: dashSheetId, startRowIndex: 5, endRowIndex: 6, startColumnIndex: 2, endColumnIndex: 4 }],
-          booleanRule: {
-            condition: { type: "NUMBER_GREATER_THAN_EQ", values: [{ userEnteredValue: "0" }] },
-            format: { textFormat: { foregroundColor: { red: 0.06, green: 0.72, blue: 0.51 } } },
-          },
-        },
-        index: 0,
-      },
-    });
-    requests.push({
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: trendStartRow, endRowIndex: trendStartRow + 1, startColumnIndex: 0, endColumnIndex: 3 },
-        cell: { userEnteredFormat: HEADER_FORMAT },
-        fields: "userEnteredFormat(backgroundColor,textFormat)",
-      },
-    });
-    requests.push(columnWidth(dashSheetId, 0, 1, 200));
-
-    // Charts, anchored to the right of the tables they're built from.
-    if (data.monthlyTrend.length > 0) {
       requests.push({
         addChart: {
           chart: {
             spec: {
-              title: "Income vs Expenses (6 months)",
+              title: "Income vs Expenses (last 6 months)",
+              backgroundColorStyle: { rgbColor: THEME.chartCard },
               basicChart: {
                 chartType: "COLUMN",
                 legendPosition: "BOTTOM_LEGEND",
                 axis: [{ position: "BOTTOM_AXIS" }, { position: "LEFT_AXIS" }],
-                domains: [{ domain: { sourceRange: { sources: [{ sheetId: dashSheetId, startRowIndex: trendStartRow, endRowIndex: trendDataEndRow, startColumnIndex: 0, endColumnIndex: 1 }] } } }],
+                domains: [{ domain: source(0) }],
                 series: [
-                  { series: { sourceRange: { sources: [{ sheetId: dashSheetId, startRowIndex: trendStartRow, endRowIndex: trendDataEndRow, startColumnIndex: 1, endColumnIndex: 2 }] } }, targetAxis: "LEFT_AXIS" },
-                  { series: { sourceRange: { sources: [{ sheetId: dashSheetId, startRowIndex: trendStartRow, endRowIndex: trendDataEndRow, startColumnIndex: 2, endColumnIndex: 3 }] } }, targetAxis: "LEFT_AXIS" },
+                  { series: source(1), targetAxis: "LEFT_AXIS", colorStyle: { rgbColor: GREEN } },
+                  { series: source(2), targetAxis: "LEFT_AXIS", colorStyle: { rgbColor: RED } },
                 ],
                 headerCount: 1,
               },
             },
-            position: { overlayPosition: { anchorCell: { sheetId: dashSheetId, rowIndex: 3, columnIndex: 4 }, widthPixels: 480, heightPixels: 260 } },
+            position: { overlayPosition: { anchorCell: { sheetId: dashSheetId, rowIndex: 3, columnIndex: 6 }, widthPixels: 520, heightPixels: 280 } },
           },
         },
       });
     }
 
     if (data.categorySummary.length > 0) {
+      const source = (column: number) => ({
+        sourceRange: { sources: [range(catSheetId, 1, data.categorySummary.length + 1, column, column + 1)] },
+      });
       requests.push({
         addChart: {
           chart: {
             spec: {
-              title: "Spending by Category (This Month)",
-              pieChart: {
-                legendPosition: "RIGHT_LEGEND",
-                domain: { sourceRange: { sources: [{ sheetId: catSheetId, startRowIndex: 1, endRowIndex: data.categorySummary.length + 1, startColumnIndex: 0, endColumnIndex: 1 }] } },
-                series: { sourceRange: { sources: [{ sheetId: catSheetId, startRowIndex: 1, endRowIndex: data.categorySummary.length + 1, startColumnIndex: 1, endColumnIndex: 2 }] } },
-              },
+              title: "Spending by category (this month)",
+              backgroundColorStyle: { rgbColor: THEME.chartCard },
+              pieChart: { legendPosition: "RIGHT_LEGEND", domain: source(0), series: source(1) },
             },
-            position: { overlayPosition: { anchorCell: { sheetId: dashSheetId, rowIndex: 3, columnIndex: 11 }, widthPixels: 480, heightPixels: 260 } },
+            position: { overlayPosition: { anchorCell: { sheetId: dashSheetId, rowIndex: 18, columnIndex: 6 }, widthPixels: 520, heightPixels: 280 } },
           },
         },
       });

@@ -526,13 +526,14 @@ class TransactionService {
   /**
    * Creates or updates a transaction from a row pulled from the synced Google Sheet.
    * Row order matches the export header: [ID, Date, Type, Category, Amount, Description,
-   * Payment Method, Account ID, Profile ID]. A blank/unrecognized ID is treated as a new row.
+   * Payment method, Account, Profile]. Account and Profile are names (older sheets hold numeric
+   * IDs, which are still accepted). A blank/unrecognized ID is treated as a new row.
    * Rows that fail validation (bad category, account, enum values, etc.) are skipped rather
    * than guessed at, so a bad manual edit in the sheet can't corrupt local data.
    */
   upsertFromSheetRow(row: string[]): 'created' | 'updated' | 'unchanged' | 'skipped' {
     try {
-      const [idRaw, date, type, category, amountRaw, description, paymentMethod, accountIdRaw, profileIdRaw] = row;
+      const [idRaw, date, type, category, amountRaw, description, paymentMethod, accountRaw, profileRaw] = row;
 
       if (type !== 'income' && type !== 'expense') return 'skipped';
       if (!['cash', 'credit_card', 'debit_card'].includes(paymentMethod)) return 'skipped';
@@ -545,13 +546,14 @@ class TransactionService {
       const categoryExists = this.db.getFirstSync('SELECT 1 FROM categories WHERE name = ?', [category]);
       if (!categoryExists) return 'skipped';
 
-      const profileId = parseInt(profileIdRaw, 10);
-      if (isNaN(profileId) || !this.db.getFirstSync('SELECT 1 FROM profiles WHERE id = ?', [profileId])) return 'skipped';
+      const profileId = this.resolveProfileId(profileRaw);
+      if (profileId === null) return 'skipped';
 
+      // A blank account is fine (no account), but a filled-in one that doesn't match is a typo.
       let accountId: number | null = null;
-      const parsedAccountId = parseInt(accountIdRaw, 10);
-      if (!isNaN(parsedAccountId) && this.accountService.getAccountById(parsedAccountId)) {
-        accountId = parsedAccountId;
+      if (accountRaw && accountRaw.trim()) {
+        accountId = this.resolveAccountId(accountRaw, profileId);
+        if (accountId === null) return 'skipped';
       }
 
       const payload = {
@@ -592,6 +594,38 @@ class TransactionService {
       console.error('Error upserting transaction from sheet row:', error);
       return 'skipped';
     }
+  }
+
+  /** Matches a profile by name (case-insensitive), falling back to a numeric ID from older sheets. */
+  private resolveProfileId(raw: string | undefined): number | null {
+    const value = (raw ?? '').trim();
+    if (!value) return null;
+
+    const byName = this.db.getFirstSync('SELECT id FROM profiles WHERE LOWER(name) = LOWER(?)', [value]) as { id: number } | null;
+    if (byName) return byName.id;
+
+    if (/^\d+$/.test(value)) {
+      const byId = this.db.getFirstSync('SELECT id FROM profiles WHERE id = ?', [parseInt(value, 10)]) as { id: number } | null;
+      return byId ? byId.id : null;
+    }
+    return null;
+  }
+
+  /** Matches an account by name within the given profile (case-insensitive), falling back to a numeric ID. */
+  private resolveAccountId(raw: string, profileId: number): number | null {
+    const value = raw.trim();
+
+    const byName = this.db.getFirstSync(
+      'SELECT id FROM accounts WHERE profileId = ? AND LOWER(name) = LOWER(?)',
+      [profileId, value],
+    ) as { id: number } | null;
+    if (byName) return byName.id;
+
+    if (/^\d+$/.test(value)) {
+      const account = this.accountService.getAccountById(parseInt(value, 10));
+      return account ? account.id : null;
+    }
+    return null;
   }
 
   /**
