@@ -31,6 +31,12 @@
       "expo-router",
       "@react-native-google-signin/google-signin"
     ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a93f02ca-7269-4cdd-9a17-b62bbdee1471"
+    },
     "extra": {
       "router": {},
       "eas": {

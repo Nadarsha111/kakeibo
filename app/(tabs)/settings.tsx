@@ -16,6 +16,11 @@ import OptionSelector from "../../components/OptionSelector";
 import ManageCategoriesScreen from "../../components/ManageCategoriesScreen";
 import ExportDataScreen from "../../components/ExportDataScreen";
 import { getGoogleSyncService } from "../../services/GoogleSyncService";
+import {
+  applyDownloadedUpdate,
+  downloadAvailableUpdate,
+  getAppVersionInfo,
+} from "../../utils/appVersion";
 import type { User } from "@react-native-google-signin/google-signin";
 
 export default function SettingsScreen() {
@@ -35,6 +40,31 @@ export default function SettingsScreen() {
     updateAppLock,
   } = useSettings();
   const styles = createStyles(theme);
+  const appVersion = getAppVersionInfo();
+  const [checkingForUpdate, setCheckingForUpdate] = useState(false);
+
+  const handleCheckForUpdate = async () => {
+    if (checkingForUpdate) return;
+    setCheckingForUpdate(true);
+    try {
+      const result = await downloadAvailableUpdate();
+      if (result === "disabled") {
+        Alert.alert("Updates unavailable", "Updates are turned off in development builds.");
+      } else if (result === "none") {
+        Alert.alert("Up to date", "You already have the latest version.");
+      } else {
+        Alert.alert("Update ready", "The update has been downloaded. Restart the app to use it.", [
+          { text: "Later", style: "cancel" },
+          { text: "Restart now", onPress: () => applyDownloadedUpdate() },
+        ]);
+      }
+    } catch (error) {
+      console.error("Error checking for updates:", error);
+      Alert.alert("Update failed", "Could not check for updates. Check your internet connection and try again.");
+    } finally {
+      setCheckingForUpdate(false);
+    }
+  };
 
   // Modal states
   const [themeModalVisible, setThemeModalVisible] = useState(false);
@@ -262,7 +292,14 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
-          <SettingItem title="Version" subtitle="1.0.0" />
+          <SettingItem title="Version" subtitle={appVersion.version} />
+          <SettingItem title="Update" subtitle={appVersion.update} />
+          <SettingItem
+            title="Check for Updates"
+            subtitle={checkingForUpdate ? "Checking..." : undefined}
+            rightComponent={<Text style={styles.chevron}>›</Text>}
+            onPress={handleCheckForUpdate}
+          />
           <SettingItem
             title="Privacy Policy"
             rightComponent={<Text style={styles.chevron}>›</Text>}
