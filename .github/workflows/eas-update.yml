@@ -1,0 +1,56 @@
+name: EAS Update
+
+# Publishes an over-the-air update:
+#   - on every push to the over-the-air branch, to the "preview" channel
+#   - on a manual run (Actions tab -> Run workflow), to the channel you choose; use this to
+#     release to "production"
+# Only JavaScript and asset changes are delivered this way. If a change touches native code
+# (new native package, plugin or app.json native settings), bump the version in package.json and
+# make a new build instead.
+on:
+  push:
+    branches: [over-the-air]
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel to publish to
+        type: choice
+        options: [preview, production]
+        default: preview
+
+concurrency:
+  group: eas-update-${{ inputs.channel || 'preview' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      - name: Publish update
+        env:
+          TARGET: ${{ inputs.channel || 'preview' }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          # --environment supplies the EXPO_PUBLIC_* variables stored in EAS (e.g. the Google client ID)
+          eas update --channel "$TARGET" --environment "$TARGET" \
+            --message "${COMMIT_MESSAGE:-Manual run on $BRANCH}" --non-interactive
