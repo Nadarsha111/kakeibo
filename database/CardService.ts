@@ -110,12 +110,15 @@ class CardService {
   /**
    * Permanently deletes a card. Transactions charged to it keep counting toward the shared
    * account balance; they just stop being tagged to this card (its bill line disappears from
-   * "Needed this month", but the spending itself still shows up everywhere else).
+   * "Needed this month", but the spending itself still shows up everywhere else). Any EMI on it
+   * falls back to the account's own untagged bucket, rather than keeping a dangling cardId that
+   * neither the per-card nor the untagged owed calculation in RecurringService would ever match.
    */
   deleteCard(id: number): void {
     try {
       DatabaseConnector.getInstance().withTransaction(() => {
         this.db.runSync('UPDATE transactions SET cardId = NULL WHERE cardId = ?', [id]);
+        this.db.runSync('UPDATE card_emis SET cardId = NULL WHERE cardId = ?', [id]);
         this.db.runSync('DELETE FROM credit_cards WHERE id = ?', [id]);
       });
     } catch (error) {

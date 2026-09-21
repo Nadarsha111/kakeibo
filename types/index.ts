@@ -70,6 +70,33 @@ export interface CreditCard {
 }
 
 /**
+ * A purchase on a credit card account converted to fixed monthly installments. The purchase itself
+ * is recorded as a normal expense (so the shared balance reflects it right away, like any other
+ * charge), and this plan says how much of it is billed each cycle instead of all at once: the
+ * card's own bill line excludes its outstanding principal, and this shows up as its own "Needed
+ * this month" line for just that month's installment, the same way a loan installment does.
+ */
+export interface CardEmi {
+  id: number;
+  accountId: number;
+  /** Which physical card this was charged to, for an account that shares its balance across more than one. */
+  cardId?: number | null;
+  name: string;
+  principal: number;
+  returnedAmount: number;
+  interestRate?: number | null; // annual percentage, charged monthly on the outstanding principal
+  termMonths: number;
+  installmentAmount: number;
+  paymentDay?: number | null;
+  nextDueDate?: string | null;
+  interestPaid?: number | null;
+  status: "active" | "fully_paid";
+  isActive: boolean | number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
  * One account as shown in the balances card on Home, with the loan details it needs for loans.
  */
 export interface AccountBalanceRow {

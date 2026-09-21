@@ -8,6 +8,7 @@ import BudgetService from './BudgetService';
 import SettingsService from './SettingsService';
 import RecurringService from './RecurringService';
 import CardService from './CardService';
+import CardEmiService from './CardEmiService';
 
 // Re-export the DatabaseConnector and all services for easy access
 export { default as DatabaseConnector } from './DatabaseConnector';
@@ -19,6 +20,7 @@ export { default as BudgetService, type BudgetSummary } from './BudgetService';
 export { default as SettingsService } from './SettingsService';
 export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine } from './RecurringService';
 export { default as CardService } from './CardService';
+export { default as CardEmiService } from './CardEmiService';
 
 /**
  * Service Factory - provides easy access to all services with a single instance
@@ -33,6 +35,7 @@ export class ServiceFactory {
   private static _settingsService: SettingsService;
   private static _recurringService: RecurringService;
   private static _cardService: CardService;
+  private static _cardEmiService: CardEmiService;
 
   /**
    * Get AccountService instance
@@ -115,6 +118,16 @@ export class ServiceFactory {
   }
 
   /**
+   * Get CardEmiService instance
+   */
+  static getCardEmiService(): CardEmiService {
+    if (!this._cardEmiService) {
+      this._cardEmiService = new CardEmiService();
+    }
+    return this._cardEmiService;
+  }
+
+  /**
    * Get all services at once
    */
   static getAllServices() {
@@ -127,6 +140,7 @@ export class ServiceFactory {
       settingsService: this.getSettingsService(),
       recurringService: this.getRecurringService(),
       cardService: this.getCardService(),
+      cardEmiService: this.getCardEmiService(),
     };
   }
 
@@ -142,6 +156,7 @@ export class ServiceFactory {
     this._settingsService = undefined as any;
     this._recurringService = undefined as any;
     this._cardService = undefined as any;
+    this._cardEmiService = undefined as any;
   }
 }
 
@@ -154,6 +169,7 @@ export const getBudgetService = () => ServiceFactory.getBudgetService();
 export const getSettingsService = () => ServiceFactory.getSettingsService();
 export const getRecurringService = () => ServiceFactory.getRecurringService();
 export const getCardService = () => ServiceFactory.getCardService();
+export const getCardEmiService = () => ServiceFactory.getCardEmiService();
 
 /**
  * Database utility functions
@@ -191,7 +207,10 @@ export class DatabaseUtils {
 
       // Record recurring items set to post by themselves that have fallen due since the last run
       ServiceFactory.getRecurringService().postDue();
-      
+
+      // Move each credit card EMI on to its next unbilled installment once its due date has passed
+      ServiceFactory.getCardEmiService().advanceDueEmis();
+
       console.log('Database services initialized successfully');
     } catch (error) {
       console.error('Error initializing database services:', error);
