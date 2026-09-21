@@ -23,8 +23,8 @@ class TransactionService {
     const now = new Date().toISOString();
     
     const result = this.db.runSync(
-      `INSERT INTO transactions (profileId, amount, type, category, description, date, paymentMethod, accountId, priority, createdAt, updatedAt) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO transactions (profileId, amount, type, category, description, date, paymentMethod, accountId, cardId, priority, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         transaction.profileId,
         transaction.amount,
@@ -34,6 +34,7 @@ class TransactionService {
         transaction.date,
         transaction.paymentMethod,
         transaction.accountId || null,
+        transaction.cardId || null,
         transaction.priority || null,
         now,
         now
@@ -487,6 +488,10 @@ class TransactionService {
         if (updates.accountId !== undefined) {
           fields.push('accountId = ?');
           values.push(updates.accountId);
+        }
+        if (updates.cardId !== undefined) {
+          fields.push('cardId = ?');
+          values.push(updates.cardId);
         }
         if (updates.priority !== undefined) {
           fields.push('priority = ?');
