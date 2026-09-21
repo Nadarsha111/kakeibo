@@ -12,14 +12,15 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { getAccountService, getCardService, getProfileService } from "../../database";
-import { Account, CreditCard, Profile } from "../../types";
+import { getAccountService, getCardEmiService, getCardService, getProfileService } from "../../database";
+import { Account, CardEmi, CreditCard, Profile } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import LoanPaymentModal from "../../components/LoanPaymentModal";
 import CreditLimitModal from "../../components/CreditLimitModal";
 import ManageCardsModal from "../../components/ManageCardsModal";
+import AddCardEmiScreen from "../../components/AddCardEmiScreen";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 import { useTabBarInset } from '../../components/PebbleTabBar';
@@ -66,6 +67,8 @@ export default function AccountsScreen() {
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [cardsAccount, setCardsAccount] = useState<Account | null>(null);
   const [cardsByAccountId, setCardsByAccountId] = useState<Map<number, CreditCard[]>>(new Map());
+  const [emiAccount, setEmiAccount] = useState<Account | null>(null);
+  const [emisByAccountId, setEmisByAccountId] = useState<Map<number, CardEmi[]>>(new Map());
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -129,6 +132,9 @@ export default function AccountsScreen() {
 
       const creditCardIds = allAccountsData.filter((a) => a.type === 'credit_card').map((a) => a.id);
       setCardsByAccountId(getCardService().getCardsForAccounts(creditCardIds));
+
+      const cardEmiService = getCardEmiService();
+      setEmisByAccountId(new Map(creditCardIds.map((id) => [id, cardEmiService.getEmisForAccount(id)])));
     } catch (error) {
       console.error("Error loading accounts/loans:", error);
     }
@@ -346,9 +352,52 @@ export default function AccountsScreen() {
     </View>
   );
 
+  // A purchase converted to EMI bills its own fixed installment each month instead of all at once.
+  const renderEmis = (emis: CardEmi[]) => (
+    <View style={{ marginTop: 8 }}>
+      {emis.map((emi) => {
+        const outstanding = Math.max(0, (emi.principal || 0) - (emi.returnedAmount || 0));
+        return (
+          <View key={emi.id} style={styles.emiRow}>
+            <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
+              {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""} · ${formatCurrency(outstanding)} left`}
+            </Text>
+            <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
+              <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        );
+      })}
+    </View>
+  );
+
+  const handleDeleteEmi = (emi: CardEmi) => {
+    Alert.alert(
+      "Delete EMI",
+      `Are you sure you want to delete "${emi.name}"? The purchase itself stays in your spending history; only this installment plan is removed.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            try {
+              getCardEmiService().deleteEmi(emi.id);
+              loadData();
+            } catch (error) {
+              console.error("Error deleting card EMI:", error);
+              Alert.alert("Error", "Failed to delete the EMI.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderAccountItem = ({ item: account }: { item: Account }) => {
     const isSelected = selectedAccountId === account.id;
     const cards = cardsByAccountId.get(account.id) ?? [];
+    const emis = emisByAccountId.get(account.id) ?? [];
     return (
       <TouchableOpacity
         style={styles.accountCard}
@@ -389,6 +438,7 @@ export default function AccountsScreen() {
         {account.type === 'credit_card' && cards.length === 0 && !account.billDay && !!account.payAtMonthEnd && (
           <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
         )}
+        {account.type === 'credit_card' && emis.length > 0 && renderEmis(emis)}
         {isSelected && (
           <View style={styles.cardActions}>
             <TouchableOpacity
@@ -425,6 +475,15 @@ export default function AccountsScreen() {
                 <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>
                   {cards.length > 0 ? "Cards" : "Split Cards"}
                 </Text>
+              </TouchableOpacity>
+            )}
+            {account.type === 'credit_card' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => setEmiAccount(account)}
+              >
+                <MaterialCommunityIcons name="calendar-clock-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Add EMI</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -802,6 +861,14 @@ export default function AccountsScreen() {
         onChanged={loadData}
       />
 
+      {/* Add Card EMI Modal */}
+      <AddCardEmiScreen
+        visible={emiAccount !== null}
+        account={emiAccount}
+        onClose={() => setEmiAccount(null)}
+        onAdded={loadData}
+      />
+
       {/* Installment Loan Payment Modal */}
       <LoanPaymentModal
         visible={paymentLoan !== null}
@@ -1045,6 +1112,12 @@ const createStyles = (theme: any) =>
       fontSize: 14,
       fontWeight: '600',
       color: theme.colors.text,
+    },
+    emiRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 4,
     },
     progressContainer: {
       flexDirection: 'row',

@@ -103,6 +103,30 @@ class DatabaseConnector {
         );
       `);
 
+      // Credit card EMIs: a purchase on the card converted to fixed monthly installments. The
+      // purchase itself is a normal expense transaction (below), so the shared balance already
+      // reflects it; this plan just says how much of it bills each cycle instead of all at once.
+      this.db.execSync(`
+        CREATE TABLE IF NOT EXISTS card_emis (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          accountId INTEGER NOT NULL REFERENCES accounts(id),
+          cardId INTEGER REFERENCES credit_cards(id),
+          name TEXT NOT NULL,
+          principal REAL NOT NULL,
+          returnedAmount REAL NOT NULL DEFAULT 0,
+          interestRate REAL,
+          termMonths INTEGER NOT NULL,
+          installmentAmount REAL NOT NULL,
+          paymentDay INTEGER,
+          nextDueDate TEXT,
+          interestPaid REAL NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'fully_paid')),
+          isActive INTEGER NOT NULL DEFAULT 1,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+      `);
+
       // Create transactions table
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS transactions (
