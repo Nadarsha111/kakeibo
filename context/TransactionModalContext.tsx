@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { Account, Transaction } from "../types";
-import AddTransactionScreen from "../components/AddTransactionScreen";
+import AddTransactionModal from "../components/modals/AddTransactionModal";
 
 interface ModalProps {
   transactionToEdit?: Transaction | null;
@@ -45,7 +45,7 @@ export const TransactionModalProvider = ({
   return (
     <TransactionModalContext.Provider value={{ openModal, closeModal }}>
       {children}
-      <AddTransactionScreen
+      <AddTransactionModal
         visible={isVisible}
         onClose={closeModal}
         onTransactionAdded={closeModal} // Closes modal on success

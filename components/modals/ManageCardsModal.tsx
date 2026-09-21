@@ -11,9 +11,9 @@ import {
   Switch,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { getCardService } from '../database';
-import { Account, CreditCard } from '../types';
-import { useTheme } from '../context/ThemeContext';
+import { getCardService } from '../../database';
+import { Account, CreditCard } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
 
 interface ManageCardsModalProps {
   visible: boolean;

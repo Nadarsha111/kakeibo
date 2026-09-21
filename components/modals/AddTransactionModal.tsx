@@ -14,12 +14,12 @@ import {
   getAccountService,
   getTransactionService,
   getCardService,
-} from "../database";
-import { Category, Account, CreditCard, Transaction } from "../types";
-import { useTheme } from "../context/ThemeContext";
-import { useSettings } from "../context/SettingsContext";
+} from "../../database";
+import { Category, Account, CreditCard, Transaction } from "../../types";
+import { useTheme } from "../../context/ThemeContext";
+import { useSettings } from "../../context/SettingsContext";
 
-interface AddTransactionScreenProps {
+interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   onTransactionAdded: () => void;
@@ -29,7 +29,7 @@ interface AddTransactionScreenProps {
   initialFromAccount?: Account | null;
 }
 
-export default function AddTransactionScreen({
+export default function AddTransactionModal({
   visible,
   onClose,
   onTransactionAdded,
@@ -37,7 +37,7 @@ export default function AddTransactionScreen({
   loanForRepayment,
   initialType,
   initialFromAccount,
-}: AddTransactionScreenProps) {
+}: AddTransactionModalProps) {
   const { theme } = useTheme();
   const { selectedProfileId } = useSettings();
   const styles = createStyles(theme);

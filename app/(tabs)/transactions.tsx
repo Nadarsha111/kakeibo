@@ -5,6 +5,7 @@ import { getTransactionService, getAccountService } from '../../database';
 import { Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
+import { formatShortDate } from '../../utils/format';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
 import { useTransactionModal } from '../../context/TransactionModalContext';
 import { useTabBarInset } from '../../components/PebbleTabBar';
@@ -100,10 +101,6 @@ export default function TransactionsScreen() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
   const getFilteredTransactions = () => {
     if (selectedFilter === 'All') return transactions;
     return transactions.filter(t => t.type === selectedFilter.toLowerCase());
@@ -171,7 +168,7 @@ export default function TransactionsScreen() {
             <Text style={styles.transactionDescription}>
               {item.description || item.paymentMethod.replace('_', ' ')}
             </Text>
-            <Text style={styles.transactionDate}>{formatDate(item.date)}</Text>
+            <Text style={styles.transactionDate}>{formatShortDate(item.date)}</Text>
           </View>
         </View>
       </View>

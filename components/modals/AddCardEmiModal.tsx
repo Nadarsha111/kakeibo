@@ -9,13 +9,13 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { getCardEmiService, getCardService, getCategoryService } from '../database';
-import { Account, Category, CreditCard } from '../types';
-import { useTheme } from '../context/ThemeContext';
-import { useSettings } from '../context/SettingsContext';
-import { addMonths, isValidDate, monthlyPayment, totalInterest } from '../utils/loanMath';
+import { getCardEmiService, getCardService, getCategoryService } from '../../database';
+import { Account, Category, CreditCard } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
+import { addMonths, isValidDate, monthlyPayment, totalInterest } from '../../utils/loanMath';
 
-interface AddCardEmiScreenProps {
+interface AddCardEmiModalProps {
   visible: boolean;
   account: Account | null;
   onClose: () => void;
@@ -27,7 +27,7 @@ interface AddCardEmiScreenProps {
  * the shared balance right away like any other charge, but bills as a fixed amount each month
  * instead of all at once (see CardEmiService and RecurringService.getNeededThisMonth).
  */
-export default function AddCardEmiScreen({ visible, account, onClose, onAdded }: AddCardEmiScreenProps) {
+export default function AddCardEmiModal({ visible, account, onClose, onAdded }: AddCardEmiModalProps) {
   const { theme } = useTheme();
   const { formatCurrency } = useSettings();
   const styles = createStyles(theme);
@@ -235,7 +235,7 @@ export default function AddCardEmiScreen({ visible, account, onClose, onAdded }:
               onChangeText={setInstallmentOverride}
               placeholder={
                 installmentPlan
-                  ? `Monthly Installment (calculated: ${installmentPlan.payment.toFixed(2)})`
+                  ? `Monthly Installment (calculated: ${formatCurrency(installmentPlan.payment)})`
                   : 'Monthly Installment (calculated from the above)'
               }
               keyboardType="decimal-pad"

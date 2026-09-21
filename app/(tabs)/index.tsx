@@ -205,10 +205,6 @@ export default function OverviewScreen() {
     }
   };
 
-  // const formatCurrency = (amount: number) => {
-  //   return SettingsManager.formatCurrency(amount);
-  // };
-
   const renderWeekSummary = () => {
     const net = data.weeklyIncome - data.weeklyExpenses;
     const tiles = [

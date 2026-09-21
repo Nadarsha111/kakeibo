@@ -5,7 +5,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { getBudgetService, getAccountService, BudgetSummary } from '../../database';
-import AddEditBudgetModal from '../../components/AddEditBudgetModal';
+import AddEditBudgetModal from '../../components/modals/AddEditBudgetModal';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 
 export default function BudgetScreen() {
