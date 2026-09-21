@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
   Modal,
+  Switch,
 } from 'react-native';
 import { getAccountService, getTransactionService } from '../database';
 import { Account } from '../types';
@@ -20,6 +21,8 @@ interface AddAccountScreenProps {
   onClose: () => void;
   onAccountAdded: () => void;
   profileId?: number | 'all';
+  /** When set, the form edits this (non-loan) account instead of adding one. onAccountAdded fires after the save. */
+  account?: Account | null;
 }
 
 export default function AddAccountScreen({
@@ -27,6 +30,7 @@ export default function AddAccountScreen({
   onClose,
   onAccountAdded,
   profileId,
+  account,
 }: AddAccountScreenProps) {
   const { theme } = useTheme();
   const { formatCurrency } = useSettings();
@@ -39,6 +43,8 @@ export default function AddAccountScreen({
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
+  const [billDay, setBillDay] = useState('');
+  const [payAtMonthEnd, setPayAtMonthEnd] = useState(false);
 
   // Loan-specific state
   const [isLending, setIsLending] = useState(true);
@@ -56,6 +62,22 @@ export default function AddAccountScreen({
   // Account that receives the borrowed cash (or pays out the lent cash); null records the debt only
   const [fundingAccountId, setFundingAccountId] = useState<number | null>(null);
   const [fundingAccounts, setFundingAccounts] = useState<Account[]>([]);
+
+  const isEditing = !!account;
+
+  useEffect(() => {
+    if (!visible || !account) return;
+    setName(account.name);
+    setType(account.type);
+    // A credit card stores what is owed as a negative balance; the form shows it as a positive amount
+    setBalance(String(account.type === 'credit_card' ? Math.abs(account.balance) : account.balance));
+    setCurrency(account.currency);
+    setBankName(account.bankName ?? '');
+    setAccountNumber(account.accountNumber ?? '');
+    setCreditLimit(account.creditLimit ? String(account.creditLimit) : '');
+    setBillDay(account.billDay ? String(account.billDay) : '');
+    setPayAtMonthEnd(!!account.payAtMonthEnd);
+  }, [visible, account?.id]);
 
   useEffect(() => {
     if (!visible || type !== 'loan' || !profileId || profileId === 'all') return;
@@ -82,6 +104,8 @@ export default function AddAccountScreen({
     setBankName('');
     setAccountNumber('');
     setCreditLimit('');
+    setBillDay('');
+    setPayAtMonthEnd(false);
     // Reset loan fields
     setIsLending(true);
     setLoanCounterpartyName('');
@@ -143,9 +167,32 @@ export default function AddAccountScreen({
         Alert.alert('Error', 'Please enter a valid credit limit.');
         return;
       }
+      if (type === 'credit_card' && billDay.trim() && !(Number.isInteger(Number(billDay)) && Number(billDay) >= 1 && Number(billDay) <= 31)) {
+        Alert.alert('Error', 'Enter the bill day as a day of the month, from 1 to 31.');
+        return;
+      }
     }
 
     try {
+      if (account) {
+        getAccountService().updateAccount(account.id, {
+          name: name.trim(),
+          balance: type === 'credit_card' ? 0 - Math.abs(parseFloat(balance)) : parseFloat(balance),
+          currency: currency.trim() || 'USD',
+          // null clears the value; undefined would leave the old one in place
+          bankName: bankName.trim() || null,
+          accountNumber: accountNumber.trim() || null,
+          ...(type === 'credit_card' && {
+            creditLimit: creditLimit.trim() ? parseFloat(creditLimit) : null,
+            billDay: billDay.trim() ? Number(billDay) : null,
+            payAtMonthEnd,
+          }),
+        });
+        onAccountAdded();
+        onClose();
+        return;
+      }
+
       if (!profileId || profileId === 'all') {
         Alert.alert('Error', 'A profile must be selected to add an account.');
         return;
@@ -183,6 +230,7 @@ export default function AddAccountScreen({
           loanLentDate: new Date().toISOString().split('T')[0],
           loanExpectedReturnDate: loanExpectedReturnDate.trim() || undefined,
           description: loanDescription.trim() || undefined,
+          payAtMonthEnd: !isLending && payAtMonthEnd,
           ...installmentFields,
         };
       } else {
@@ -194,6 +242,8 @@ export default function AddAccountScreen({
           balance: type === 'credit_card' ? 0 - Math.abs(parseFloat(balance)) : parseFloat(balance),
           currency: currency.trim() || 'USD',
           creditLimit: type === 'credit_card' && creditLimit.trim() ? parseFloat(creditLimit) : undefined,
+          billDay: type === 'credit_card' && billDay.trim() ? Number(billDay) : undefined,
+          payAtMonthEnd: type === 'credit_card' && payAtMonthEnd,
           bankName: bankName.trim() || undefined,
           accountNumber: accountNumber.trim() || undefined,
           isActive: true,
@@ -209,8 +259,8 @@ export default function AddAccountScreen({
       onAccountAdded();
       onClose();
     } catch (error) {
-      console.error('Error adding account:', error);
-      Alert.alert('Error', 'Failed to add account. Please try again.');
+      console.error('Error saving account:', error);
+      Alert.alert('Error', `Failed to ${isEditing ? 'save' : 'add'} account. Please try again.`);
     }
   };
 
@@ -259,31 +309,33 @@ export default function AddAccountScreen({
           <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add Account</Text>
+          <Text style={styles.headerTitle}>{isEditing ? 'Edit Account' : 'Add Account'}</Text>
           <TouchableOpacity onPress={handleSubmit} style={styles.saveButton}>
             <Text style={styles.saveButtonText}>Save</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.content}>
-          {/* Account Type */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Account Type</Text>
-            <View style={styles.typeGrid}>
-              {accountTypes.map((accountType) => (
-                <TouchableOpacity
-                  key={accountType}
-                  style={[styles.typeCard, type === accountType && styles.typeCardActive]}
-                  onPress={() => setType(accountType)}
-                >
-                  <Text style={styles.typeEmoji}>{getAccountTypeEmoji(accountType)}</Text>
-                  <Text style={[styles.typeLabel, type === accountType && styles.typeLabelActive]}>
-                    {getAccountTypeLabel(accountType)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          {/* Account Type (fixed once the account exists) */}
+          {!isEditing && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Account Type</Text>
+              <View style={styles.typeGrid}>
+                {accountTypes.map((accountType) => (
+                  <TouchableOpacity
+                    key={accountType}
+                    style={[styles.typeCard, type === accountType && styles.typeCardActive]}
+                    onPress={() => setType(accountType)}
+                  >
+                    <Text style={styles.typeEmoji}>{getAccountTypeEmoji(accountType)}</Text>
+                    <Text style={[styles.typeLabel, type === accountType && styles.typeLabelActive]}>
+                      {getAccountTypeLabel(accountType)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          </View>
+          )}
           
           {type === 'loan' ? (
             <>
@@ -419,6 +471,24 @@ export default function AddAccountScreen({
                 />
               </View>
 
+              {!isLending && (
+                <View style={styles.section}>
+                  <View style={styles.switchRow}>
+                    <View style={styles.switchText}>
+                      <Text style={styles.sectionTitle}>I pay this at month end</Text>
+                      <Text style={styles.helperText}>
+                        For a loan due early next month that you pay from your month-end salary: it counts as money needed this month.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={payAtMonthEnd}
+                      onValueChange={setPayAtMonthEnd}
+                      trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                    />
+                  </View>
+                </View>
+              )}
+
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
                   {isLending ? "Paid From Account" : "Deposit Into Account"}
@@ -453,7 +523,7 @@ export default function AddAccountScreen({
                   value={name}
                   onChangeText={setName}
                   placeholder="e.g., Main Checking, Chase Savings"
-                  autoFocus
+                  autoFocus={!isEditing}
                 />
               </View>
 
@@ -498,6 +568,37 @@ export default function AddAccountScreen({
                   <Text style={styles.helperText}>
                     Used to show how much of the limit you have used.
                   </Text>
+                </View>
+              )}
+
+              {type === 'credit_card' && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Bill Day (Optional)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={billDay}
+                    onChangeText={setBillDay}
+                    placeholder="Day of the month the bill is generated, e.g., 22"
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    placeholderTextColor={theme.colors.textSecondary}
+                  />
+                  <Text style={styles.helperText}>
+                    What you owe on this card is added to "Money needed this month" when this day falls before the month ends.
+                  </Text>
+                  <View style={[styles.switchRow, { marginTop: 20 }]}>
+                    <View style={styles.switchText}>
+                      <Text style={styles.sectionTitle}>I pay this at month end</Text>
+                      <Text style={styles.helperText}>
+                        The bill is due early next month (after the grace period) but you pay it from your month-end salary. It stays in "Money needed this month" after the bill is generated, until it is paid.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={payAtMonthEnd}
+                      onValueChange={setPayAtMonthEnd}
+                      trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                    />
+                  </View>
                 </View>
               )}
 
@@ -663,6 +764,15 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
       marginTop: 8,
       fontStyle: 'italic',
+    },
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    switchText: {
+      flex: 1,
     },
     loanTypeContainer: {
       flexDirection: 'row',

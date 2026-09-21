@@ -45,6 +45,9 @@ const outstandingOf = (loan: Account) =>
 const loanRank = (loan: Account) =>
   ({ overdue: 0, active: 1, partially_paid: 1, fully_paid: 2 } as Record<string, number>)[loan.loanStatus || "active"] ?? 1;
 
+const ordinalSuffix = (day: number) =>
+  day % 100 >= 11 && day % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ?? "th";
+
 export default function AccountsScreen() {
   const tabInset = useTabBarInset();
   const { theme } = useTheme();
@@ -59,6 +62,7 @@ export default function AccountsScreen() {
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
   const [limitAccount, setLimitAccount] = useState<Account | null>(null);
+  const [editAccount, setEditAccount] = useState<Account | null>(null);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -169,26 +173,57 @@ export default function AccountsScreen() {
     setPaymentLoan(loanAccount);
   };
 
+  // Whether a bill falling due next month is counted in this month's "Money needed"
+  const togglePayAtMonthEnd = (account: Account) => {
+    try {
+      getAccountService().updateAccount(account.id, { payAtMonthEnd: !account.payAtMonthEnd });
+      loadData();
+    } catch (error) {
+      console.error("Error updating month-end payment:", error);
+      Alert.alert("Error", "Failed to update account");
+    }
+  };
+
+  const deleteAccount = (account: Account, deleteTransactions: boolean) => {
+    try {
+      getAccountService().deleteAccount(account.id, { deleteTransactions });
+      loadData();
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      Alert.alert("Error", "Failed to delete account");
+    }
+  };
+
   const handleDeleteAccount = (account: Account) => {
+    let transactionCount = 0;
+    try {
+      transactionCount = getAccountService().getTransactionCount(account.id);
+    } catch (error) {
+      console.error("Error counting transactions:", error);
+    }
+
+    // Nothing recorded against it, so there is no history to decide about
+    if (transactionCount === 0) {
+      Alert.alert(
+        "Delete Account",
+        `Are you sure you want to delete "${account.name}"? This action cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => deleteAccount(account, false) },
+        ]
+      );
+      return;
+    }
+
     Alert.alert(
       "Delete Account",
-      `Are you sure you want to delete "${account.name}"? This action cannot be undone.`,
+      `"${account.name}" has ${transactionCount} ${transactionCount === 1 ? "transaction" : "transactions"}.\n\n` +
+        "Keep History removes the account but leaves its transactions in your spending history and reports.\n\n" +
+        "Delete Everything also permanently deletes those transactions.",
       [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            try {
-              const accountService = getAccountService();
-              accountService.deleteAccount(account.id);
-              loadData();
-            } catch (error) {
-              console.error("Error deleting account:", error);
-              Alert.alert("Error", "Failed to delete account");
-            }
-          },
-        },
+        { text: "Keep History", onPress: () => deleteAccount(account, false) },
+        { text: "Delete Everything", style: "destructive", onPress: () => deleteAccount(account, true) },
       ]
     );
   };
@@ -283,6 +318,12 @@ export default function AccountsScreen() {
     );
   };
 
+  const renderBillDay = (account: Account) => (
+    <Text style={[styles.accountType, { marginTop: 8 }]}>
+      {`Bill on the ${account.billDay}${ordinalSuffix(account.billDay || 0)} of each month${account.payAtMonthEnd ? " · paid at month end" : ""}`}
+    </Text>
+  );
+
   const renderAccountItem = ({ item: account }: { item: Account }) => {
     const isSelected = selectedAccountId === account.id;
     return (
@@ -320,8 +361,19 @@ export default function AccountsScreen() {
           </View>
         </View>
         {account.type === 'credit_card' && (account.creditLimit || 0) > 0 && renderCardUsage(account)}
+        {account.type === 'credit_card' && !!account.billDay && renderBillDay(account)}
+        {account.type === 'credit_card' && !account.billDay && !!account.payAtMonthEnd && (
+          <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
+        )}
         {isSelected && (
           <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.cardActionButton}
+              onPress={() => setEditAccount(account)}
+            >
+              <MaterialCommunityIcons name="pencil-outline" size={20} color={theme.colors.primary} />
+              <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Edit</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.cardActionButton}
               onPress={() => handleDeleteAccount(account)}
@@ -449,6 +501,10 @@ export default function AccountsScreen() {
           </View>
         )}
 
+        {!isLendingLoan(loanAccount) && !!loanAccount.payAtMonthEnd && loanAccount.loanStatus !== 'fully_paid' && (
+          <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
+        )}
+
         <View style={styles.loanDateSection}>
           <Text style={styles.loanDateLabel}>
             Date: {new Date(loanAccount.loanLentDate || '').toLocaleDateString()}
@@ -471,6 +527,21 @@ export default function AccountsScreen() {
               <MaterialCommunityIcons name="delete-outline" size={20} color={theme.colors.error} />
               <Text style={[styles.cardActionButtonText, { color: theme.colors.error }]}>Delete</Text>
             </TouchableOpacity>
+            {!isLendingLoan(loanAccount) && loanAccount.loanStatus !== 'fully_paid' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => togglePayAtMonthEnd(loanAccount)}
+              >
+                <MaterialCommunityIcons
+                  name={loanAccount.payAtMonthEnd ? "calendar-check" : "calendar-blank-outline"}
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>
+                  {loanAccount.payAtMonthEnd ? "Month-end pay: on" : "Month-end pay: off"}
+                </Text>
+              </TouchableOpacity>
+            )}
             {loanAccount.loanStatus !== 'fully_paid' && (
               <TouchableOpacity
                 style={styles.cardActionButton}
@@ -672,6 +743,14 @@ export default function AccountsScreen() {
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
       />
 
+      {/* Edit Account Modal */}
+      <AddAccountScreen
+        visible={editAccount !== null}
+        account={editAccount}
+        onClose={() => setEditAccount(null)}
+        onAccountAdded={loadData}
+      />
+
       {/* Credit Limit Modal */}
       <CreditLimitModal
         visible={limitAccount !== null}
@@ -804,6 +883,7 @@ const createStyles = (theme: any) =>
       borderTopColor: theme.colors.border,
       flexDirection: 'row',
       justifyContent: 'flex-end',
+      flexWrap: 'wrap',
       gap: 8,
     },
     cardActionButton: {

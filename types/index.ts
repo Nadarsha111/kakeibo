@@ -24,6 +24,10 @@ export interface Account {
   bankName?: string | null;
   accountNumber?: string | null;
   creditLimit?: number | null; // credit cards only
+  billDay?: number | null; // credit cards only: day of the month the bill is due (1-31)
+  // Credit cards and loans you owe: the bill falls due next month (grace period, early-month due
+  // date) but is paid from the month-end salary, so it counts as money needed this month
+  payAtMonthEnd?: boolean | number | null;
   isActive: boolean | number; // SQLite uses 1/0 for boolean
   // Loan-specific fields
   isLending?: boolean | number | null;

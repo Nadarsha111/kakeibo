@@ -7,6 +7,7 @@ import {
   Pressable,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { getAccountService, getTransactionService } from "../../database";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
@@ -16,7 +17,7 @@ import DonutChart from "../../components/DonutChart";
 import TrendChart from "../../components/TrendChart";
 import { useTabBarInset } from '../../components/PebbleTabBar';
 import NeededThisMonthCard from '../../components/NeededThisMonthCard';
-import { groupAccountBalances, type LoanBalanceRow } from '../../utils/accountBalances';
+import { groupAccountBalances, type AccountCategory, type BalanceCategory, type LoanBalanceRow } from '../../utils/accountBalances';
 import { formatDay } from '../../utils/recurring';
 
 interface DashboardData {
@@ -36,6 +37,17 @@ interface DashboardData {
 
 const TREND_MONTHS = 6;
 
+// Loans on the Account Balances card: this many per group until expanded
+const LOAN_ROWS_SHOWN = 3;
+
+const ACCOUNT_CATEGORY_EMOJI: Record<AccountCategory, string> = {
+  checking: '💳',
+  cash: '💵',
+  savings: '🏦',
+  investment: '📈',
+  credit_card: '💰',
+};
+
 export default function OverviewScreen() {
   const tabInset = useTabBarInset();
   const { theme } = useTheme();
@@ -51,6 +63,8 @@ export default function OverviewScreen() {
     monthlyTrend: [],
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [loansExpanded, setLoansExpanded] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
   // Reload data when screen comes into focus
   useFocusEffect(
@@ -195,6 +209,50 @@ export default function OverviewScreen() {
   //   return SettingsManager.formatCurrency(amount);
   // };
 
+  const renderWeekSummary = () => {
+    const net = data.weeklyIncome - data.weeklyExpenses;
+    const tiles = [
+      { key: "income", label: "Income", amount: data.weeklyIncome, color: theme.colors.success, icon: "arrow-bottom-left" as const },
+      { key: "expenses", label: "Expenses", amount: data.weeklyExpenses, color: theme.colors.error, icon: "arrow-top-right" as const },
+      { key: "net", label: "Net", amount: net, color: net >= 0 ? theme.colors.success : theme.colors.error, icon: "swap-vertical" as const },
+    ];
+
+    return (
+      <View className="px-5">
+        <Text className="text-xs uppercase mb-3 ml-1" style={{ color: theme.colors.textSecondary }}>
+          This week
+        </Text>
+        <View className="flex-row" style={{ gap: 12 }}>
+          {tiles.map((tile) => (
+            <View
+              key={tile.key}
+              className="flex-1 rounded-xl p-3.5 border"
+              style={{ backgroundColor: theme.colors.surface, borderColor: theme.colors.border }}
+            >
+              <View
+                className="items-center justify-center rounded-full mb-3"
+                style={{ width: 32, height: 32, backgroundColor: `${tile.color}1F` }}
+              >
+                <MaterialCommunityIcons name={tile.icon} size={18} color={tile.color} />
+              </View>
+              <Text className="text-xs mb-1" style={{ color: theme.colors.textSecondary }}>
+                {tile.label}
+              </Text>
+              <Text
+                className="text-base font-bold"
+                style={{ color: tile.color }}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {formatCurrency(tile.amount)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   const renderWeeklyChart = () => {
     const maxAmount = Math.max(data.weeklyIncome, data.weeklyExpenses);
     const incomeHeight =
@@ -286,65 +344,83 @@ export default function OverviewScreen() {
           borderColor: theme.colors.border,
         }}
       >
-        <Text
-          className="text-lg font-bold mb-5"
-          style={{ color: theme.colors.text }}
-        >
-          Top Categories
-        </Text>
-        <View className="flex-row items-center">
-          <View className="mr-5">
-            <DonutChart
-              slices={data.categorySummary.map((c) => ({ amount: c.amount, color: c.color }))}
-              size={100}
-              strokeWidth={16}
-              centerValue={formatCurrency(total)}
-              centerLabel="Total"
-              centerValueColor={theme.colors.text}
-              centerLabelColor={theme.colors.textSecondary}
-              trackColor={theme.colors.border}
-            />
-          </View>
-          <View className="flex-1">
+        <View className="flex-row justify-between items-baseline mb-4">
+          <Text className="text-lg font-bold" style={{ color: theme.colors.text }}>
+            Top Categories
+          </Text>
+          <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>
+            Spending this month
+          </Text>
+        </View>
+
+        {data.categorySummary.length === 0 ? (
+          <Text
+            className="text-sm text-center py-6"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            No spending recorded this month
+          </Text>
+        ) : (
+          <>
+            <View className="items-center mb-5">
+              <DonutChart
+                slices={data.categorySummary.map((c) => ({ amount: c.amount, color: c.color }))}
+                size={140}
+                strokeWidth={18}
+                centerValue={formatCurrency(total)}
+                centerLabel="Total"
+                centerValueColor={theme.colors.text}
+                centerLabelColor={theme.colors.textSecondary}
+                trackColor={theme.colors.border}
+              />
+            </View>
+
             {data.categorySummary.map((category, index) => {
-              const percentage =
-                total > 0 ? (category.amount / total) * 100 : 0;
+              const percentage = total > 0 ? (category.amount / total) * 100 : 0;
+              const isLast = index === data.categorySummary.length - 1;
               return (
-                <View key={index} className="flex-row items-center mb-2">
+                <View key={category.category} className={isLast ? "" : "mb-4"}>
+                  <View className="flex-row items-center mb-1.5">
+                    <View
+                      className="rounded-full mr-2.5"
+                      style={{ width: 10, height: 10, backgroundColor: category.color }}
+                    />
+                    <Text
+                      className="flex-1 text-sm mr-3"
+                      style={{ color: theme.colors.text }}
+                      numberOfLines={1}
+                    >
+                      {category.category}
+                    </Text>
+                    <Text className="text-sm font-bold" style={{ color: theme.colors.text }}>
+                      {formatCurrency(category.amount)}
+                    </Text>
+                    <Text
+                      className="text-xs text-right"
+                      style={{ color: theme.colors.textSecondary, width: 44 }}
+                    >
+                      {percentage > 0 && percentage < 1 ? "<1%" : `${percentage.toFixed(0)}%`}
+                    </Text>
+                  </View>
+                  {/* Share of the categories shown, in the category's own color */}
                   <View
-                    className="rounded-full mr-2"
-                    style={{
-                      width: 12,
-                      height: 12,
-                      backgroundColor: category.color,
-                    }}
-                  />
-                  <Text
-                    className="flex-1 text-sm"
-                    style={{ color: theme.colors.text }}
+                    className="rounded-full overflow-hidden"
+                    style={{ height: 4, backgroundColor: theme.colors.border }}
                   >
-                    {category.category}
-                  </Text>
-                  <Text
-                    className="text-sm font-bold mr-2"
-                    style={{ color: theme.colors.text }}
-                  >
-                    {formatCurrency(category.amount)}
-                  </Text>
-                  <Text
-                    className="text-xs text-right"
-                    style={{
-                      color: theme.colors.textSecondary,
-                      width: 40,
-                    }}
-                  >
-                    {percentage.toFixed(1)}%
-                  </Text>
+                    <View
+                      className="rounded-full"
+                      style={{
+                        height: 4,
+                        width: `${percentage}%`,
+                        backgroundColor: category.color,
+                      }}
+                    />
+                  </View>
                 </View>
               );
             })}
-          </View>
-        </View>
+          </>
+        )}
       </View>
     );
   };
@@ -425,31 +501,119 @@ export default function OverviewScreen() {
       return loan.detail?.kind === 'dueBack' ? `Due back ${formatDay(loan.detail.dueDate)}` : null;
     };
 
-    const renderLoanRows = (loans: LoanBalanceRow[], color: string) =>
-      loans.map((loan) => {
-        const detail = loanDetail(loan);
-        return (
-          <View
-            key={loan.accountId}
+    const toggleCategory = (type: string) =>
+      setExpandedCategories((previous) => ({ ...previous, [type]: !previous[type] }));
+
+    const renderCategory = (category: BalanceCategory) => {
+      const open = !!expandedCategories[category.type];
+      const balanceColor = (amount: number) => (amount < 0 ? theme.colors.error : theme.colors.text);
+      return (
+        <View key={category.type}>
+          <Pressable
+            onPress={() => toggleCategory(category.type)}
             className="flex-row justify-between items-center py-3 border-b border-opacity-30"
             style={{ borderBottomColor: theme.colors.border }}
           >
-            <View className="flex-1">
-              <Text className="text-sm" style={{ color: theme.colors.text }}>
-                {loan.name}
+            <View className="flex-row items-center flex-1">
+              <Text className="text-lg mr-2">{ACCOUNT_CATEGORY_EMOJI[category.type]}</Text>
+              <Text className="text-sm font-semibold" style={{ color: theme.colors.text }}>
+                {category.label}
               </Text>
-              {detail && (
-                <Text className="text-xs mt-0.5" style={{ color: theme.colors.textSecondary }}>
-                  {detail}
+              <Text className="text-xs ml-1.5" style={{ color: theme.colors.textSecondary }}>
+                ({category.accounts.length})
+              </Text>
+              <MaterialCommunityIcons
+                name={open ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+            </View>
+            <Text className="text-base font-semibold" style={{ color: balanceColor(category.total) }}>
+              {formatCurrency(category.total)}
+            </Text>
+          </Pressable>
+          {open &&
+            category.accounts.map((account) => (
+              <View
+                key={account.accountId}
+                className="flex-row justify-between items-center py-2.5 pl-9 border-b border-opacity-30"
+                style={{ borderBottomColor: theme.colors.border }}
+              >
+                <Text className="text-sm flex-1" style={{ color: theme.colors.textSecondary }}>
+                  {account.name}
+                </Text>
+                <Text className="text-sm" style={{ color: balanceColor(account.closingBalance) }}>
+                  {formatCurrency(account.closingBalance)}
+                </Text>
+              </View>
+            ))}
+        </View>
+      );
+    };
+
+    // Loans show only the biggest few per group; a row for the rest keeps the numbers adding up
+    const collapsibleLoans = (loans: LoanBalanceRow[], noun: string) => {
+      const sorted = [...loans].sort((a, b) => b.outstanding - a.outstanding);
+      const hidden = loansExpanded ? [] : sorted.slice(LOAN_ROWS_SHOWN);
+      return {
+        shown: loansExpanded ? sorted : sorted.slice(0, LOAN_ROWS_SHOWN),
+        toggle:
+          sorted.length > LOAN_ROWS_SHOWN ? (
+            <Pressable
+              key={`toggle-${noun}`}
+              onPress={() => setLoansExpanded(!loansExpanded)}
+              className="flex-row justify-between items-center py-3"
+            >
+              <View className="flex-row items-center flex-1">
+                <Text className="text-sm font-semibold" style={{ color: theme.colors.primary }}>
+                  {loansExpanded ? 'Show less' : `${hidden.length} more`}
+                </Text>
+                <MaterialCommunityIcons
+                  name={loansExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={20}
+                  color={theme.colors.primary}
+                />
+              </View>
+              {!loansExpanded && (
+                <Text className="text-base" style={{ color: theme.colors.textSecondary }}>
+                  {formatCurrency(hidden.reduce((total, loan) => total + loan.outstanding, 0))}
                 </Text>
               )}
+            </Pressable>
+          ) : null,
+      };
+    };
+
+    const renderLoanRows = (loans: LoanBalanceRow[], color: string, noun: string) => {
+      const rows = collapsibleLoans(loans, noun);
+      return [
+        ...rows.shown.map((loan) => {
+          const detail = loanDetail(loan);
+          return (
+            <View
+              key={loan.accountId}
+              className="flex-row justify-between items-center py-3 border-b border-opacity-30"
+              style={{ borderBottomColor: theme.colors.border }}
+            >
+              <View className="flex-1">
+                <Text className="text-sm" style={{ color: theme.colors.text }}>
+                  {loan.name}
+                </Text>
+                {detail && (
+                  <Text className="text-xs mt-0.5" style={{ color: theme.colors.textSecondary }}>
+                    {detail}
+                  </Text>
+                )}
+              </View>
+              <Text className="text-base font-semibold" style={{ color }}>
+                {formatCurrency(loan.outstanding)}
+              </Text>
             </View>
-            <Text className="text-base font-semibold" style={{ color }}>
-              {formatCurrency(loan.outstanding)}
-            </Text>
-          </View>
-        );
-      });
+          );
+        }),
+        rows.toggle,
+      ];
+    };
 
     return (
       <View
@@ -467,29 +631,8 @@ export default function OverviewScreen() {
         </Text>
         {data.monthlyAccountBalances.length > 0 ? (
           <View className="mt-2.5">
-            {groups.accounts.map((account) => (
-              <View
-                key={account.accountId}
-                className="flex-row justify-between items-center py-3 border-b border-opacity-30"
-                style={{ borderBottomColor: theme.colors.border }}
-              >
-                <Text
-                  className="text-sm flex-1"
-                  style={{ color: theme.colors.text }}
-                >
-                  {account.name}
-                </Text>
-                <Text
-                  className="text-base font-semibold"
-                  style={{
-                    color: account.closingBalance < 0 ? theme.colors.error : theme.colors.text,
-                  }}
-                >
-                  {formatCurrency(account.closingBalance)}
-                </Text>
-              </View>
-            ))}
-            {/* Exactly the rows above added together */}
+            {groups.categories.map(renderCategory)}
+            {/* The categories above added together */}
             <View
               className="flex-row justify-between items-center pt-4 mt-2 border-t-2"
               style={{ borderTopColor: theme.colors.primary }}
@@ -521,7 +664,7 @@ export default function OverviewScreen() {
                     <Text className="text-xs mt-2" style={{ color: theme.colors.textSecondary }}>
                       You owe
                     </Text>
-                    {renderLoanRows(groups.youOwe, theme.colors.error)}
+                    {renderLoanRows(groups.youOwe, theme.colors.error, 'owe')}
                   </>
                 )}
                 {groups.owedToYou.length > 0 && (
@@ -529,7 +672,7 @@ export default function OverviewScreen() {
                     <Text className="text-xs mt-3" style={{ color: theme.colors.textSecondary }}>
                       Owed to you
                     </Text>
-                    {renderLoanRows(groups.owedToYou, theme.colors.success)}
+                    {renderLoanRows(groups.owedToYou, theme.colors.success, 'owed')}
                   </>
                 )}
                 {/* Total, plus what is owed to you, minus what you owe */}
@@ -614,106 +757,22 @@ export default function OverviewScreen() {
           </Text>
         </View>
 
-        {/* Quick Summary Cards */}
-        <View className="p-5">
-          <View className="flex-row justify-between">
-            <View
-              className="flex-1 bg-white rounded-xl p-4 mx-1 border"
-              style={{
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.border,
-              }}
-            >
-              <Text
-                className="text-xs mb-2 uppercase"
-                style={{ color: theme.colors.textSecondary }}
-              >
-                Income
-              </Text>
-              <Text
-                className="text-lg font-bold mb-1"
-                style={{ color: theme.colors.success }}
-              >
-                {formatCurrency(data.weeklyIncome)}
-              </Text>
-              <Text
-                className="text-xs"
-                style={{ color: theme.colors.textSecondary }}
-              >
-                This week
-              </Text>
-            </View>
-            <View
-              className="flex-1 bg-white rounded-xl p-4 mx-1 border"
-              style={{
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.border,
-              }}
-            >
-              <Text
-                className="text-xs mb-2 uppercase"
-                style={{ color: theme.colors.textSecondary }}
-              >
-                Expenses
-              </Text>
-              <Text
-                className="text-lg font-bold mb-1"
-                style={{ color: theme.colors.error }}
-              >
-                {formatCurrency(data.weeklyExpenses)}
-              </Text>
-              <Text
-                className="text-xs"
-                style={{ color: theme.colors.textSecondary }}
-              >
-                This week
-              </Text>
-            </View>
-            <View
-              className="flex-1 bg-white rounded-xl p-4 mx-1 border"
-              style={{
-                backgroundColor: theme.colors.surface,
-                borderColor: theme.colors.border,
-              }}
-            >
-              <Text
-                className="text-xs mb-2 uppercase"
-                style={{ color: theme.colors.textSecondary }}
-              >
-                Net
-              </Text>
-              <Text
-                className="text-lg font-bold mb-1"
-                style={{
-                  color:
-                    data.weeklyIncome - data.weeklyExpenses >= 0
-                      ? theme.colors.success
-                      : theme.colors.error,
-                }}
-              >
-                {formatCurrency(data.weeklyIncome - data.weeklyExpenses)}
-              </Text>
-              <Text
-                className="text-xs"
-                style={{ color: theme.colors.textSecondary }}
-              >
-                This week
-              </Text>
-            </View>
-          </View>
+        {/* What has to be paid before the month ends, against what you have */}
+        <View className="pt-5">
+          <NeededThisMonthCard refreshKey={data.totalBalance} />
         </View>
 
-        {/* What has to be paid before the month ends, against what you have */}
-        <NeededThisMonthCard refreshKey={data.totalBalance} />
+        {/* Account Balances */}
+        {renderAccountBalances()}
+
+        {/* This week at a glance */}
+        {renderWeekSummary()}
 
         {/* Weekly Chart */}
         {renderWeeklyChart()}
 
         {/* Monthly Income vs Expense Trend */}
         {renderMonthlyTrend()}
-
-        {/* Account Balances */}
-        {renderAccountBalances()}
 
         {/* Categories Pie Chart */}
         {renderCategoriesPieChart()}

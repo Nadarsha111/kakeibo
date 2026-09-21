@@ -12,14 +12,16 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { router } from 'expo-router';
-import { getAccountService, getProfileService, getRecurringService, type MonthlySummary } from '../../database';
+import { getAccountService, getProfileService, getRecurringService, type MonthlySummary, type NeededLine, type NeededSummary } from '../../database';
 import { NetWorthItem, NetWorthSummary, Profile, RecurringItem } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 import RecurringItemModal from '../../components/RecurringItemModal';
 import MarkPaidModal from '../../components/MarkPaidModal';
-import { FREQUENCIES, dueStatus, daysBetween, monthlyEquivalent } from '../../utils/recurring';
+import MonthEndBadge from '../../components/MonthEndBadge';
+import { describeLine } from '../../components/NeededThisMonthCard';
+import { FREQUENCIES, dueStatus, daysBetween, formatDay, monthlyEquivalent } from '../../utils/recurring';
 
 const RED = '#ef4444';
 const GREEN = '#10b981';
@@ -43,6 +45,7 @@ export default function WorthScreen() {
   const [items, setItems] = useState<RecurringItem[]>([]);
   const [monthly, setMonthly] = useState<MonthlySummary | null>(null);
   const [worth, setWorth] = useState<NetWorthSummary | null>(null);
+  const [needed, setNeeded] = useState<NeededSummary | null>(null);
   const [accountNames, setAccountNames] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
 
@@ -62,6 +65,7 @@ export default function WorthScreen() {
       setItems(recurring.getItems(profileId));
       setMonthly(recurring.getMonthlySummary(profileId));
       setWorth(getAccountService().getNetWorthSummary(profileId));
+      setNeeded(recurring.getNeededThisMonth(profileId));
     } catch (error) {
       console.error('Error loading assets and liabilities:', error);
     }
@@ -184,6 +188,68 @@ export default function WorthScreen() {
 
   const left = monthly?.leftAfterCommitments ?? 0;
 
+  const renderNeededRow = (line: NeededLine) => (
+    <View key={line.key} style={styles.listRow}>
+      <View style={styles.cardText}>
+        <View style={styles.labelRow}>
+          <Text style={[styles.listName, styles.labelText]} numberOfLines={1}>{line.label}</Text>
+          {line.payAtMonthEnd && <MonthEndBadge />}
+        </View>
+        <Text style={[styles.cardSubtitle, line.overdue && { color: RED, fontWeight: '600' }]}>{describeLine(line)}</Text>
+      </View>
+      <Text style={[styles.listAmount, { color: theme.colors.text }]}>{formatCurrency(line.amount)}</Text>
+    </View>
+  );
+
+  const renderNeeded = (summary: NeededSummary) => {
+    const dueNow = summary.lines.filter((line) => !line.payAtMonthEnd);
+    const atMonthEnd = summary.lines.filter((line) => line.payAtMonthEnd);
+    const sum = (lines: NeededLine[]) => lines.reduce((total, line) => total + line.amount, 0);
+    const short = summary.leftOver < 0;
+
+    return (
+      <>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Money needed by {formatDay(summary.monthEnd)}</Text>
+          <Text style={[styles.summaryAmount, { color: summary.total > 0 ? RED : GREEN }]}>{formatCurrency(summary.total)}</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>You have</Text>
+              <Text style={styles.statValue}>{formatCurrency(summary.available)}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>{short ? 'Short by' : 'Left over'}</Text>
+              <Text style={[styles.statValue, { color: short ? RED : GREEN }]}>{formatCurrency(Math.abs(summary.leftOver))}</Text>
+            </View>
+          </View>
+        </View>
+
+        {dueNow.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Due this month</Text>
+              <Text style={styles.sectionTotal}>{formatCurrency(sum(dueNow))}</Text>
+            </View>
+            <View style={styles.listCard}>{dueNow.map(renderNeededRow)}</View>
+          </>
+        )}
+
+        {atMonthEnd.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Paid at month end</Text>
+              <Text style={styles.sectionTotal}>{formatCurrency(sum(atMonthEnd))}</Text>
+            </View>
+            <Text style={styles.sectionNote}>
+              These fall due early next month (a card's grace period, a loan due on the 4th) but are paid from your month-end salary. Turn this on or off for a card in Edit Account, or for a loan on the Accounts tab.
+            </Text>
+            <View style={styles.listCard}>{atMonthEnd.map(renderNeededRow)}</View>
+          </>
+        )}
+      </>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
@@ -205,6 +271,9 @@ export default function WorthScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} colors={[theme.colors.primary]} />
         }
       >
+        {/* Everything counted in "Money needed this month" on Home, with month-end ones set apart */}
+        {needed && needed.lines.length > 0 && renderNeeded(needed)}
+
         {/* Net worth */}
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Net worth</Text>
@@ -539,6 +608,21 @@ const createStyles = (theme: any) =>
     listName: {
       fontSize: 15,
       color: theme.colors.text,
+    },
+    labelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    labelText: {
+      flexShrink: 1,
+    },
+    sectionNote: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      marginTop: -6,
+      marginBottom: 10,
+      lineHeight: 17,
     },
     listAmount: {
       fontSize: 15,

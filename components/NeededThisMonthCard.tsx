@@ -2,12 +2,23 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { getRecurringService, type NeededSummary } from '../database';
+import { getRecurringService, type NeededLine, type NeededSummary } from '../database';
 import { useTheme } from '../context/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
 import { formatDay } from '../utils/recurring';
+import MonthEndBadge from './MonthEndBadge';
 
 const MAX_LINES = 4;
+
+/** When a line falls due, and what kind it is; month-end ones say so, since their due date is next month. */
+export const describeLine = (line: NeededLine) => {
+  let due: string;
+  if (line.overdue) due = `Overdue since ${formatDay(line.dueDate)}`;
+  else if (!line.payAtMonthEnd) due = `Due ${formatDay(line.dueDate)}`;
+  // A card's real due date depends on its grace period, so only the loans show one
+  else due = line.kind === 'card' ? 'Bill paid at month end' : `Due ${formatDay(line.dueDate)}, paid at month end`;
+  return `${due}${line.kind === 'savings' ? ' · savings' : line.kind === 'card' ? ' · credit card' : ''}`;
+};
 
 interface NeededThisMonthCardProps {
   /** Changes whenever the screen reloads its numbers, so this card refreshes with it. */
@@ -59,7 +70,10 @@ export default function NeededThisMonthCard({ refreshKey }: NeededThisMonthCardP
 
   const short = summary.leftOver < 0;
   const shown = summary.lines.slice(0, MAX_LINES);
-  const more = summary.lines.length - shown.length;
+  const hidden = summary.lines.slice(MAX_LINES);
+  const more = hidden.length;
+  const hiddenMonthEnd = hidden.filter((line) => line.payAtMonthEnd).length;
+  const monthEndTotal = summary.lines.reduce((sum, line) => sum + (line.payAtMonthEnd ? line.amount : 0), 0);
 
   return (
     <TouchableOpacity style={styles.card} onPress={open} activeOpacity={0.85}>
@@ -76,22 +90,31 @@ export default function NeededThisMonthCard({ refreshKey }: NeededThisMonthCardP
           ? `still to pay, of ${formatCurrency(summary.monthlyCommitments)} in monthly commitments`
           : `Nothing left to pay this month, out of ${formatCurrency(summary.monthlyCommitments)} in monthly commitments`}
       </Text>
+      {monthEndTotal > 0 && (
+        <Text style={styles.caption}>including {formatCurrency(monthEndTotal)} that falls due next month, paid at month end</Text>
+      )}
 
       {shown.length > 0 && (
         <View style={styles.lines}>
           {shown.map((line) => (
             <View key={line.key} style={styles.line}>
               <View style={styles.lineText}>
-                <Text style={styles.lineLabel} numberOfLines={1}>{line.label}</Text>
+                <View style={styles.labelRow}>
+                  <Text style={[styles.lineLabel, styles.labelText]} numberOfLines={1}>{line.label}</Text>
+                  {line.payAtMonthEnd && <MonthEndBadge />}
+                </View>
                 <Text style={[styles.lineDate, line.overdue && { color: theme.colors.error, fontWeight: '600' }]}>
-                  {line.overdue ? `Overdue since ${formatDay(line.dueDate)}` : `Due ${formatDay(line.dueDate)}`}
-                  {line.kind === 'savings' ? ' · savings' : ''}
+                  {describeLine(line)}
                 </Text>
               </View>
               <Text style={styles.lineAmount}>{formatCurrency(line.amount)}</Text>
             </View>
           ))}
-          {more > 0 && <Text style={styles.more}>+ {more} more</Text>}
+          {more > 0 && (
+            <Text style={styles.more}>
+              + {more} more{hiddenMonthEnd > 0 ? ` (${hiddenMonthEnd} paid at month end)` : ''} · tap to see all
+            </Text>
+          )}
         </View>
       )}
 
@@ -178,6 +201,14 @@ const createStyles = (theme: any) =>
     lineLabel: {
       fontSize: 15,
       color: theme.colors.text,
+    },
+    labelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    labelText: {
+      flexShrink: 1,
     },
     lineDate: {
       fontSize: 12,
