@@ -9,11 +9,12 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { getAccountService, getTransactionService } from '../database';
-import { Account } from '../types';
-import { useTheme } from '../context/ThemeContext';
-import { useSettings } from '../context/SettingsContext';
-import { interestDue, isValidDate, round2 } from '../utils/loanMath';
+import { getAccountService, getTransactionService } from '../../database';
+import { Account } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
+import { interestDue, isValidDate, round2 } from '../../utils/loanMath';
+import { formatDate } from '../../utils/format';
 
 interface LoanPaymentModalProps {
   visible: boolean;
@@ -111,7 +112,7 @@ export default function LoanPaymentModal({ visible, loan, onClose, onPaymentReco
               {loan.loanNextDueDate && (
                 <View style={styles.row}>
                   <Text style={styles.label}>Next due</Text>
-                  <Text style={styles.value}>{new Date(loan.loanNextDueDate).toLocaleDateString()}</Text>
+                  <Text style={styles.value}>{formatDate(loan.loanNextDueDate)}</Text>
                 </View>
               )}
             </View>

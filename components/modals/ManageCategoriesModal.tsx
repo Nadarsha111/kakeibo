@@ -11,20 +11,22 @@ import {
   Modal,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useTheme } from '../context/ThemeContext';
-import { getCategoryService } from '../database';
-import { Category } from '../types';
-import OptionSelector from './OptionSelector';
+import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
+import { getCategoryService } from '../../database';
+import { Category } from '../../types';
+import OptionSelector from '../OptionSelector';
 
-interface ManageCategoriesScreenProps {
+interface ManageCategoriesModalProps {
   visible: boolean;
   onClose: () => void;
 }
 
-export default function ManageCategoriesScreen({ visible, onClose }: ManageCategoriesScreenProps) {
+export default function ManageCategoriesModal({ visible, onClose }: ManageCategoriesModalProps) {
   const { theme, isDark } = useTheme();
+  const { formatCurrency } = useSettings();
   const styles = createStyles(theme);
-  
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -155,7 +157,7 @@ export default function ManageCategoriesScreen({ visible, onClose }: ManageCateg
         <View style={styles.categoryDetails}>
           <Text style={styles.categoryName}>{item.name}</Text>
           {item.budgetLimit && (
-            <Text style={styles.budgetLimit}>Budget: ₹{item.budgetLimit}</Text>
+            <Text style={styles.budgetLimit}>Budget: {formatCurrency(item.budgetLimit)}</Text>
           )}
         </View>
       </View>

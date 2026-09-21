@@ -13,8 +13,8 @@ import { StatusBar } from "expo-status-bar";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import OptionSelector from "../../components/OptionSelector";
-import ManageCategoriesScreen from "../../components/ManageCategoriesScreen";
-import ExportDataScreen from "../../components/ExportDataScreen";
+import ManageCategoriesModal from "../../components/modals/ManageCategoriesModal";
+import ExportDataModal from "../../components/modals/ExportDataModal";
 import { getGoogleSyncService } from "../../services/GoogleSyncService";
 import {
   applyDownloadedUpdate,
@@ -348,13 +348,13 @@ export default function SettingsScreen() {
         />
 
         {/* Manage Categories Screen */}
-        <ManageCategoriesScreen
+        <ManageCategoriesModal
           visible={manageCategoriesVisible}
           onClose={() => setManageCategoriesVisible(false)}
         />
 
         {/* Export Data Screen */}
-        <ExportDataScreen
+        <ExportDataModal
           visible={exportDataVisible}
           onClose={() => setExportDataVisible(false)}
         />

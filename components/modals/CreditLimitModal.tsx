@@ -8,9 +8,9 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { getAccountService } from '../database';
-import { Account } from '../types';
-import { useTheme } from '../context/ThemeContext';
+import { getAccountService } from '../../database';
+import { Account } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
 
 interface CreditLimitModalProps {
   visible: boolean;

@@ -16,11 +16,12 @@ import { getAccountService, getCardEmiService, getCardService, getProfileService
 import { Account, CardEmi, CreditCard, Profile } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
-import AddAccountScreen from "../../components/AddAccountScreen";
-import LoanPaymentModal from "../../components/LoanPaymentModal";
-import CreditLimitModal from "../../components/CreditLimitModal";
-import ManageCardsModal from "../../components/ManageCardsModal";
-import AddCardEmiScreen from "../../components/AddCardEmiScreen";
+import { formatDate } from "../../utils/format";
+import AddAccountModal from "../../components/modals/AddAccountModal";
+import LoanPaymentModal from "../../components/modals/LoanPaymentModal";
+import CreditLimitModal from "../../components/modals/CreditLimitModal";
+import ManageCardsModal from "../../components/modals/ManageCardsModal";
+import AddCardEmiModal from "../../components/modals/AddCardEmiModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 import { useTabBarInset } from '../../components/PebbleTabBar';
@@ -567,7 +568,7 @@ export default function AccountsScreen() {
                     styles.loanAmountValue,
                     loanAccount.loanStatus === 'overdue' && { color: '#ef4444' }
                   ]}>
-                    {new Date(loanAccount.loanNextDueDate).toLocaleDateString()}
+                    {formatDate(loanAccount.loanNextDueDate)}
                   </Text>
                 </View>
               )}
@@ -601,14 +602,14 @@ export default function AccountsScreen() {
 
         <View style={styles.loanDateSection}>
           <Text style={styles.loanDateLabel}>
-            Date: {new Date(loanAccount.loanLentDate || '').toLocaleDateString()}
+            Date: {formatDate(loanAccount.loanLentDate || '')}
           </Text>
           {loanAccount.loanExpectedReturnDate && (
             <Text style={[
               styles.loanDateLabel,
               isOverdue(loanAccount) && loanAccount.loanStatus !== 'fully_paid' && { color: '#ef4444' }
             ]}>
-              Expected: {new Date(loanAccount.loanExpectedReturnDate).toLocaleDateString()}
+              Expected: {formatDate(loanAccount.loanExpectedReturnDate)}
             </Text>
           )}
         </View>
@@ -830,7 +831,7 @@ export default function AccountsScreen() {
       />
 
       {/* Add Account Modal */}
-      <AddAccountScreen
+      <AddAccountModal
         visible={showAddAccount}
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
@@ -838,7 +839,7 @@ export default function AccountsScreen() {
       />
 
       {/* Edit Account Modal */}
-      <AddAccountScreen
+      <AddAccountModal
         visible={editAccount !== null}
         account={editAccount}
         onClose={() => setEditAccount(null)}
@@ -862,7 +863,7 @@ export default function AccountsScreen() {
       />
 
       {/* Add Card EMI Modal */}
-      <AddCardEmiScreen
+      <AddCardEmiModal
         visible={emiAccount !== null}
         account={emiAccount}
         onClose={() => setEmiAccount(null)}
