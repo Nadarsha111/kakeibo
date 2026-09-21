@@ -52,6 +52,24 @@ export interface Account {
 }
 
 /**
+ * One physical card on a credit card account. Most credit cards need nothing beyond the account
+ * itself, but some banks issue two (or more) cards against one shared balance and credit limit,
+ * each generating its own statement on its own day of the month. When an account has cards, its
+ * own billDay/payAtMonthEnd are ignored in favor of each card's own settings, and transactions made
+ * on that physical card are tagged with its id so its own bill can be worked out separately.
+ */
+export interface CreditCard {
+  id: number;
+  accountId: number;
+  name: string;
+  billDay?: number | null;
+  payAtMonthEnd?: boolean | number | null;
+  isActive: boolean | number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
  * One account as shown in the balances card on Home, with the loan details it needs for loans.
  */
 export interface AccountBalanceRow {
@@ -123,6 +141,8 @@ export interface Transaction {
   date: string;
   paymentMethod: "cash" | "credit_card" | "debit_card";
   accountId?: number | null;
+  /** Which physical card this was charged to, for a credit card account that has more than one. */
+  cardId?: number | null;
   priority?: "need" | "want" | null;
   createdAt: string;
   updatedAt: string;

@@ -398,52 +398,59 @@ class RecurringService {
     // A credit card with a bill day and something owed is a bill: what is owed now, due on that day.
     // A bill day already past this month means the next bill falls next month, so it is not needed yet,
     // unless the card is paid at month end: then its already-issued bill is still to be paid this month.
-    let cardQuery = `SELECT id, name, balance, billDay, payAtMonthEnd FROM accounts
-      WHERE type = 'credit_card' AND isActive = 1 AND (billDay IS NOT NULL OR payAtMonthEnd = 1) AND balance < 0`;
-    const cardParams: any[] = [];
+    // An account that shares its balance across more than one physical card (its own row in
+    // credit_cards) gets one line per card instead, each worked out from only that card's own
+    // tagged transactions rather than the account's shared balance.
+    let cardAccountQuery = `SELECT id, name, balance, billDay, payAtMonthEnd FROM accounts
+      WHERE type = 'credit_card' AND isActive = 1`;
+    const cardAccountParams: any[] = [];
     if (profileId) {
-      cardQuery += ' AND profileId = ?';
-      cardParams.push(profileId);
+      cardAccountQuery += ' AND profileId = ?';
+      cardAccountParams.push(profileId);
     }
 
-    (this.db.getAllSync(cardQuery, cardParams) as any[]).forEach((card) => {
-      if (card.payAtMonthEnd) {
-        // Before the bill day everything owed goes on the coming bill. From then on the bill is fixed
-        // at what was owed that day, and later purchases belong to the next one.
-        const owed = round2(-card.balance);
-        let amount = owed;
-        if (card.billDay) {
-          const billDate = addMonths(today, 0, card.billDay);
-          if (billDate < today) {
-            const since = this.db.getFirstSync(
-              "SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE accountId = ? AND type = 'expense' AND DATE(date) > DATE(?)",
-              [card.id, billDate],
-            ) as { total: number };
-            amount = round2(owed - since.total);
-          }
-        }
-        if (amount <= 0) return;
-        lines.push({
-          key: `card-${card.id}`,
-          label: `${card.name} bill`,
-          amount,
-          dueDate: monthEnd,
-          overdue: false,
-          kind: 'card',
-          payAtMonthEnd: true,
+    (this.db.getAllSync(cardAccountQuery, cardAccountParams) as any[]).forEach((account) => {
+      const cards = this.db.getAllSync(
+        'SELECT id, name, billDay, payAtMonthEnd FROM credit_cards WHERE accountId = ? AND isActive = 1 ORDER BY id',
+        [account.id],
+      ) as Array<{ id: number; name: string; billDay: number | null; payAtMonthEnd: number }>;
+
+      if (cards.length === 0) {
+        this.pushCardBillLine(lines, {
+          key: `card-account-${account.id}`,
+          label: account.name,
+          owed: round2(-account.balance),
+          billDay: account.billDay,
+          payAtMonthEnd: !!account.payAtMonthEnd,
+          expensesSince: (date) => (this.db.getFirstSync(
+            "SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE accountId = ? AND type = 'expense' AND DATE(date) > DATE(?)",
+            [account.id, date],
+          ) as { total: number }).total,
+          today,
+          monthEnd,
         });
         return;
       }
 
-      const dueDate = nextBillDate(card.billDay, today);
-      if (dueDate > monthEnd) return;
-      lines.push({
-        key: `card-${card.id}`,
-        label: `${card.name} bill`,
-        amount: round2(-card.balance),
-        dueDate,
-        overdue: false,
-        kind: 'card',
+      cards.forEach((card) => {
+        const net = (this.db.getFirstSync(
+          "SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) as net FROM transactions WHERE cardId = ?",
+          [card.id],
+        ) as { net: number }).net;
+
+        this.pushCardBillLine(lines, {
+          key: `card-${card.id}`,
+          label: `${account.name} – ${card.name}`,
+          owed: round2(-net),
+          billDay: card.billDay,
+          payAtMonthEnd: !!card.payAtMonthEnd,
+          expensesSince: (date) => (this.db.getFirstSync(
+            "SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE cardId = ? AND type = 'expense' AND DATE(date) > DATE(?)",
+            [card.id, date],
+          ) as { total: number }).total,
+          today,
+          monthEnd,
+        });
       });
     });
 
@@ -470,6 +477,50 @@ class RecurringService {
       expectedIncome: round2(expectedIncome),
       lines,
     };
+  }
+
+  /**
+   * Adds a "bill due" line for a credit card (or a card-less credit_card account using its own
+   * bill settings) to the Needed-this-month list, if anything is owed and its bill falls by the
+   * end of the month. Shared between the plain, single-bill account and each physical card of an
+   * account that splits its balance across more than one, so both follow the same rule: before the
+   * bill day everything owed goes on the coming bill; from then on the bill is fixed at what was
+   * owed that day, and later purchases belong to the next one.
+   */
+  private pushCardBillLine(
+    lines: NeededLine[],
+    { key, label, owed, billDay, payAtMonthEnd, expensesSince, today, monthEnd }: {
+      key: string;
+      label: string;
+      /** What is currently owed (a positive amount) by this card or card-less account. */
+      owed: number;
+      billDay: number | null | undefined;
+      payAtMonthEnd: boolean;
+      /** Sum of this card's (or account's) own expense transactions strictly after the given date. */
+      expensesSince: (date: string) => number;
+      today: string;
+      monthEnd: string;
+    },
+  ): void {
+    if (owed <= 0) return;
+
+    if (payAtMonthEnd) {
+      let amount = owed;
+      if (billDay) {
+        const billDate = addMonths(today, 0, billDay);
+        if (billDate < today) {
+          amount = round2(owed - expensesSince(billDate));
+        }
+      }
+      if (amount <= 0) return;
+      lines.push({ key, label: `${label} bill`, amount, dueDate: monthEnd, overdue: false, kind: 'card', payAtMonthEnd: true });
+      return;
+    }
+
+    if (!billDay) return;
+    const dueDate = nextBillDate(billDay, today);
+    if (dueDate > monthEnd) return;
+    lines.push({ key, label: `${label} bill`, amount: owed, dueDate, overdue: false, kind: 'card' });
   }
 
   getMonthlySummary(profileId?: number): MonthlySummary {
