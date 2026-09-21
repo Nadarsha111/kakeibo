@@ -419,7 +419,7 @@ class RecurringService {
         this.pushCardBillLine(lines, {
           key: `card-account-${account.id}`,
           label: account.name,
-          owed: round2(-account.balance),
+          owed: round2(round2(-account.balance) - this.outstandingEmiPrincipal(account.id, null)),
           billDay: account.billDay,
           payAtMonthEnd: !!account.payAtMonthEnd,
           expensesSince: (date) => (this.db.getFirstSync(
@@ -444,7 +444,7 @@ class RecurringService {
         this.pushCardBillLine(lines, {
           key: `card-${card.id}`,
           label: `${account.name} – ${card.name}`,
-          owed,
+          owed: round2(owed - this.outstandingEmiPrincipal(account.id, card.id)),
           billDay: card.billDay,
           payAtMonthEnd: !!card.payAtMonthEnd,
           expensesSince: (date) => (this.db.getFirstSync(
@@ -465,7 +465,7 @@ class RecurringService {
       this.pushCardBillLine(lines, {
         key: `card-account-${account.id}`,
         label: account.name,
-        owed: round2(round2(-account.balance) - cardsOwedTotal),
+        owed: round2(round2(-account.balance) - cardsOwedTotal - this.outstandingEmiPrincipal(account.id, null)),
         billDay: account.billDay,
         payAtMonthEnd: !!account.payAtMonthEnd,
         expensesSince: (date) => (this.db.getFirstSync(
@@ -474,6 +474,36 @@ class RecurringService {
         ) as { total: number }).total,
         today,
         monthEnd,
+      });
+    });
+
+    // Each active credit card EMI bills its own fixed installment this cycle, on top of (not
+    // instead of) the card's own bill above, which already excludes its outstanding principal.
+    let cardEmiQuery = `SELECT ce.id, ce.name, ce.principal, ce.returnedAmount, ce.interestRate, ce.installmentAmount, ce.paymentDay, ce.nextDueDate,
+        a.name as accountName FROM card_emis ce
+      JOIN accounts a ON a.id = ce.accountId
+      WHERE ce.status = 'active' AND ce.isActive = 1 AND a.isActive = 1`;
+    const cardEmiParams: any[] = [];
+    if (profileId) {
+      cardEmiQuery += ' AND a.profileId = ?';
+      cardEmiParams.push(profileId);
+    }
+
+    (this.db.getAllSync(cardEmiQuery, cardEmiParams) as any[]).forEach((emi) => {
+      const outstanding = round2((emi.principal || 0) - (emi.returnedAmount || 0));
+      if (outstanding <= 0 || !emi.nextDueDate) return;
+
+      const installments = countDue(emi.nextDueDate, monthEnd, 'monthly', emi.paymentDay, MAX_CATCH_UP);
+      if (installments === 0) return;
+      // The last installment cannot come to more than what is left to pay off
+      const payoff = round2(outstanding + interestDue(outstanding, emi.interestRate || 0));
+      lines.push({
+        key: `card-emi-${emi.id}`,
+        label: `${emi.accountName} – ${emi.name} (EMI)`,
+        amount: Math.min(round2(installments * emi.installmentAmount), payoff),
+        dueDate: emi.nextDueDate,
+        overdue: emi.nextDueDate < today,
+        kind: 'loan',
       });
     });
 
@@ -544,6 +574,20 @@ class RecurringService {
     const dueDate = nextBillDate(billDay, today);
     if (dueDate > monthEnd) return;
     lines.push({ key, label: `${label} bill`, amount: owed, dueDate, overdue: false, kind: 'card' });
+  }
+
+  /**
+   * How much EMI principal is still outstanding for a card (or, with cardId null, for whatever on
+   * the account isn't tagged to one) — money already converted to fixed installments, so it is
+   * billed on its own schedule (see the card_emis loop in getNeededThisMonth) rather than as part
+   * of the regular card bill above.
+   */
+  private outstandingEmiPrincipal(accountId: number, cardId: number | null): number {
+    const query = cardId === null
+      ? "SELECT COALESCE(SUM(principal - returnedAmount), 0) as total FROM card_emis WHERE accountId = ? AND cardId IS NULL AND status = 'active'"
+      : "SELECT COALESCE(SUM(principal - returnedAmount), 0) as total FROM card_emis WHERE accountId = ? AND cardId = ? AND status = 'active'";
+    const params = cardId === null ? [accountId] : [accountId, cardId];
+    return round2((this.db.getFirstSync(query, params) as { total: number }).total);
   }
 
   getMonthlySummary(profileId?: number): MonthlySummary {
