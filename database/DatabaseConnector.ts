@@ -87,6 +87,22 @@ class DatabaseConnector {
         );
       `);
 
+      // Credit cards: most credit_card accounts need nothing beyond the account itself, but this
+      // holds the extra physical cards for one that shares its balance and limit across two (or
+      // more) cards, each with its own bill generation day.
+      this.db.execSync(`
+        CREATE TABLE IF NOT EXISTS credit_cards (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          accountId INTEGER NOT NULL REFERENCES accounts(id),
+          name TEXT NOT NULL,
+          billDay INTEGER,
+          payAtMonthEnd INTEGER NOT NULL DEFAULT 0,
+          isActive INTEGER NOT NULL DEFAULT 1,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+      `);
+
       // Create transactions table
       this.db.execSync(`
         CREATE TABLE IF NOT EXISTS transactions (
@@ -99,6 +115,7 @@ class DatabaseConnector {
           date TEXT NOT NULL,
           paymentMethod TEXT NOT NULL CHECK (paymentMethod IN ('cash', 'credit_card', 'debit_card')),
           accountId INTEGER,
+          cardId INTEGER REFERENCES credit_cards (id),
           priority TEXT CHECK (priority IN ('need', 'want')),
           createdAt TEXT NOT NULL,
           updatedAt TEXT NOT NULL,
@@ -257,6 +274,14 @@ class DatabaseConnector {
     (db) => {
       if (!DatabaseConnector.hasColumn(db, 'accounts', 'payAtMonthEnd')) {
         db.execSync('ALTER TABLE accounts ADD COLUMN payAtMonthEnd INTEGER NOT NULL DEFAULT 0');
+      }
+    },
+    // 7: which physical card (of an account that shares its balance across more than one) a
+    // transaction was charged to. The credit_cards table itself is created unconditionally above,
+    // since CREATE TABLE IF NOT EXISTS already reaches upgraded installs.
+    (db) => {
+      if (!DatabaseConnector.hasColumn(db, 'transactions', 'cardId')) {
+        db.execSync('ALTER TABLE transactions ADD COLUMN cardId INTEGER REFERENCES credit_cards(id)');
       }
     },
   ];

@@ -7,6 +7,7 @@ import CategoryService from './CategoryService';
 import BudgetService from './BudgetService';
 import SettingsService from './SettingsService';
 import RecurringService from './RecurringService';
+import CardService from './CardService';
 
 // Re-export the DatabaseConnector and all services for easy access
 export { default as DatabaseConnector } from './DatabaseConnector';
@@ -17,6 +18,7 @@ export { default as CategoryService } from './CategoryService';
 export { default as BudgetService, type BudgetSummary } from './BudgetService';
 export { default as SettingsService } from './SettingsService';
 export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine } from './RecurringService';
+export { default as CardService } from './CardService';
 
 /**
  * Service Factory - provides easy access to all services with a single instance
@@ -30,6 +32,7 @@ export class ServiceFactory {
   private static _budgetService: BudgetService;
   private static _settingsService: SettingsService;
   private static _recurringService: RecurringService;
+  private static _cardService: CardService;
 
   /**
    * Get AccountService instance
@@ -102,6 +105,16 @@ export class ServiceFactory {
   }
 
   /**
+   * Get CardService instance
+   */
+  static getCardService(): CardService {
+    if (!this._cardService) {
+      this._cardService = new CardService();
+    }
+    return this._cardService;
+  }
+
+  /**
    * Get all services at once
    */
   static getAllServices() {
@@ -113,6 +126,7 @@ export class ServiceFactory {
       budgetService: this.getBudgetService(),
       settingsService: this.getSettingsService(),
       recurringService: this.getRecurringService(),
+      cardService: this.getCardService(),
     };
   }
 
@@ -127,6 +141,7 @@ export class ServiceFactory {
     this._budgetService = undefined as any;
     this._settingsService = undefined as any;
     this._recurringService = undefined as any;
+    this._cardService = undefined as any;
   }
 }
 
@@ -138,6 +153,7 @@ export const getCategoryService = () => ServiceFactory.getCategoryService();
 export const getBudgetService = () => ServiceFactory.getBudgetService();
 export const getSettingsService = () => ServiceFactory.getSettingsService();
 export const getRecurringService = () => ServiceFactory.getRecurringService();
+export const getCardService = () => ServiceFactory.getCardService();
 
 /**
  * Database utility functions

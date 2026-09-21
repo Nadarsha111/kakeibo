@@ -12,13 +12,14 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { getAccountService, getProfileService } from "../../database";
-import { Account, Profile } from "../../types";
+import { getAccountService, getCardService, getProfileService } from "../../database";
+import { Account, CreditCard, Profile } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import AddAccountScreen from "../../components/AddAccountScreen";
 import LoanPaymentModal from "../../components/LoanPaymentModal";
 import CreditLimitModal from "../../components/CreditLimitModal";
+import ManageCardsModal from "../../components/ManageCardsModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 import { useTabBarInset } from '../../components/PebbleTabBar';
@@ -63,6 +64,8 @@ export default function AccountsScreen() {
   const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
   const [limitAccount, setLimitAccount] = useState<Account | null>(null);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
+  const [cardsAccount, setCardsAccount] = useState<Account | null>(null);
+  const [cardsByAccountId, setCardsByAccountId] = useState<Map<number, CreditCard[]>>(new Map());
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -123,6 +126,9 @@ export default function AccountsScreen() {
       // Load loans and summary from account service
       const summaryData = accountService.getLoanSummary(profileId);
       setLoanSummary(summaryData);
+
+      const creditCardIds = allAccountsData.filter((a) => a.type === 'credit_card').map((a) => a.id);
+      setCardsByAccountId(getCardService().getCardsForAccounts(creditCardIds));
     } catch (error) {
       console.error("Error loading accounts/loans:", error);
     }
@@ -324,8 +330,25 @@ export default function AccountsScreen() {
     </Text>
   );
 
+  // An account that shares its balance across more than one physical card shows each card's own
+  // bill day instead of the account's own (which is ignored once cards exist).
+  const renderCards = (cards: CreditCard[]) => (
+    <View style={{ marginTop: 8 }}>
+      {cards.map((card) => (
+        <Text key={card.id} style={styles.accountType}>
+          {card.billDay
+            ? `${card.name}: bill on the ${card.billDay}${ordinalSuffix(card.billDay)} of each month${card.payAtMonthEnd ? " · paid at month end" : ""}`
+            : card.payAtMonthEnd
+              ? `${card.name}: paid at month end`
+              : `${card.name}: no bill day set`}
+        </Text>
+      ))}
+    </View>
+  );
+
   const renderAccountItem = ({ item: account }: { item: Account }) => {
     const isSelected = selectedAccountId === account.id;
+    const cards = cardsByAccountId.get(account.id) ?? [];
     return (
       <TouchableOpacity
         style={styles.accountCard}
@@ -361,8 +384,9 @@ export default function AccountsScreen() {
           </View>
         </View>
         {account.type === 'credit_card' && (account.creditLimit || 0) > 0 && renderCardUsage(account)}
-        {account.type === 'credit_card' && !!account.billDay && renderBillDay(account)}
-        {account.type === 'credit_card' && !account.billDay && !!account.payAtMonthEnd && (
+        {account.type === 'credit_card' && cards.length > 0 && renderCards(cards)}
+        {account.type === 'credit_card' && cards.length === 0 && !!account.billDay && renderBillDay(account)}
+        {account.type === 'credit_card' && cards.length === 0 && !account.billDay && !!account.payAtMonthEnd && (
           <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
         )}
         {isSelected && (
@@ -389,6 +413,17 @@ export default function AccountsScreen() {
                 <MaterialCommunityIcons name="speedometer" size={20} color={theme.colors.primary} />
                 <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>
                   {account.creditLimit ? "Change Limit" : "Set Limit"}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {account.type === 'credit_card' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => setCardsAccount(account)}
+              >
+                <MaterialCommunityIcons name="credit-card-multiple-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>
+                  {cards.length > 0 ? "Cards" : "Split Cards"}
                 </Text>
               </TouchableOpacity>
             )}
@@ -757,6 +792,14 @@ export default function AccountsScreen() {
         account={limitAccount}
         onClose={() => setLimitAccount(null)}
         onSaved={loadData}
+      />
+
+      {/* Manage Cards Modal */}
+      <ManageCardsModal
+        visible={cardsAccount !== null}
+        account={cardsAccount}
+        onClose={() => setCardsAccount(null)}
+        onChanged={loadData}
       />
 
       {/* Installment Loan Payment Modal */}

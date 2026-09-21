@@ -230,6 +230,13 @@ class AccountService {
   deleteAccount(id: number, { deleteTransactions = false }: { deleteTransactions?: boolean } = {}): void {
     try {
       DatabaseConnector.getInstance().withTransaction(() => {
+        // Cards belong to the account; clear their tag on any transaction being kept before the
+        // cards themselves (and then the account) are deleted, so no dangling references remain.
+        this.db.runSync(
+          'UPDATE transactions SET cardId = NULL WHERE accountId = ?',
+          [id],
+        );
+        this.db.runSync('DELETE FROM credit_cards WHERE accountId = ?', [id]);
         this.db.runSync(
           deleteTransactions
             ? 'DELETE FROM transactions WHERE accountId = ?'

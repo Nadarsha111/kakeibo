@@ -13,8 +13,9 @@ import {
   getCategoryService,
   getAccountService,
   getTransactionService,
+  getCardService,
 } from "../database";
-import { Category, Account, Transaction } from "../types";
+import { Category, Account, CreditCard, Transaction } from "../types";
 import { useTheme } from "../context/ThemeContext";
 import { useSettings } from "../context/SettingsContext";
 
@@ -50,6 +51,8 @@ export default function AddTransactionScreen({
   const [fromAccount, setFromAccount] = useState<number | undefined>(
     undefined,
   );
+  const [cardId, setCardId] = useState<number | undefined>(undefined);
+  const [cardsForAccount, setCardsForAccount] = useState<CreditCard[]>([]);
   const [toAccount, setToAccount] = useState<number | undefined>(undefined);
   const [priority, setPriority] = useState<"need" | "want" | undefined>(
     undefined,
@@ -66,6 +69,7 @@ export default function AddTransactionScreen({
     setDate(new Date().toISOString().split("T")[0]);
     setPriority(undefined);
     setToAccount(undefined);
+    setCardId(undefined);
 
     const defaultCategory = categories.find(cat => cat.type === 'expense');
     setSelectedCategory(defaultCategory?.name || "");
@@ -89,6 +93,7 @@ export default function AddTransactionScreen({
       setSelectedCategory(transactionToEdit.category);
       setPaymentMethod(transactionToEdit.paymentMethod);
       setFromAccount(transactionToEdit.accountId || undefined);
+      setCardId(transactionToEdit.cardId || undefined);
       setPriority(transactionToEdit.priority || undefined);
       setDate(transactionToEdit.date);
       setToAccount(undefined);
@@ -116,6 +121,20 @@ export default function AddTransactionScreen({
       loadDataAndSetState();
     }
   }, [visible, loadDataAndSetState]);
+
+  // A credit card account that shares its balance across more than one physical card needs to
+  // know which one this was charged to, so its own bill can be worked out separately.
+  useEffect(() => {
+    const account = accounts.find((acc) => acc.id === fromAccount);
+    if (!fromAccount || account?.type !== 'credit_card') {
+      setCardsForAccount([]);
+      setCardId(undefined);
+      return;
+    }
+    const cards = getCardService().getCardsForAccount(fromAccount);
+    setCardsForAccount(cards);
+    setCardId((current) => (current && cards.some((c) => c.id === current) ? current : undefined));
+  }, [fromAccount, accounts]);
 
   const handleTypeChange = (newType: "income" | "expense" | "transfer") => {
     setType(newType);
@@ -202,6 +221,7 @@ export default function AddTransactionScreen({
           date,
           paymentMethod,
           accountId: fromAccount,
+          cardId: cardId ?? null,
           priority: type === "expense" ? priority : undefined,
         };
 
@@ -415,6 +435,37 @@ export default function AddTransactionScreen({
               ))}
             </ScrollView>
           </View>
+
+          {type !== 'transfer' && cardsForAccount.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Card</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryScrollContent}
+              >
+                {[{ id: undefined, name: 'Unassigned' }, ...cardsForAccount].map((card) => (
+                  <TouchableOpacity
+                    key={card.id ?? 'unassigned'}
+                    style={[
+                      styles.categoryItemCompact,
+                      cardId === card.id && styles.categoryItemCompactActive,
+                    ]}
+                    onPress={() => setCardId(card.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryNameCompact,
+                        cardId === card.id && styles.categoryNameCompactActive,
+                      ]}
+                    >
+                      {card.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
           {type === 'transfer' && (
             <View style={styles.section}>
