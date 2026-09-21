@@ -15,27 +15,38 @@ A modern Kakeibo (Japanese household ledger) expense tracking app built with Exp
 
 - **Frontend**: Expo React Native with TypeScript
 - **Database**: SQLite (expo-sqlite) for offline data storage
-- **Styling**: NativeWind (Tailwind CSS for React Native)
-- **Navigation**: React Navigation with bottom tabs
+- **Navigation**: Expo Router, with a bottom tab bar for the main screens
 - **Charts**: React Native SVG Charts and Victory Native
+- **Updates**: Expo/EAS Update for shipping JS-only changes over the air (see `.github/workflows/eas-update.yml`)
 
 ## Project Structure
 
 ```
-src/
-├── navigation/         # Navigation configuration
-│   └── AppNavigator.tsx
-├── screens/           # Main application screens
-│   ├── OverviewScreen.tsx
-│   ├── TransactionsScreen.tsx
-│   ├── BudgetScreen.tsx
-│   └── CategoriesScreen.tsx
-├── services/          # Business logic and data services
-│   └── database.ts
-├── types/             # TypeScript type definitions
-│   └── index.ts
-└── utils/            # Utility functions and helpers
-    └── sampleData.ts
+app/
+├── _layout.tsx         # Root layout: settings/theme providers
+└── (tabs)/              # One file per bottom-tab screen (routes)
+    ├── _layout.tsx      # Tab bar, FAB, transaction-modal provider
+    ├── index.tsx        # Overview dashboard
+    ├── transactions.tsx
+    ├── budget.tsx
+    ├── accounts.tsx
+    ├── worth.tsx        # Net worth / assets & liabilities
+    ├── manage.tsx       # Categories, export, etc.
+    ├── profiles.tsx
+    └── settings.tsx
+components/
+├── modals/             # Full-screen <Modal> components opened from a tab screen
+│   ├── AddAccountModal.tsx, AddTransactionModal.tsx, ManageCategoriesModal.tsx, ...
+└── *.tsx                # Reusable presentational widgets (charts, chips, cards, tab bar)
+database/
+├── DatabaseConnector.ts # Singleton SQLite connection, schema, and additive migrations
+├── index.ts             # ServiceFactory: shared instances of the services below
+└── *Service.ts           # One service per entity (accounts, transactions, budgets, ...)
+context/                 # React context providers (settings, theme, transaction modal)
+hooks/                   # Reusable hooks (data export, tab swipe/scrub, Drizzle Studio)
+services/                # Google Sign-In + Google Sheets export/sync
+utils/                   # Formatting, loan math, recurring-item math, etc.
+types/                   # Shared TypeScript domain types
 ```
 
 ## Data Models
@@ -117,19 +128,30 @@ npm run web
 
 ## Database Schema
 
-The app uses SQLite with the following tables:
+The app uses SQLite (see `database/DatabaseConnector.ts`) with the following tables:
+- `profiles` - Separate personal/business/etc. ledgers
+- `accounts` - Savings, checking, credit card, loan, investment, and cash accounts
+- `credit_cards` - Extra physical cards sharing one account's balance/limit
+- `card_emis` - Credit card purchases converted to fixed monthly installments
 - `transactions` - All income and expense records
 - `categories` - Predefined and custom categories
 - `budgets` - Budget limits and periods
-- `account_balance` - Current account balance
+- `recurring_items` - Rent, subscriptions, salary, and other recurring income/expenses/transfers
+- `app_settings` - Persistent user preferences (currency, decimal places, etc.)
+
+New installs get every table; existing installs are upgraded by the append-only
+`MIGRATIONS` array in `DatabaseConnector.ts`, so existing data is never dropped
+by an update — see the comment above that array before changing the schema.
 
 ## Development
 
 ### Adding New Features
-1. Create new components in appropriate directories
-2. Update types in `src/types/index.ts`
-3. Add database methods in `src/services/database.ts`
-4. Update navigation if needed
+1. Add routed screens under `app/(tabs)/`, reusable widgets in `components/`, and
+   full-screen modals in `components/modals/`
+2. Update types in `types/index.ts`
+3. Add database methods in the relevant `database/*Service.ts` (append-only
+   migrations in `DatabaseConnector.ts` for schema changes)
+4. Update the tab layout (`app/(tabs)/_layout.tsx`) if needed
 
 ### Styling
 The project uses regular React Native StyleSheet for consistent styling. NativeWind/Tailwind CSS support is configured but not actively used in the current implementation.

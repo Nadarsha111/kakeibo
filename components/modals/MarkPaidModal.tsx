@@ -9,11 +9,12 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { getAccountService, getRecurringService } from '../database';
-import { Account, RecurringItem } from '../types';
-import { useTheme } from '../context/ThemeContext';
-import { useSettings } from '../context/SettingsContext';
-import ChipSelect from './ChipSelect';
+import { getAccountService, getRecurringService } from '../../database';
+import { Account, RecurringItem } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
+import { formatDate } from '../../utils/format';
+import ChipSelect from '../ChipSelect';
 
 interface MarkPaidModalProps {
   visible: boolean;
@@ -79,7 +80,7 @@ export default function MarkPaidModal({ visible, item, onClose, onSaved }: MarkP
               <Text style={styles.sectionTitle}>{item.name}</Text>
               <View style={styles.row}>
                 <Text style={styles.label}>Due</Text>
-                <Text style={styles.value}>{new Date(item.nextDueDate).toLocaleDateString()}</Text>
+                <Text style={styles.value}>{formatDate(item.nextDueDate)}</Text>
               </View>
               <View style={styles.row}>
                 <Text style={styles.label}>Usual amount</Text>

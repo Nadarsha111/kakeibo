@@ -16,9 +16,10 @@ import { getAccountService, getProfileService, getRecurringService, type Monthly
 import { NetWorthItem, NetWorthSummary, Profile, RecurringItem } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
+import { formatDate } from '../../utils/format';
 import { useTabBarInset } from '../../components/PebbleTabBar';
-import RecurringItemModal from '../../components/RecurringItemModal';
-import MarkPaidModal from '../../components/MarkPaidModal';
+import RecurringItemModal from '../../components/modals/RecurringItemModal';
+import MarkPaidModal from '../../components/modals/MarkPaidModal';
 import MonthEndBadge from '../../components/MonthEndBadge';
 import { describeLine } from '../../components/NeededThisMonthCard';
 import { FREQUENCIES, dueStatus, daysBetween, formatDay, monthlyEquivalent } from '../../utils/recurring';
@@ -142,7 +143,7 @@ export default function WorthScreen() {
           <View style={styles.cardText}>
             <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
             <Text style={styles.cardSubtitle} numberOfLines={1}>
-              {frequency}{route} · due {new Date(item.nextDueDate).toLocaleDateString()}{item.autoPost ? ' · Auto' : ''}
+              {frequency}{route} · due {formatDate(item.nextDueDate)}{item.autoPost ? ' · Auto' : ''}
             </Text>
           </View>
           <View style={styles.cardAmountBox}>
@@ -358,7 +359,7 @@ export default function WorthScreen() {
                     <View style={styles.cardText}>
                       <Text style={styles.cardTitle} numberOfLines={1}>{emi.name}</Text>
                       <Text style={styles.cardSubtitle}>
-                        Monthly{emi.nextDueDate ? ` · due ${new Date(emi.nextDueDate).toLocaleDateString()}` : ''} · manage on the Accounts tab
+                        Monthly{emi.nextDueDate ? ` · due ${formatDate(emi.nextDueDate)}` : ''} · manage on the Accounts tab
                       </Text>
                     </View>
                     <Text style={styles.cardAmount}>{formatCurrency(emi.amount)}</Text>

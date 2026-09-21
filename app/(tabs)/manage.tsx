@@ -10,8 +10,8 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../context/ThemeContext';
-import ManageCategoriesScreen from '../../components/ManageCategoriesScreen';
-import ExportDataScreen from '../../components/ExportDataScreen';
+import ManageCategoriesModal from '../../components/modals/ManageCategoriesModal';
+import ExportDataModal from '../../components/modals/ExportDataModal';
 import { router } from 'expo-router';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 
@@ -162,12 +162,12 @@ export default function ManageTab() {
       </ScrollView>
 
       {/* Modal Screens */}
-      <ManageCategoriesScreen
+      <ManageCategoriesModal
         visible={showManageCategories}
         onClose={() => setShowManageCategories(false)}
       />
       
-      <ExportDataScreen
+      <ExportDataModal
         visible={showExportData}
         onClose={() => setShowExportData(false)}
       />

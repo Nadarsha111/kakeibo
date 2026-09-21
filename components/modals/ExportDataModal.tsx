@@ -12,17 +12,17 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useTheme } from '../context/ThemeContext';
-import { getTransactionService } from '../database';
-import { useDataExporter, ExportOptions } from '../hooks/useDataExporter';
-import OptionSelector from './OptionSelector';
+import { useTheme } from '../../context/ThemeContext';
+import { getTransactionService } from '../../database';
+import { useDataExporter, ExportOptions } from '../../hooks/useDataExporter';
+import OptionSelector from '../OptionSelector';
 
-interface ExportDataScreenProps {
+interface ExportDataModalProps {
   visible: boolean;
   onClose: () => void;
 }
 
-export default function ExportDataScreen({ visible, onClose }: ExportDataScreenProps) {
+export default function ExportDataModal({ visible, onClose }: ExportDataModalProps) {
   const { theme, isDark } = useTheme();
   const styles = createStyles(theme);
   const dataExporter = useDataExporter();

@@ -10,13 +10,13 @@ import {
   Modal,
   Switch,
 } from 'react-native';
-import { getAccountService, getTransactionService } from '../database';
-import { Account } from '../types';
-import { useTheme } from '../context/ThemeContext';
-import { useSettings } from '../context/SettingsContext';
-import { addMonths, isValidDate, monthlyPayment, totalInterest } from '../utils/loanMath';
+import { getAccountService, getTransactionService } from '../../database';
+import { Account } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
+import { addMonths, isValidDate, monthlyPayment, totalInterest } from '../../utils/loanMath';
 
-interface AddAccountScreenProps {
+interface AddAccountModalProps {
   visible: boolean;
   onClose: () => void;
   onAccountAdded: () => void;
@@ -25,13 +25,13 @@ interface AddAccountScreenProps {
   account?: Account | null;
 }
 
-export default function AddAccountScreen({
+export default function AddAccountModal({
   visible,
   onClose,
   onAccountAdded,
   profileId,
   account,
-}: AddAccountScreenProps) {
+}: AddAccountModalProps) {
   const { theme } = useTheme();
   const { formatCurrency } = useSettings();
   const styles = createStyles(theme);
@@ -440,7 +440,7 @@ export default function AddAccountScreen({
                       onChangeText={setInstallmentOverride}
                       placeholder={
                         installmentPlan
-                          ? `Monthly Payment (calculated: ${installmentPlan.payment.toFixed(2)})`
+                          ? `Monthly Payment (calculated: ${formatCurrency(installmentPlan.payment)})`
                           : 'Monthly Payment (calculated from the above)'
                       }
                       keyboardType="decimal-pad"

@@ -10,11 +10,11 @@ import {
   Modal,
   Switch,
 } from 'react-native';
-import { getAccountService, getCategoryService, getRecurringService } from '../database';
-import { Account, Category, RecurringItem } from '../types';
-import { useTheme } from '../context/ThemeContext';
-import ChipSelect from './ChipSelect';
-import { FREQUENCIES, RecurringFrequency, countDue } from '../utils/recurring';
+import { getAccountService, getCategoryService, getRecurringService } from '../../database';
+import { Account, Category, RecurringItem } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
+import ChipSelect from '../ChipSelect';
+import { FREQUENCIES, RecurringFrequency, countDue } from '../../utils/recurring';
 
 interface RecurringItemModalProps {
   visible: boolean;

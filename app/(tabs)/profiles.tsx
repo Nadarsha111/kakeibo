@@ -15,7 +15,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { getProfileService } from '../../database';
 import { Profile } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
-import AddProfileScreen from '../../components/AddProfileScreen';
+import AddProfileModal from '../../components/modals/AddProfileModal';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 
 export default function ProfilesScreen() {
@@ -153,7 +153,7 @@ export default function ProfilesScreen() {
         }
       />
 
-      <AddProfileScreen
+      <AddProfileModal
         visible={showAddProfile}
         onClose={() => {
           setShowAddProfile(false);

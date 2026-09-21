@@ -8,10 +8,10 @@ import {
   Modal,
   Alert,
 } from "react-native";
-import { useTheme } from "../context/ThemeContext";
-import { getBudgetService, getCategoryService } from "../database";
-import { BudgetWithCategory, Category } from "../types";
-import OptionSelector from "./OptionSelector";
+import { useTheme } from "../../context/ThemeContext";
+import { getBudgetService, getCategoryService } from "../../database";
+import { BudgetWithCategory, Category } from "../../types";
+import OptionSelector from "../OptionSelector";
 
 interface AddEditBudgetModalProps {
   visible: boolean;

@@ -1,22 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert } from 'react-native';
-import { useTheme } from '../context/ThemeContext';
-import { getProfileService } from '../database';
-import { Profile } from '../types';
+import { useTheme } from '../../context/ThemeContext';
+import { getProfileService } from '../../database';
+import { Profile } from '../../types';
 
-interface AddProfileScreenProps {
+interface AddProfileModalProps {
   visible: boolean;
   onClose: () => void;
   onProfileAdded: () => void;
   profileToEdit?: Profile | null;
 }
 
-export default function AddProfileScreen({
+export default function AddProfileModal({
   visible,
   onClose,
   onProfileAdded,
   profileToEdit,
-}: AddProfileScreenProps) {
+}: AddProfileModalProps) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [name, setName] = useState('');
