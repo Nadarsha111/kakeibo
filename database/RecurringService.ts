@@ -432,16 +432,19 @@ class RecurringService {
         return;
       }
 
+      let cardsOwedTotal = 0;
       cards.forEach((card) => {
         const net = (this.db.getFirstSync(
           "SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) as net FROM transactions WHERE cardId = ?",
           [card.id],
         ) as { net: number }).net;
+        const owed = round2(-net);
+        cardsOwedTotal = round2(cardsOwedTotal + owed);
 
         this.pushCardBillLine(lines, {
           key: `card-${card.id}`,
           label: `${account.name} – ${card.name}`,
-          owed: round2(-net),
+          owed,
           billDay: card.billDay,
           payAtMonthEnd: !!card.payAtMonthEnd,
           expensesSince: (date) => (this.db.getFirstSync(
@@ -451,6 +454,26 @@ class RecurringService {
           today,
           monthEnd,
         });
+      });
+
+      // Whatever the cards above don't account for (typically the balance the account already
+      // carried before they were added: its starting balance was entered directly on the account,
+      // not through a transaction any card could ever be tagged on) still needs to be paid, so it
+      // gets its own line using the account's own bill settings instead of silently disappearing.
+      // Reconciling against the account's own balance, rather than only its untagged transactions,
+      // covers that starting balance too.
+      this.pushCardBillLine(lines, {
+        key: `card-account-${account.id}`,
+        label: account.name,
+        owed: round2(round2(-account.balance) - cardsOwedTotal),
+        billDay: account.billDay,
+        payAtMonthEnd: !!account.payAtMonthEnd,
+        expensesSince: (date) => (this.db.getFirstSync(
+          "SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE accountId = ? AND cardId IS NULL AND type = 'expense' AND DATE(date) > DATE(?)",
+          [account.id, date],
+        ) as { total: number }).total,
+        today,
+        monthEnd,
       });
     });
 
