@@ -19,6 +19,15 @@ import { Category, Account, CreditCard, Transaction } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 
+/** Values to start a fresh (non-edit) form with, e.g. from a matched statement line item. */
+interface TransactionPrefill {
+  amount?: number;
+  description?: string;
+  date?: string;
+  type?: 'income' | 'expense';
+  accountId?: number;
+}
+
 interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
@@ -27,6 +36,7 @@ interface AddTransactionModalProps {
   loanForRepayment?: Account | null;
   initialType?: 'income' | 'expense' | 'transfer';
   initialFromAccount?: Account | null;
+  prefill?: TransactionPrefill | null;
 }
 
 export default function AddTransactionModal({
@@ -37,6 +47,7 @@ export default function AddTransactionModal({
   loanForRepayment,
   initialType,
   initialFromAccount,
+  prefill,
 }: AddTransactionModalProps) {
   const { theme } = useTheme();
   const { selectedProfileId } = useSettings();
@@ -112,9 +123,19 @@ export default function AddTransactionModal({
         setFromAccount(initialFromAccount.id);
       } else if (initialType) {
         setType(initialType);
+      } else if (prefill) {
+        if (prefill.type) {
+          setType(prefill.type);
+          const categoryForType = allCategories.find((cat) => cat.type === prefill.type);
+          setSelectedCategory(categoryForType?.name || "");
+        }
+        if (prefill.amount !== undefined) setAmount(String(prefill.amount));
+        if (prefill.description !== undefined) setDescription(prefill.description);
+        if (prefill.date) setDate(prefill.date);
+        if (prefill.accountId !== undefined) setFromAccount(prefill.accountId);
       }
     }
-  }, [selectedProfileId, transactionToEdit, loanForRepayment, initialType, initialFromAccount, resetForm]);
+  }, [selectedProfileId, transactionToEdit, loanForRepayment, initialType, initialFromAccount, prefill, resetForm]);
 
   useEffect(() => {
     if (visible) {

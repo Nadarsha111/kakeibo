@@ -22,6 +22,7 @@ import LoanPaymentModal from "../../components/modals/LoanPaymentModal";
 import CreditLimitModal from "../../components/modals/CreditLimitModal";
 import ManageCardsModal from "../../components/modals/ManageCardsModal";
 import AddCardEmiModal from "../../components/modals/AddCardEmiModal";
+import StatementModal from "../../components/modals/StatementModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 import { useTabBarInset } from '../../components/PebbleTabBar';
@@ -70,6 +71,7 @@ export default function AccountsScreen() {
   const [cardsByAccountId, setCardsByAccountId] = useState<Map<number, CreditCard[]>>(new Map());
   const [emiAccount, setEmiAccount] = useState<Account | null>(null);
   const [emisByAccountId, setEmisByAccountId] = useState<Map<number, CardEmi[]>>(new Map());
+  const [statementAccount, setStatementAccount] = useState<Account | null>(null);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -487,6 +489,15 @@ export default function AccountsScreen() {
                 <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Add EMI</Text>
               </TouchableOpacity>
             )}
+            {account.type === 'credit_card' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => setStatementAccount(account)}
+              >
+                <MaterialCommunityIcons name="file-document-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Statement</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.cardActionButton}
               onPress={() => openModal({ initialFromAccount: account })}
@@ -868,6 +879,13 @@ export default function AccountsScreen() {
         account={emiAccount}
         onClose={() => setEmiAccount(null)}
         onAdded={loadData}
+      />
+
+      {/* Statement Import/Reconciliation Modal */}
+      <StatementModal
+        visible={statementAccount !== null}
+        account={statementAccount}
+        onClose={() => setStatementAccount(null)}
       />
 
       {/* Installment Loan Payment Modal */}
