@@ -207,3 +207,25 @@ export interface BudgetWithCategory extends Budget {
   categoryColor: string;
   categoryIcon: string;
 }
+
+/**
+ * One line item extracted from an imported statement PDF, kept only to reconcile against what
+ * you've already logged - it is never written into the transactions table by itself. Re-importing
+ * the same account/month replaces its previous line items rather than duplicating them.
+ */
+export interface StatementLineItem {
+  id: number;
+  profileId: number;
+  accountId: number;
+  statementMonth: string; // "YYYY-MM", the month the statement covers
+  date: string;
+  description?: string | null;
+  amount: number;
+  direction: "debit" | "credit";
+  createdAt: string;
+}
+
+/** A statement line item together with the local transaction it matches, if any. */
+export interface ReconciledLineItem extends StatementLineItem {
+  matchedTransactionId: number | null;
+}
