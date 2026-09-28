@@ -58,19 +58,33 @@ class StatementService {
    */
   getReconciliation(accountId: number, statementMonth: string): ReconciledLineItem[] {
     try {
+      // Ranks candidates with a window function rather than a correlated `ORDER BY ... LIMIT 1`
+      // subquery: SQLite can't resolve the outer `sli.date` inside that subquery's ORDER BY and
+      // fails with "no such column: sli.date".
       return this.db.getAllSync(
-        `SELECT sli.*,
-           (SELECT t.id FROM transactions t
-            WHERE t.accountId = sli.accountId
-              AND t.type = (CASE sli.direction WHEN 'debit' THEN 'expense' ELSE 'income' END)
-              AND ABS(t.amount - sli.amount) < 0.005
-              AND julianday(t.date) BETWEEN julianday(sli.date) - ? AND julianday(sli.date) + ?
-            ORDER BY ABS(julianday(t.date) - julianday(sli.date))
-            LIMIT 1) AS matchedTransactionId
+        `WITH ranked AS (
+           SELECT sli.id AS lineItemId, t.id AS transactionId,
+             ROW_NUMBER() OVER (
+               PARTITION BY sli.id
+               ORDER BY ABS(julianday(t.date) - julianday(sli.date)), t.id
+             ) AS rank
+           FROM statement_line_items sli
+           JOIN transactions t
+             ON t.accountId = sli.accountId
+            AND t.type = (CASE sli.direction WHEN 'debit' THEN 'expense' ELSE 'income' END)
+            AND ABS(t.amount - sli.amount) < 0.005
+            AND julianday(t.date) BETWEEN julianday(sli.date) - ? AND julianday(sli.date) + ?
+           WHERE sli.accountId = ? AND sli.statementMonth = ?
+         )
+         SELECT sli.*, ranked.transactionId AS matchedTransactionId
          FROM statement_line_items sli
+         LEFT JOIN ranked ON ranked.lineItemId = sli.id AND ranked.rank = 1
          WHERE sli.accountId = ? AND sli.statementMonth = ?
          ORDER BY sli.date`,
-        [MATCH_DATE_TOLERANCE_DAYS, MATCH_DATE_TOLERANCE_DAYS, accountId, statementMonth],
+        [
+          MATCH_DATE_TOLERANCE_DAYS, MATCH_DATE_TOLERANCE_DAYS, accountId, statementMonth,
+          accountId, statementMonth,
+        ],
       ) as ReconciledLineItem[];
     } catch (error) {
       console.error('Error reconciling statement line items:', error);

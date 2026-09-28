@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { getStatementService } from '../../database';
-import { Account, ReconciledLineItem } from '../../types';
+import { getCategoryService, getStatementService, getTransactionService } from '../../database';
+import { Account, ReconciledLineItem, Transaction } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
-import { useTransactionModal } from '../../context/TransactionModalContext';
 import { formatShortDate } from '../../utils/format';
 import ChipSelect from '../ChipSelect';
 import { importStatement } from '../../services/StatementImportService';
@@ -45,15 +44,20 @@ function lastNMonths(n: number): string[] {
 
 type ImportState = 'idle' | 'importing' | 'needs_password';
 
+function paymentMethodFor(account: Account): Transaction['paymentMethod'] {
+  if (account.type === 'credit_card') return 'credit_card';
+  if (account.type === 'cash') return 'cash';
+  return 'debit_card';
+}
+
 /**
  * Import a statement PDF for an account/month and see how it lines up against what's already
  * logged. Line items are kept only for this comparison - nothing here is written into the
- * transactions table until you explicitly add an unmatched item.
+ * transactions table until you select unmatched items and add them.
  */
 export default function StatementModal({ visible, account, onClose }: StatementModalProps) {
   const { theme } = useTheme();
   const { formatCurrency } = useSettings();
-  const { openModal: openTransactionModal } = useTransactionModal();
   const styles = createStyles(theme);
 
   const months = lastNMonths(6);
@@ -63,11 +67,18 @@ export default function StatementModal({ visible, account, onClose }: StatementM
   const [pendingFileUri, setPendingFileUri] = useState<string | null>(null);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const expenseCategories = useMemo(() => (visible ? getCategoryService().getCategoriesByType('expense') : []), [visible]);
+  const incomeCategories = useMemo(() => (visible ? getCategoryService().getCategoriesByType('income') : []), [visible]);
+  const [expenseCategory, setExpenseCategory] = useState<string | null>(null);
+  const [incomeCategory, setIncomeCategory] = useState<string | null>(null);
 
   const loadReconciliation = useCallback(
     (month: string) => {
       if (!account) return;
       setItems(getStatementService().getReconciliation(account.id, month));
+      setSelectedIds(new Set());
     },
     [account],
   );
@@ -134,20 +145,56 @@ export default function StatementModal({ visible, account, onClose }: StatementM
     runImport(pendingFileUri, passwordInput.trim());
   };
 
-  const handleAddItem = (item: ReconciledLineItem) => {
-    onClose(); // avoid stacking two modals - reopen this one afterward to see it matched
-    openTransactionModal({
-      prefill: {
-        amount: item.amount,
-        description: item.description ?? undefined,
-        date: item.date,
-        type: item.direction === 'debit' ? 'expense' : 'income',
-        accountId: item.accountId,
-      },
+  const unmatchedItems = items.filter((i) => !i.matchedTransactionId);
+  const selectedItems = unmatchedItems.filter((i) => selectedIds.has(i.id));
+  const hasSelectedDebits = selectedItems.some((i) => i.direction === 'debit');
+  const hasSelectedCredits = selectedItems.some((i) => i.direction === 'credit');
+  const allUnmatchedSelected = unmatchedItems.length > 0 && selectedItems.length === unmatchedItems.length;
+  // Fall back to each list's first category until the user picks one.
+  const effectiveExpenseCategory = expenseCategory ?? expenseCategories[0]?.name ?? null;
+  const effectiveIncomeCategory = incomeCategory ?? incomeCategories[0]?.name ?? null;
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   };
 
-  const matchedCount = items.filter((i) => i.matchedTransactionId).length;
+  const toggleSelectAll = () => {
+    setSelectedIds(allUnmatchedSelected ? new Set() : new Set(unmatchedItems.map((i) => i.id)));
+  };
+
+  const handleAddSelected = () => {
+    if (!account || selectedItems.length === 0) return;
+    if ((hasSelectedDebits && !effectiveExpenseCategory) || (hasSelectedCredits && !effectiveIncomeCategory)) {
+      Alert.alert('Pick a category', 'Choose a category for the selected transactions first.');
+      return;
+    }
+    try {
+      getTransactionService().addTransactions(
+        selectedItems.map((item) => ({
+          profileId: item.profileId,
+          amount: item.amount,
+          type: item.direction === 'debit' ? 'expense' : 'income',
+          category: (item.direction === 'debit' ? effectiveExpenseCategory : effectiveIncomeCategory)!,
+          description: item.description ?? null,
+          date: item.date,
+          paymentMethod: paymentMethodFor(account),
+          accountId: item.accountId,
+        })),
+      );
+      const count = selectedItems.length;
+      loadReconciliation(selectedMonth); // the new transactions now match, so their rows turn ✓
+      Alert.alert('Added', `Added ${count} transaction${count === 1 ? '' : 's'}.`);
+    } catch {
+      Alert.alert('Error', 'Could not add the selected transactions.');
+    }
+  };
+
+  const matchedCount = items.length - unmatchedItems.length;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -209,30 +256,80 @@ export default function StatementModal({ visible, account, onClose }: StatementM
           )}
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {items.length === 0
-                ? 'No statement imported for this month yet'
-                : `${matchedCount} of ${items.length} matched`}
-            </Text>
-            {items.map((item) => (
-              <View key={item.id} style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.value}>{item.description || '(no description)'}</Text>
-                  <Text style={styles.label}>{formatShortDate(item.date)}</Text>
-                </View>
-                <Text style={[styles.value, { marginRight: 12 }]}>
-                  {item.direction === 'credit' ? '+' : '-'}
-                  {formatCurrency(item.amount)}
-                </Text>
-                {item.matchedTransactionId ? (
-                  <Text style={styles.matchedBadge}>✓</Text>
-                ) : (
-                  <TouchableOpacity style={styles.addButton} onPress={() => handleAddItem(item)}>
-                    <Text style={styles.addButtonText}>Add</Text>
-                  </TouchableOpacity>
+            <View style={styles.listHeader}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                {items.length === 0
+                  ? 'No statement imported for this month yet'
+                  : `${matchedCount} of ${items.length} matched`}
+              </Text>
+              {unmatchedItems.length > 0 && (
+                <TouchableOpacity onPress={toggleSelectAll}>
+                  <Text style={styles.linkText}>{allUnmatchedSelected ? 'Clear' : 'Select all unmatched'}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {selectedItems.length > 0 && (
+              <View style={styles.addPanel}>
+                {hasSelectedDebits && (
+                  <>
+                    <Text style={styles.label}>Expense category</Text>
+                    <ChipSelect
+                      options={expenseCategories.map((c) => ({ key: c.name, label: c.name }))}
+                      selected={effectiveExpenseCategory}
+                      onSelect={setExpenseCategory}
+                    />
+                  </>
                 )}
+                {hasSelectedCredits && (
+                  <>
+                    <Text style={styles.label}>Income category</Text>
+                    <ChipSelect
+                      options={incomeCategories.map((c) => ({ key: c.name, label: c.name }))}
+                      selected={effectiveIncomeCategory}
+                      onSelect={setIncomeCategory}
+                    />
+                  </>
+                )}
+                <TouchableOpacity style={[styles.primaryButton, { marginTop: 12 }]} onPress={handleAddSelected}>
+                  <Text style={styles.primaryButtonText}>
+                    Add {selectedItems.length} transaction{selectedItems.length === 1 ? '' : 's'}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            ))}
+            )}
+
+            {items.map((item) => {
+              const matched = !!item.matchedTransactionId;
+              const selected = selectedIds.has(item.id);
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.row}
+                  onPress={() => toggleSelected(item.id)}
+                  disabled={matched}
+                  activeOpacity={0.6}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.value}>{item.description || '(no description)'}</Text>
+                    <Text style={styles.label}>{formatShortDate(item.date)}</Text>
+                  </View>
+                  <Text style={[styles.value, { marginRight: 12 }]}>
+                    {item.direction === 'credit' ? '+' : '-'}
+                    {formatCurrency(item.amount)}
+                  </Text>
+                  {matched ? (
+                    <Text style={styles.matchedBadge}>✓</Text>
+                  ) : (
+                    <View style={styles.checkboxCell}>
+                      <View style={[styles.checkbox, selected && styles.checkboxChecked]}>
+                        {selected && <Text style={styles.checkboxMark}>✓</Text>}
+                      </View>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </ScrollView>
       </View>
@@ -289,11 +386,31 @@ const createStyles = (theme: any) =>
     helperText: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 8, fontStyle: 'italic' },
     errorText: { fontSize: 13, color: '#dc2626', marginBottom: 12 },
     matchedBadge: { fontSize: 18, color: '#15803d', fontWeight: '700', width: 44, textAlign: 'center' },
-    addButton: {
-      backgroundColor: theme.colors.primary,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
+    listHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
     },
-    addButtonText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+    linkText: { fontSize: 14, fontWeight: '600', color: theme.colors.primary },
+    addPanel: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      padding: 12,
+      marginBottom: 8,
+    },
+    checkboxCell: { width: 44, alignItems: 'center' },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: theme.colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkboxChecked: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+    checkboxMark: { color: '#fff', fontSize: 13, fontWeight: '700' },
   });

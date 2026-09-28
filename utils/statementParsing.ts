@@ -4,13 +4,15 @@
  * writes to the database or touches the filesystem/network, so it can be exercised with plain
  * arrays of text items in isolation.
  *
- * This ports the two strategies validated in scripts/parse-statement.mjs against real statements:
+ * Three strategies, validated against real statements:
  *  - "table": a bordered table with a header row (bank card statements). Column boundaries are
  *    derived from the DATA rows themselves (see clusterByGaps) rather than the header labels'
  *    x-position, which can be padded/centred differently from where the data actually starts.
+ *  - "dated-rows": one transaction per line with a separate direction letter and no usable
+ *    header (e.g. SBI Card).
  *  - "card-list": a UPI/payments-app-style export with no header row at all. Each entry is a
  *    "₹"-anchored name+amount row followed by a date line.
- * The caller tries "table" first and falls back to "card-list" if it finds nothing - see
+ * They're tried in that order, each only if the previous found nothing - see
  * extractStatementTransactions.
  */
 
@@ -32,7 +34,7 @@ export interface ParsedStatementTransaction {
   direction: 'debit' | 'credit';
 }
 
-export type StatementParseStrategy = 'table' | 'card-list' | 'none';
+export type StatementParseStrategy = 'table' | 'dated-rows' | 'card-list' | 'none';
 
 const Y_TOLERANCE = 2.5; // points; items within this y-distance are treated as the same row
 
@@ -150,7 +152,11 @@ function extractTableTransactionsFromPage(rows: StatementRow[]): {
       blockRows = [];
       return;
     }
-    const items = blockRows.flatMap((r) => r.items);
+    // Derive columns only from rows that open with a date: a non-transaction row inside the block
+    // (e.g. Axis's "Card No: ... Name ..." line right under the header) would otherwise add its
+    // own x-positions and shift the boundaries, merging descriptions into the date column.
+    const dataRows = blockRows.filter((r) => r.items[0] && normalizeSlashDate(r.items[0].text));
+    const items = (dataRows.length > 0 ? dataRows : blockRows).flatMap((r) => r.items);
     const clusters = clusterByGaps(items.map((i) => i.x), columnTypes.length);
     const centroids = clusters.map((c) => c.reduce((a, b) => a + b, 0) / (c.length || 1));
 
@@ -289,6 +295,53 @@ function extractCardListTransactionsWithSections(rows: StatementRow[]): CardList
   return entries;
 }
 
+// --- Dated-rows strategy ---------------------------------------------------------------------
+
+const DATED_ROW_DATE = /^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{2}|\d{4})$/;
+const PLAIN_AMOUNT = /^[\d,]+\.\d{2}$/;
+// SBI Card's legend: C=Credit, D=Debit, M=Monthly Installments (billed to you), T=Temporary Credit.
+const DIRECTION_MARKERS: Record<string, 'debit' | 'credit'> = {
+  c: 'credit', cr: 'credit', t: 'credit',
+  d: 'debit', dr: 'debit', m: 'debit',
+};
+
+/**
+ * Extracts one-transaction-per-line statements with no usable column header (e.g. SBI Card):
+ * "DD Mon YY | description... | amount | direction letter", where the direction is its own item
+ * rather than a Dr/Cr suffix on the amount. A line without a date that directly follows a
+ * transaction and still ends in amount + direction (e.g. "IGST DB @ 18.00% 33.45 D" under an EMI)
+ * is a charge of its own on the same date, so it inherits the previous line's date.
+ */
+function extractDatedRowTransactions(rows: StatementRow[]): ParsedStatementTransaction[] {
+  const transactions: ParsedStatementTransaction[] = [];
+  let previousDate: string | null = null;
+
+  for (const row of rows) {
+    const texts = row.items.map((i) => i.text.trim());
+    const direction = texts.length >= 3 ? DIRECTION_MARKERS[texts[texts.length - 1].toLowerCase()] : undefined;
+    const amountText = texts[texts.length - 2];
+    if (!direction || !PLAIN_AMOUNT.test(amountText)) {
+      previousDate = null;
+      continue;
+    }
+
+    const dateMatch = DATED_ROW_DATE.exec(texts[0]);
+    const isoDate: string | null = dateMatch ? normalizeCardListDate(dateMatch[1], dateMatch[2], dateMatch[3]) : previousDate;
+    if (!isoDate) continue;
+
+    const descriptionParts = texts.slice(dateMatch ? 1 : 0, -2);
+    transactions.push({
+      date: isoDate,
+      description: descriptionParts.join(' ') || null,
+      amount: parseFloat(amountText.replace(/,/g, '')),
+      direction,
+    });
+    previousDate = isoDate;
+  }
+
+  return transactions;
+}
+
 // --- Orchestrator ----------------------------------------------------------------------------
 
 /**
@@ -314,6 +367,11 @@ export function extractStatementTransactions(pagesItems: StatementTextItem[][]):
 
   if (tableTransactions.length > 0) {
     return { strategy: 'table', transactions: tableTransactions };
+  }
+
+  const datedRowTransactions = extractDatedRowTransactions(allRowsInOrder);
+  if (datedRowTransactions.length > 0) {
+    return { strategy: 'dated-rows', transactions: datedRowTransactions };
   }
 
   const cardListTransactions = extractCardListTransactionsWithSections(allRowsInOrder);
