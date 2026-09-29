@@ -149,7 +149,11 @@ export default function StatementModal({ visible, account, onClose }: StatementM
   const selectedItems = unmatchedItems.filter((i) => selectedIds.has(i.id));
   const hasSelectedDebits = selectedItems.some((i) => i.direction === 'debit');
   const hasSelectedCredits = selectedItems.some((i) => i.direction === 'credit');
-  const allUnmatchedSelected = unmatchedItems.length > 0 && selectedItems.length === unmatchedItems.length;
+  // Lines with a possible (near-amount) match are probably already logged, so "select all" leaves
+  // them out - they can still be ticked one by one if they really are separate spends.
+  const bulkSelectableItems = unmatchedItems.filter((i) => !i.possibleMatchTransactionId);
+  const allUnmatchedSelected =
+    bulkSelectableItems.length > 0 && bulkSelectableItems.every((i) => selectedIds.has(i.id));
   // Fall back to each list's first category until the user picks one.
   const effectiveExpenseCategory = expenseCategory ?? expenseCategories[0]?.name ?? null;
   const effectiveIncomeCategory = incomeCategory ?? incomeCategories[0]?.name ?? null;
@@ -164,7 +168,7 @@ export default function StatementModal({ visible, account, onClose }: StatementM
   };
 
   const toggleSelectAll = () => {
-    setSelectedIds(allUnmatchedSelected ? new Set() : new Set(unmatchedItems.map((i) => i.id)));
+    setSelectedIds(allUnmatchedSelected ? new Set() : new Set(bulkSelectableItems.map((i) => i.id)));
   };
 
   const handleAddSelected = () => {
@@ -195,6 +199,7 @@ export default function StatementModal({ visible, account, onClose }: StatementM
   };
 
   const matchedCount = items.length - unmatchedItems.length;
+  const possibleCount = unmatchedItems.length - bulkSelectableItems.length;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -260,9 +265,9 @@ export default function StatementModal({ visible, account, onClose }: StatementM
               <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
                 {items.length === 0
                   ? 'No statement imported for this month yet'
-                  : `${matchedCount} of ${items.length} matched`}
+                  : `${matchedCount} of ${items.length} matched${possibleCount > 0 ? ` · ${possibleCount} possible` : ''}`}
               </Text>
-              {unmatchedItems.length > 0 && (
+              {bulkSelectableItems.length > 0 && (
                 <TouchableOpacity onPress={toggleSelectAll}>
                   <Text style={styles.linkText}>{allUnmatchedSelected ? 'Clear' : 'Select all unmatched'}</Text>
                 </TouchableOpacity>
@@ -301,6 +306,7 @@ export default function StatementModal({ visible, account, onClose }: StatementM
 
             {items.map((item) => {
               const matched = !!item.matchedTransactionId;
+              const possible = !matched && item.possibleMatchAmount != null;
               const selected = selectedIds.has(item.id);
               return (
                 <TouchableOpacity
@@ -313,6 +319,11 @@ export default function StatementModal({ visible, account, onClose }: StatementM
                   <View style={{ flex: 1 }}>
                     <Text style={styles.value}>{item.description || '(no description)'}</Text>
                     <Text style={styles.label}>{formatShortDate(item.date)}</Text>
+                    {possible && (
+                      <Text style={styles.possibleText}>
+                        Possibly logged as {formatCurrency(item.possibleMatchAmount!)}
+                      </Text>
+                    )}
                   </View>
                   <Text style={[styles.value, { marginRight: 12 }]}>
                     {item.direction === 'credit' ? '+' : '-'}
@@ -386,6 +397,7 @@ const createStyles = (theme: any) =>
     helperText: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 8, fontStyle: 'italic' },
     errorText: { fontSize: 13, color: '#dc2626', marginBottom: 12 },
     matchedBadge: { fontSize: 18, color: '#15803d', fontWeight: '700', width: 44, textAlign: 'center' },
+    possibleText: { fontSize: 12, color: '#b45309', marginTop: 2 },
     listHeader: {
       flexDirection: 'row',
       alignItems: 'center',

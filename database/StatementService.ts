@@ -6,6 +6,15 @@ import { ReconciledLineItem, StatementLineItem } from '../types';
 // a date within this many days of each other - a bank sometimes posts a transaction a day or two
 // after you actually made it, so requiring an exact date match would miss real matches.
 const MATCH_DATE_TOLERANCE_DAYS = 2;
+// A logged amount that differs from the statement by up to this much (3%, but at least ₹1) is
+// offered as a possible match - e.g. a rounded entry, a fee, or a foreign-currency conversion.
+const NEAR_AMOUNT_TOLERANCE_RATIO = 0.03;
+const NEAR_AMOUNT_MIN_TOLERANCE = 1;
+
+/** Whole days since the epoch for a "YYYY-MM-DD..." date, ignoring any time part. */
+function dayNumber(date: string): number {
+  return Math.floor(Date.parse(date.slice(0, 10) + 'T00:00:00Z') / 86400000);
+}
 
 /**
  * Persists and reconciles statement line items imported from a statement PDF. This is a
@@ -55,37 +64,69 @@ class StatementService {
    * The imported line items for one statement, each flagged with the local transaction it matches
    * (if any). Matching is computed fresh on every call rather than stored, so a transaction you add
    * later is picked up immediately without needing to re-import the statement.
+   *
+   * Matching is one-to-one: a logged transaction can account for at most one statement line, so two
+   * identical charges on the statement need two logged transactions to both show as matched. Exact
+   * amount matches are assigned first; the lines left over can then pick up a "possible match" - an
+   * unused transaction whose amount is close but not equal (rounding, a fee, currency conversion).
+   * Possible matches are only suggestions: the line still counts as unmatched.
    */
   getReconciliation(accountId: number, statementMonth: string): ReconciledLineItem[] {
     try {
-      // Ranks candidates with a window function rather than a correlated `ORDER BY ... LIMIT 1`
-      // subquery: SQLite can't resolve the outer `sli.date` inside that subquery's ORDER BY and
-      // fails with "no such column: sli.date".
-      return this.db.getAllSync(
-        `WITH ranked AS (
-           SELECT sli.id AS lineItemId, t.id AS transactionId,
-             ROW_NUMBER() OVER (
-               PARTITION BY sli.id
-               ORDER BY ABS(julianday(t.date) - julianday(sli.date)), t.id
-             ) AS rank
-           FROM statement_line_items sli
-           JOIN transactions t
-             ON t.accountId = sli.accountId
-            AND t.type = (CASE sli.direction WHEN 'debit' THEN 'expense' ELSE 'income' END)
-            AND ABS(t.amount - sli.amount) < 0.005
-            AND julianday(t.date) BETWEEN julianday(sli.date) - ? AND julianday(sli.date) + ?
-           WHERE sli.accountId = ? AND sli.statementMonth = ?
-         )
-         SELECT sli.*, ranked.transactionId AS matchedTransactionId
-         FROM statement_line_items sli
-         LEFT JOIN ranked ON ranked.lineItemId = sli.id AND ranked.rank = 1
-         WHERE sli.accountId = ? AND sli.statementMonth = ?
-         ORDER BY sli.date`,
-        [
-          MATCH_DATE_TOLERANCE_DAYS, MATCH_DATE_TOLERANCE_DAYS, accountId, statementMonth,
-          accountId, statementMonth,
-        ],
-      ) as ReconciledLineItem[];
+      const lineItems = this.db.getAllSync(
+        'SELECT * FROM statement_line_items WHERE accountId = ? AND statementMonth = ? ORDER BY date, id',
+        [accountId, statementMonth],
+      ) as StatementLineItem[];
+      if (lineItems.length === 0) return [];
+
+      const dates = lineItems.map((i) => i.date.slice(0, 10)).sort();
+      const transactions = this.db.getAllSync(
+        `SELECT id, type, amount, date FROM transactions
+         WHERE accountId = ? AND type IN ('expense', 'income')
+           AND julianday(date) BETWEEN julianday(?) - ? AND julianday(?) + ? + 1`,
+        [accountId, dates[0], MATCH_DATE_TOLERANCE_DAYS, dates[dates.length - 1], MATCH_DATE_TOLERANCE_DAYS],
+      ) as Array<{ id: number; type: string; amount: number; date: string }>;
+
+      type Candidate = { lineId: number; txId: number; txAmount: number; dayDiff: number; amountDiff: number };
+      const exact: Candidate[] = [];
+      const near: Candidate[] = [];
+      for (const item of lineItems) {
+        const wantedType = item.direction === 'debit' ? 'expense' : 'income';
+        const tolerance = Math.max(NEAR_AMOUNT_MIN_TOLERANCE, item.amount * NEAR_AMOUNT_TOLERANCE_RATIO);
+        for (const t of transactions) {
+          if (t.type !== wantedType) continue;
+          const dayDiff = Math.abs(dayNumber(t.date) - dayNumber(item.date));
+          if (dayDiff > MATCH_DATE_TOLERANCE_DAYS) continue;
+          const amountDiff = Math.abs(t.amount - item.amount);
+          const candidate = { lineId: item.id, txId: t.id, txAmount: t.amount, dayDiff, amountDiff };
+          if (amountDiff < 0.005) exact.push(candidate);
+          else if (amountDiff <= tolerance) near.push(candidate);
+        }
+      }
+
+      // Greedy assignment, closest first, each line and each transaction used at most once.
+      const usedTx = new Set<number>();
+      const matched = new Map<number, number>();
+      const possible = new Map<number, Candidate>();
+      exact.sort((a, b) => a.dayDiff - b.dayDiff || a.lineId - b.lineId || a.txId - b.txId);
+      for (const c of exact) {
+        if (matched.has(c.lineId) || usedTx.has(c.txId)) continue;
+        matched.set(c.lineId, c.txId);
+        usedTx.add(c.txId);
+      }
+      near.sort((a, b) => a.amountDiff - b.amountDiff || a.dayDiff - b.dayDiff || a.lineId - b.lineId || a.txId - b.txId);
+      for (const c of near) {
+        if (matched.has(c.lineId) || possible.has(c.lineId) || usedTx.has(c.txId)) continue;
+        possible.set(c.lineId, c);
+        usedTx.add(c.txId);
+      }
+
+      return lineItems.map((item) => ({
+        ...item,
+        matchedTransactionId: matched.get(item.id) ?? null,
+        possibleMatchTransactionId: possible.get(item.id)?.txId ?? null,
+        possibleMatchAmount: possible.get(item.id)?.txAmount ?? null,
+      }));
     } catch (error) {
       console.error('Error reconciling statement line items:', error);
       return [];

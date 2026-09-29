@@ -228,4 +228,7 @@ export interface StatementLineItem {
 /** A statement line item together with the local transaction it matches, if any. */
 export interface ReconciledLineItem extends StatementLineItem {
   matchedTransactionId: number | null;
+  /** An unmatched line's closest logged transaction with a nearby (not equal) amount, as a hint. */
+  possibleMatchTransactionId: number | null;
+  possibleMatchAmount: number | null;
 }
