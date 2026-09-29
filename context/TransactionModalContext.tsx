@@ -13,6 +13,13 @@ interface ModalProps {
   loanForRepayment?: Account | null;
   initialType?: "income" | "expense" | "transfer";
   initialFromAccount?: Account | null;
+  prefill?: {
+    amount?: number;
+    description?: string;
+    date?: string;
+    type?: "income" | "expense";
+    accountId?: number;
+  } | null;
 }
 
 interface TransactionModalContextType {
@@ -53,6 +60,7 @@ export const TransactionModalProvider = ({
         loanForRepayment={modalProps.loanForRepayment}
         initialType={modalProps.initialType}
         initialFromAccount={modalProps.initialFromAccount}
+        prefill={modalProps.prefill}
       />
     </TransactionModalContext.Provider>
   );

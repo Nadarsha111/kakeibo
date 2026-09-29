@@ -185,6 +185,22 @@ class DatabaseConnector {
       // Recurring items (rent, subscriptions, salary, savings deposits...)
       this.db.execSync(DatabaseConnector.recurringItemsSql(true));
 
+      // Statement line items: transactions extracted from an imported statement PDF, kept only to
+      // reconcile against what's already logged in `transactions` - never written into it directly.
+      this.db.execSync(`
+        CREATE TABLE IF NOT EXISTS statement_line_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          profileId INTEGER NOT NULL REFERENCES profiles(id),
+          accountId INTEGER NOT NULL REFERENCES accounts(id),
+          statementMonth TEXT NOT NULL,
+          date TEXT NOT NULL,
+          description TEXT,
+          amount REAL NOT NULL,
+          direction TEXT NOT NULL CHECK (direction IN ('debit', 'credit')),
+          createdAt TEXT NOT NULL
+        );
+      `);
+
       this.runMigrations();
 
       // Insert default categories if none exist

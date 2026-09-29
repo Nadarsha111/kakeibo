@@ -9,6 +9,7 @@ import SettingsService from './SettingsService';
 import RecurringService from './RecurringService';
 import CardService from './CardService';
 import CardEmiService from './CardEmiService';
+import StatementService from './StatementService';
 
 // Re-export the DatabaseConnector and all services for easy access
 export { default as DatabaseConnector } from './DatabaseConnector';
@@ -21,6 +22,7 @@ export { default as SettingsService } from './SettingsService';
 export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine } from './RecurringService';
 export { default as CardService } from './CardService';
 export { default as CardEmiService } from './CardEmiService';
+export { default as StatementService } from './StatementService';
 
 /**
  * Service Factory - provides easy access to all services with a single instance
@@ -36,6 +38,7 @@ export class ServiceFactory {
   private static _recurringService: RecurringService;
   private static _cardService: CardService;
   private static _cardEmiService: CardEmiService;
+  private static _statementService: StatementService;
 
   /**
    * Get AccountService instance
@@ -128,6 +131,16 @@ export class ServiceFactory {
   }
 
   /**
+   * Get StatementService instance
+   */
+  static getStatementService(): StatementService {
+    if (!this._statementService) {
+      this._statementService = new StatementService();
+    }
+    return this._statementService;
+  }
+
+  /**
    * Get all services at once
    */
   static getAllServices() {
@@ -141,6 +154,7 @@ export class ServiceFactory {
       recurringService: this.getRecurringService(),
       cardService: this.getCardService(),
       cardEmiService: this.getCardEmiService(),
+      statementService: this.getStatementService(),
     };
   }
 
@@ -157,6 +171,7 @@ export class ServiceFactory {
     this._recurringService = undefined as any;
     this._cardService = undefined as any;
     this._cardEmiService = undefined as any;
+    this._statementService = undefined as any;
   }
 }
 
@@ -170,6 +185,7 @@ export const getSettingsService = () => ServiceFactory.getSettingsService();
 export const getRecurringService = () => ServiceFactory.getRecurringService();
 export const getCardService = () => ServiceFactory.getCardService();
 export const getCardEmiService = () => ServiceFactory.getCardEmiService();
+export const getStatementService = () => ServiceFactory.getStatementService();
 
 /**
  * Database utility functions

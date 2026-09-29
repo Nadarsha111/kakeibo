@@ -77,6 +77,20 @@ class TransactionService {
   }
 
   /**
+   * Add several transactions atomically - either all are saved (with their balance updates) or none.
+   */
+  addTransactions(transactions: Array<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>>): number[] {
+    try {
+      return DatabaseConnector.getInstance().withTransaction(() =>
+        transactions.map((transaction) => this.addTransactionUnsafe(transaction))
+      );
+    } catch (error) {
+      console.error('Error adding transactions:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Adds a transfer between two accounts. This involves two transactions.
    */
   addTransfer(data: {
