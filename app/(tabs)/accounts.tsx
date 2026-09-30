@@ -69,6 +69,7 @@ export default function AccountsScreen() {
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [cardsAccount, setCardsAccount] = useState<Account | null>(null);
   const [cardsByAccountId, setCardsByAccountId] = useState<Map<number, CreditCard[]>>(new Map());
+  const [owedByCardId, setOwedByCardId] = useState<Map<number, number>>(new Map());
   const [emiAccount, setEmiAccount] = useState<Account | null>(null);
   const [emisByAccountId, setEmisByAccountId] = useState<Map<number, CardEmi[]>>(new Map());
   const [statementAccount, setStatementAccount] = useState<Account | null>(null);
@@ -134,7 +135,9 @@ export default function AccountsScreen() {
       setLoanSummary(summaryData);
 
       const creditCardIds = allAccountsData.filter((a) => a.type === 'credit_card').map((a) => a.id);
-      setCardsByAccountId(getCardService().getCardsForAccounts(creditCardIds));
+      const cardsByAccount = getCardService().getCardsForAccounts(creditCardIds);
+      setCardsByAccountId(cardsByAccount);
+      setOwedByCardId(getCardService().getOwedByCard([...cardsByAccount.values()].flat().map((card) => card.id)));
 
       const cardEmiService = getCardEmiService();
       setEmisByAccountId(new Map(creditCardIds.map((id) => [id, cardEmiService.getEmisForAccount(id)])));
@@ -339,21 +342,55 @@ export default function AccountsScreen() {
     </Text>
   );
 
-  // An account that shares its balance across more than one physical card shows each card's own
-  // bill day instead of the account's own (which is ignored once cards exist).
-  const renderCards = (cards: CreditCard[]) => (
-    <View style={{ marginTop: 8 }}>
-      {cards.map((card) => (
-        <Text key={card.id} style={styles.accountType}>
-          {card.billDay
-            ? `${card.name}: bill on the ${card.billDay}${ordinalSuffix(card.billDay)} of each month${card.payAtMonthEnd ? " · paid at month end" : ""}`
-            : card.payAtMonthEnd
-              ? `${card.name}: paid at month end`
-              : `${card.name}: no bill day set`}
-        </Text>
-      ))}
-    </View>
-  );
+  // An account that shares its balance across more than one physical card shows each card: its bill
+  // day (the account's own is ignored once cards exist), what is owed on it, and its share of the
+  // shared limit. Whatever isn't charged to any card (e.g. the balance from before the cards were
+  // added) gets a row of its own, so the rows add up to the account's balance.
+  const renderCards = (account: Account, cards: CreditCard[]) => {
+    const limit = account.creditLimit || 0;
+    const totalOwed = Math.max(0, -account.balance);
+    const onCards = cards.reduce((sum, card) => sum + (owedByCardId.get(card.id) ?? 0), 0);
+    const untagged = Math.round((totalOwed - onCards) * 100) / 100;
+    const rows = [
+      ...cards.map((card) => ({
+        key: String(card.id),
+        name: card.name,
+        owed: owedByCardId.get(card.id) ?? 0,
+        detail: card.billDay
+          ? `Bill on the ${card.billDay}${ordinalSuffix(card.billDay)}${card.payAtMonthEnd ? " · paid at month end" : ""}`
+          : card.payAtMonthEnd
+            ? "Paid at month end"
+            : "No bill day set",
+      })),
+      ...(untagged > 0.005 ? [{ key: "untagged", name: "Not on a card", owed: untagged, detail: "e.g. from before the cards were added" }] : []),
+    ];
+
+    return (
+      <View style={styles.cardList}>
+        {rows.map((row) => (
+          <View key={row.key} style={styles.cardRow}>
+            <MaterialCommunityIcons name="credit-card-outline" size={18} color={theme.colors.textSecondary} />
+            <View style={styles.cardRowText}>
+              <View style={styles.cardRowTop}>
+                <Text style={styles.cardRowName} numberOfLines={1}>{row.name}</Text>
+                <Text style={styles.cardRowOwed}>
+                  {row.owed < 0 ? `${formatCurrency(-row.owed)} credit` : formatCurrency(row.owed)}
+                </Text>
+              </View>
+              {limit > 0 && row.owed > 0 && (
+                <View style={[styles.progressBar, styles.cardRowBar]}>
+                  <View style={[styles.progressFill, { width: `${Math.min(100, (row.owed / limit) * 100)}%`, backgroundColor: theme.colors.primary }]} />
+                </View>
+              )}
+              <Text style={styles.accountType} numberOfLines={1}>
+                {row.detail}{limit > 0 && row.owed > 0 ? ` · ${((row.owed / limit) * 100).toFixed(0)}% of the limit` : ""}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   // A purchase converted to EMI bills its own fixed installment each month instead of all at once.
   const renderEmis = (emis: CardEmi[]) => (
@@ -436,7 +473,7 @@ export default function AccountsScreen() {
           </View>
         </View>
         {account.type === 'credit_card' && (account.creditLimit || 0) > 0 && renderCardUsage(account)}
-        {account.type === 'credit_card' && cards.length > 0 && renderCards(cards)}
+        {account.type === 'credit_card' && cards.length > 0 && renderCards(account, cards)}
         {account.type === 'credit_card' && cards.length === 0 && !!account.billDay && renderBillDay(account)}
         {account.type === 'credit_card' && cards.length === 0 && !account.billDay && !!account.payAtMonthEnd && (
           <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
@@ -1131,6 +1168,43 @@ const createStyles = (theme: any) =>
       fontSize: 14,
       fontWeight: '600',
       color: theme.colors.text,
+    },
+    cardList: {
+      marginTop: 4,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.colors.border,
+    },
+    cardRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      paddingTop: 10,
+    },
+    cardRowText: {
+      flex: 1,
+    },
+    cardRowTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 8,
+    },
+    cardRowName: {
+      flexShrink: 1,
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    cardRowOwed: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    cardRowBar: {
+      flex: 0,
+      height: 4,
+      marginTop: 6,
+      marginBottom: 4,
     },
     emiRow: {
       flexDirection: 'row',
