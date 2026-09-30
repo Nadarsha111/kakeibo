@@ -37,9 +37,9 @@ class DatabaseConnector {
    */
   private initializeTables(): void {
     try {
-      // Create accounts table
-
-      this.db.execAsync(`
+      // Create profiles table. Synchronously, like every other table: the default profile is
+      // inserted further down, and accounts reference profiles, so it must exist before either.
+      this.db.execSync(`
         CREATE TABLE IF NOT EXISTS profiles (
          id INTEGER PRIMARY KEY AUTOINCREMENT ,
          name TEXT NOT NULL,
