@@ -40,6 +40,8 @@ export interface NeededLine {
    * counts this month.
    */
   payAtMonthEnd?: boolean;
+  /** Set for a credit card EMI's installment, so it can be marked paid from the list. */
+  cardEmiId?: number;
 }
 
 export interface NeededSummary {
@@ -504,6 +506,7 @@ class RecurringService {
         dueDate: emi.nextDueDate,
         overdue: emi.nextDueDate < today,
         kind: 'loan',
+        cardEmiId: emi.id,
       });
     });
 

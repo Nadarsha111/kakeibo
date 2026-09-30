@@ -22,6 +22,7 @@ import LoanPaymentModal from "../../components/modals/LoanPaymentModal";
 import CreditLimitModal from "../../components/modals/CreditLimitModal";
 import ManageCardsModal from "../../components/modals/ManageCardsModal";
 import AddCardEmiModal from "../../components/modals/AddCardEmiModal";
+import MarkEmiPaidModal from "../../components/modals/MarkEmiPaidModal";
 import StatementModal from "../../components/modals/StatementModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
@@ -70,6 +71,7 @@ export default function AccountsScreen() {
   const [cardsAccount, setCardsAccount] = useState<Account | null>(null);
   const [cardsByAccountId, setCardsByAccountId] = useState<Map<number, CreditCard[]>>(new Map());
   const [emiAccount, setEmiAccount] = useState<Account | null>(null);
+  const [payingEmiId, setPayingEmiId] = useState<number | null>(null);
   const [emisByAccountId, setEmisByAccountId] = useState<Map<number, CardEmi[]>>(new Map());
   const [statementAccount, setStatementAccount] = useState<Account | null>(null);
 
@@ -365,6 +367,9 @@ export default function AccountsScreen() {
             <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
               {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""} · ${formatCurrency(outstanding)} left`}
             </Text>
+            <TouchableOpacity onPress={() => setPayingEmiId(emi.id)} hitSlop={8} style={{ marginRight: 12 }}>
+              <MaterialCommunityIcons name="check-circle-outline" size={16} color={theme.colors.primary} />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
               <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
             </TouchableOpacity>
@@ -879,6 +884,14 @@ export default function AccountsScreen() {
         account={emiAccount}
         onClose={() => setEmiAccount(null)}
         onAdded={loadData}
+      />
+
+      {/* Mark Card EMI Paid Modal */}
+      <MarkEmiPaidModal
+        visible={payingEmiId !== null}
+        emiId={payingEmiId}
+        onClose={() => setPayingEmiId(null)}
+        onSaved={loadData}
       />
 
       {/* Statement Import/Reconciliation Modal */}

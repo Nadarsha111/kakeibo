@@ -120,6 +120,8 @@ class TransactionService {
     date: string;
     description?: string;
     profileId: number;
+    /** Which of the destination account's physical cards the payment is for, if it has any. */
+    toCardId?: number | null;
   }): void {
     const fromAccount = this.accountService.getAccountById(data.fromAccountId);
     const toAccount = this.accountService.getAccountById(data.toAccountId);
@@ -146,6 +148,7 @@ class TransactionService {
       date: data.date,
       paymentMethod: 'cash', // Internal transfer, method is nominal
       accountId: data.toAccountId,
+      cardId: data.toCardId ?? null,
     });
 
     // If money is flowing INTO a loan account
