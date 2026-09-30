@@ -10,6 +10,7 @@ import RecurringService from './RecurringService';
 import CardService from './CardService';
 import CardEmiService from './CardEmiService';
 import StatementService from './StatementService';
+import BackupService from './BackupService';
 
 // Re-export the DatabaseConnector and all services for easy access
 export { default as DatabaseConnector } from './DatabaseConnector';
@@ -23,6 +24,7 @@ export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type
 export { default as CardService } from './CardService';
 export { default as CardEmiService } from './CardEmiService';
 export { default as StatementService } from './StatementService';
+export { default as BackupService, type BackupSnapshot, type BackupSummary } from './BackupService';
 
 /**
  * Service Factory - provides easy access to all services with a single instance
@@ -39,6 +41,7 @@ export class ServiceFactory {
   private static _cardService: CardService;
   private static _cardEmiService: CardEmiService;
   private static _statementService: StatementService;
+  private static _backupService: BackupService;
 
   /**
    * Get AccountService instance
@@ -141,6 +144,16 @@ export class ServiceFactory {
   }
 
   /**
+   * Get BackupService instance
+   */
+  static getBackupService(): BackupService {
+    if (!this._backupService) {
+      this._backupService = new BackupService();
+    }
+    return this._backupService;
+  }
+
+  /**
    * Get all services at once
    */
   static getAllServices() {
@@ -172,6 +185,7 @@ export class ServiceFactory {
     this._cardService = undefined as any;
     this._cardEmiService = undefined as any;
     this._statementService = undefined as any;
+    this._backupService = undefined as any;
   }
 }
 
@@ -186,6 +200,7 @@ export const getRecurringService = () => ServiceFactory.getRecurringService();
 export const getCardService = () => ServiceFactory.getCardService();
 export const getCardEmiService = () => ServiceFactory.getCardEmiService();
 export const getStatementService = () => ServiceFactory.getStatementService();
+export const getBackupService = () => ServiceFactory.getBackupService();
 
 /**
  * Database utility functions
