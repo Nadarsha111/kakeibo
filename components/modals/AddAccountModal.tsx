@@ -33,13 +33,13 @@ export default function AddAccountModal({
   account,
 }: AddAccountModalProps) {
   const { theme } = useTheme();
-  const { formatCurrency } = useSettings();
+  // Amounts everywhere use the currency chosen in Settings, so accounts don't get one of their own
+  const { formatCurrency, currency } = useSettings();
   const styles = createStyles(theme);
   
   const [name, setName] = useState('');
   const [type, setType] = useState<Account['type']>('checking'); // Default to checking
   const [balance, setBalance] = useState('');
-  const [currency, setCurrency] = useState('USD');
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
@@ -71,7 +71,6 @@ export default function AddAccountModal({
     setType(account.type);
     // A credit card stores what is owed as a negative balance; the form shows it as a positive amount
     setBalance(String(account.type === 'credit_card' ? Math.abs(account.balance) : account.balance));
-    setCurrency(account.currency);
     setBankName(account.bankName ?? '');
     setAccountNumber(account.accountNumber ?? '');
     setCreditLimit(account.creditLimit ? String(account.creditLimit) : '');
@@ -100,7 +99,6 @@ export default function AddAccountModal({
     setName('');
     setType('checking');
     setBalance('');
-    setCurrency('USD');
     setBankName('');
     setAccountNumber('');
     setCreditLimit('');
@@ -178,7 +176,6 @@ export default function AddAccountModal({
         getAccountService().updateAccount(account.id, {
           name: name.trim(),
           balance: type === 'credit_card' ? 0 - Math.abs(parseFloat(balance)) : parseFloat(balance),
-          currency: currency.trim() || 'USD',
           // null clears the value; undefined would leave the old one in place
           bankName: bankName.trim() || null,
           accountNumber: accountNumber.trim() || null,
@@ -221,7 +218,7 @@ export default function AddAccountModal({
           name: `${isLending ? 'Loan to' : 'Loan from'} ${loanCounterpartyName.trim()}`,
           type: 'loan',
           balance: 0, // This will be set by the service
-          currency: currency.trim() || 'USD',
+          currency,
           isActive: true,
           isLending,
           loanPrincipal: parseFloat(loanPrincipal),
@@ -240,7 +237,7 @@ export default function AddAccountModal({
           type,
           // A credit card is money owed, stored as a negative balance so spending deepens it and payments reduce it
           balance: type === 'credit_card' ? 0 - Math.abs(parseFloat(balance)) : parseFloat(balance),
-          currency: currency.trim() || 'USD',
+          currency,
           creditLimit: type === 'credit_card' && creditLimit.trim() ? parseFloat(creditLimit) : undefined,
           billDay: type === 'credit_card' && billDay.trim() ? Number(billDay) : undefined,
           payAtMonthEnd: type === 'credit_card' && payAtMonthEnd,
@@ -540,12 +537,6 @@ export default function AddAccountModal({
                     placeholder="0.00"
                     keyboardType="decimal-pad"
                   />
-                  <TextInput
-                    style={styles.currencyInput}
-                    value={currency}
-                    onChangeText={setCurrency}
-                    placeholder="USD"
-                  />
                 </View>
                 {type === 'credit_card' && (
                   <Text style={styles.helperText}>
@@ -746,18 +737,6 @@ const createStyles = (theme: any) =>
       borderWidth: 1,
       borderColor: theme.colors.border,
       color: theme.colors.text,
-    },
-    currencyInput: {
-      flex: 1,
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 16,
-      fontSize: 16,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      color: theme.colors.text,
-      textAlign: 'center',
     },
     helperText: {
       fontSize: 12,

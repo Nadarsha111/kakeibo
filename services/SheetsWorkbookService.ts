@@ -619,13 +619,12 @@ class SheetsWorkbookService {
     ];
 
     const accountsValues = [
-      ["Profile", "Account", "Type", "Balance", "Currency", "Notes"],
+      ["Profile", "Account", "Type", "Balance", "Notes"],
       ...data.accounts.map((a) => [
         data.profileNameById.get(a.profileId) ?? "",
         a.name,
         ACCOUNT_TYPE_LABELS[a.type] ?? a.type,
         a.balance,
-        a.currency,
         a.type === "loan"
           ? `${a.isLending ? "Lent to" : "Borrowed from"} ${a.loanCounterpartyName || "?"}${a.loanTermMonths ? ` (${a.loanInterestRate || 0}% for ${a.loanTermMonths} months)` : ""}`
           : a.bankName || "",
@@ -800,8 +799,8 @@ class SheetsWorkbookService {
     }
 
     // --- Accounts sheet ---
-    requests.push(headerRow(acctSheetId, 0, 6));
-    [110, 180, 110, 110, 80, 220].forEach((pixels, column) => requests.push(columnWidth(acctSheetId, column, pixels)));
+    requests.push(headerRow(acctSheetId, 0, 5));
+    [110, 180, 110, 130, 240].forEach((pixels, column) => requests.push(columnWidth(acctSheetId, column, pixels)));
     requests.push(number(range(acctSheetId, 1, undefined, 3, 4), "NUMBER", MONEY));
     requests.push(colorRule([range(acctSheetId, 1, undefined, 3, 4)], { type: "NUMBER_LESS", values: [{ userEnteredValue: "0" }] }, RED));
 
