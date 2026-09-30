@@ -25,6 +25,8 @@ interface ModalProps {
 interface TransactionModalContextType {
   openModal: (props?: ModalProps) => void;
   closeModal: () => void;
+  /** Goes up every time a transaction is saved here, so screens showing transactions can reload. */
+  version: number;
 }
 
 const TransactionModalContext = createContext<
@@ -38,6 +40,7 @@ export const TransactionModalProvider = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [modalProps, setModalProps] = useState<ModalProps>({});
+  const [version, setVersion] = useState(0);
 
   const openModal = useCallback((props: ModalProps = {}) => {
     setModalProps(props);
@@ -50,12 +53,15 @@ export const TransactionModalProvider = ({
   }, []);
 
   return (
-    <TransactionModalContext.Provider value={{ openModal, closeModal }}>
+    <TransactionModalContext.Provider value={{ openModal, closeModal, version }}>
       {children}
       <AddTransactionModal
         visible={isVisible}
         onClose={closeModal}
-        onTransactionAdded={closeModal} // Closes modal on success
+        onTransactionAdded={() => {
+          setVersion((v) => v + 1);
+          closeModal();
+        }}
         transactionToEdit={modalProps.transactionToEdit}
         loanForRepayment={modalProps.loanForRepayment}
         initialType={modalProps.initialType}
