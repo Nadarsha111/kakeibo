@@ -2,6 +2,7 @@ import DatabaseConnector from './DatabaseConnector';
 import TransactionService from './TransactionService';
 import { CardEmi } from '../types';
 import { addMonths, interestDue, monthlyPayment, round2 } from '../utils/loanMath';
+import { localToday } from '../utils/recurring';
 
 // Advancing a very old, unopened EMI catches up at most this many installments in one go; anything
 // further back is picked up the next time the app runs. Roughly two years of monthly installments.
@@ -108,7 +109,7 @@ class CardEmiService {
    */
   advanceDueEmis(): void {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localToday();
       const dueEmis = this.db.getAllSync(
         "SELECT * FROM card_emis WHERE status = 'active' AND isActive = 1 AND nextDueDate IS NOT NULL AND nextDueDate <= ?",
         [today],

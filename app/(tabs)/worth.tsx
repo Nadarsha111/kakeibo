@@ -25,7 +25,7 @@ import LoanPaymentModal from '../../components/modals/LoanPaymentModal';
 import PayCardBillModal, { type CardBillToPay } from '../../components/modals/PayCardBillModal';
 import MonthEndBadge from '../../components/MonthEndBadge';
 import { describeLine } from '../../components/NeededThisMonthCard';
-import { FREQUENCIES, dueStatus, daysBetween, formatDay, monthlyEquivalent } from '../../utils/recurring';
+import { FREQUENCIES, dueStatus, daysBetween, formatDay, localToday, monthlyEquivalent } from '../../utils/recurring';
 
 const RED = '#ef4444';
 const GREEN = '#10b981';
@@ -61,7 +61,7 @@ export default function WorthScreen() {
   const [payingBill, setPayingBill] = useState<CardBillToPay | null>(null);
 
   const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
 
   const load = useCallback(() => {
     try {

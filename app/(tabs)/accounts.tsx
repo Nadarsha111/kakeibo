@@ -466,9 +466,9 @@ export default function AccountsScreen() {
               >
                 {formatCurrency(account.type === 'credit_card' ? Math.abs(account.balance) : account.balance)}
               </Text>
-              <Text style={styles.currency}>
-                {account.type === 'credit_card' ? (account.balance < 0 ? 'owed' : 'credit') : account.currency}
-              </Text>
+              {account.type === 'credit_card' && (
+                <Text style={styles.currency}>{account.balance < 0 ? 'owed' : 'credit'}</Text>
+              )}
             </View>
           </View>
         </View>
