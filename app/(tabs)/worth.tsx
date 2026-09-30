@@ -17,10 +17,10 @@ import { Account, NetWorthItem, NetWorthSummary, Profile, RecurringItem } from '
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { formatDate } from '../../utils/format';
+import { round2 } from '../../utils/loanMath';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 import RecurringItemModal from '../../components/modals/RecurringItemModal';
 import MarkPaidModal from '../../components/modals/MarkPaidModal';
-import MarkEmiPaidModal from '../../components/modals/MarkEmiPaidModal';
 import LoanPaymentModal from '../../components/modals/LoanPaymentModal';
 import PayCardBillModal, { type CardBillToPay } from '../../components/modals/PayCardBillModal';
 import MonthEndBadge from '../../components/MonthEndBadge';
@@ -57,7 +57,6 @@ export default function WorthScreen() {
   const [editing, setEditing] = useState<RecurringItem | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [paying, setPaying] = useState<RecurringItem | null>(null);
-  const [payingEmiId, setPayingEmiId] = useState<number | null>(null);
   const [payingLoan, setPayingLoan] = useState<Account | null>(null);
   const [payingBill, setPayingBill] = useState<CardBillToPay | null>(null);
 
@@ -192,12 +191,21 @@ export default function WorthScreen() {
     );
   };
 
+  // How much of each credit card's balance is purchases still being paid off in EMIs
+  const onEmiByCard: Record<number, number> = {};
+  monthly?.emis.forEach((emi) => {
+    if (emi.kind === 'card' && emi.cardAccountId != null) {
+      onEmiByCard[emi.cardAccountId] = round2((onEmiByCard[emi.cardAccountId] ?? 0) + (emi.outstanding ?? 0));
+    }
+  });
+
   const renderWorthRow = (item: NetWorthItem, owned: boolean) => (
     <View key={`${item.type}-${item.id}`} style={styles.listRow}>
       <View style={styles.cardText}>
         <Text style={styles.listName} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.cardSubtitle}>
           {item.type === 'loan' ? (owned ? 'Money lent' : 'Borrowed') : (TYPE_LABELS[item.type] ?? item.type)}
+          {!owned && item.type === 'credit_card' && onEmiByCard[item.id] > 0 ? ` · includes ${formatCurrency(onEmiByCard[item.id])} on EMI` : ''}
         </Text>
       </View>
       <Text style={[styles.listAmount, { color: owned ? GREEN : RED }]}>{formatCurrency(item.amount)}</Text>
@@ -232,9 +240,6 @@ export default function WorthScreen() {
       case 'loan':
         openLoanPayment(pay.accountId);
         break;
-      case 'cardEmi':
-        setPayingEmiId(pay.emiId);
-        break;
       case 'cardBill':
         setPayingBill({ accountId: pay.accountId, cardId: pay.cardId, label: line.label, amount: line.amount });
         break;
@@ -249,6 +254,9 @@ export default function WorthScreen() {
           {line.payAtMonthEnd && <MonthEndBadge />}
         </View>
         <Text style={[styles.cardSubtitle, line.overdue && { color: RED, fontWeight: '600' }]}>{describeLine(line)}</Text>
+        {line.emiAmount != null && (
+          <Text style={styles.cardSubtitle}>includes {formatCurrency(line.emiAmount)} EMI</Text>
+        )}
       </View>
       <View style={styles.neededAmountBox}>
         <Text style={[styles.listAmount, { color: theme.colors.text }]}>{formatCurrency(line.amount)}</Text>
@@ -358,6 +366,12 @@ export default function WorthScreen() {
               <Text style={styles.breakdownLabel}>Loan installments</Text>
               <Text style={styles.breakdownValue}>{formatCurrency(monthly?.loanEmis ?? 0)}</Text>
             </View>
+            {(monthly?.cardEmis ?? 0) > 0 && (
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Credit card EMIs</Text>
+                <Text style={styles.breakdownValue}>{formatCurrency(monthly?.cardEmis ?? 0)}</Text>
+              </View>
+            )}
             {(monthly?.regularSavings ?? 0) > 0 && (
               <View style={styles.breakdownRow}>
                 <Text style={styles.breakdownLabel}>Regular savings (not a liability)</Text>
@@ -395,32 +409,41 @@ export default function WorthScreen() {
           items.map(renderRecurring)
         )}
 
-        {/* Loan installments */}
+        {/* Installments: loans and credit card EMIs */}
         {(monthly?.emis.length ?? 0) > 0 && (
           <>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Loan installments</Text>
+              <Text style={styles.sectionTitle}>Installments</Text>
+              <Text style={styles.sectionTotal}>{formatCurrency(round2((monthly?.loanEmis ?? 0) + (monthly?.cardEmis ?? 0)))} / month</Text>
             </View>
             {monthly!.emis.map((emi) => {
-              const badge = emi.nextDueDate ? dueBadge(emi.nextDueDate) : null;
+              const card = emi.kind === 'card';
+              // A card EMI is paid with its card's bill, so it has no due date or payment of its own
+              const badge = !card && emi.nextDueDate ? dueBadge(emi.nextDueDate) : null;
               return (
-                <View key={emi.id} style={styles.card}>
+                <View key={`${emi.kind}-${emi.id}`} style={styles.card}>
                   <View style={styles.cardTop}>
                     <View style={styles.cardText}>
                       <Text style={styles.cardTitle} numberOfLines={1}>{emi.name}</Text>
-                      <Text style={styles.cardSubtitle}>
-                        Monthly{emi.nextDueDate ? ` · due ${formatDate(emi.nextDueDate)}` : ''}
+                      <Text style={styles.cardSubtitle} numberOfLines={2}>
+                        {card
+                          ? `${emi.cardName} EMI${emi.outstanding != null ? ` · ${formatCurrency(emi.outstanding)} left` : ''}`
+                          : `Loan${emi.nextDueDate ? ` · due ${formatDate(emi.nextDueDate)}` : ''}`}
                       </Text>
                     </View>
                     <Text style={styles.cardAmount}>{formatCurrency(emi.amount)}</Text>
                   </View>
                   {badge && <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text>}
-                  <View style={styles.cardActions}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => openLoanPayment(emi.id)}>
-                      <MaterialCommunityIcons name="check-circle-outline" size={20} color={theme.colors.primary} />
-                      <Text style={[styles.actionText, { color: theme.colors.primary }]}>Record Payment</Text>
-                    </TouchableOpacity>
-                  </View>
+                  {card ? (
+                    <Text style={styles.emiNote}>Paid with the {emi.cardName} bill</Text>
+                  ) : (
+                    <View style={styles.cardActions}>
+                      <TouchableOpacity style={styles.actionButton} onPress={() => openLoanPayment(emi.id)}>
+                        <MaterialCommunityIcons name="check-circle-outline" size={20} color={theme.colors.primary} />
+                        <Text style={[styles.actionText, { color: theme.colors.primary }]}>Record Payment</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               );
             })}
@@ -481,7 +504,6 @@ export default function WorthScreen() {
         onSaved={load}
       />
       <MarkPaidModal visible={paying !== null} item={paying} onClose={() => setPaying(null)} onSaved={load} />
-      <MarkEmiPaidModal visible={payingEmiId !== null} emiId={payingEmiId} onClose={() => setPayingEmiId(null)} onSaved={load} />
       <LoanPaymentModal visible={payingLoan !== null} loan={payingLoan} onClose={() => setPayingLoan(null)} onPaymentRecorded={load} />
       <PayCardBillModal visible={payingBill !== null} bill={payingBill} onClose={() => setPayingBill(null)} onSaved={load} />
     </View>
@@ -674,6 +696,11 @@ const createStyles = (theme: any) =>
       marginTop: 8,
       paddingTop: 0,
       borderTopWidth: 0,
+    },
+    emiNote: {
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+      marginTop: 8,
     },
     badgeRow: {
       marginTop: 8,

@@ -101,7 +101,28 @@ class CardService {
     }
   }
 
-  /** How many transactions are tagged to this specific card. */
+  /**
+   * What is owed on each card, from the transactions tagged to it (charges less payments), the
+   * same way its own bill is worked out in RecurringService. Cards with nothing tagged come out 0.
+   */
+  getOwedByCard(cardIds: number[]): Map<number, number> {
+    const owed = new Map<number, number>(cardIds.map((id) => [id, 0]));
+    if (cardIds.length === 0) return owed;
+    try {
+      const placeholders = cardIds.map(() => '?').join(', ');
+      const rows = this.db.getAllSync(
+        `SELECT cardId, COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) as net
+         FROM transactions WHERE cardId IN (${placeholders}) GROUP BY cardId`,
+        cardIds,
+      ) as { cardId: number; net: number }[];
+      rows.forEach((row) => owed.set(row.cardId, Math.round(-row.net * 100) / 100));
+    } catch (error) {
+      console.error('Error getting what is owed on each card:', error);
+    }
+    return owed;
+  }
+
+    /** How many transactions are tagged to this specific card. */
   getTransactionCount(cardId: number): number {
     const row = this.db.getFirstSync('SELECT COUNT(*) as count FROM transactions WHERE cardId = ?', [cardId]) as { count: number } | null;
     return row?.count ?? 0;
