@@ -1,4 +1,15 @@
-import { getAccountService, getCategoryService, getProfileService, getTransactionService } from "../database";
+import {
+  getAccountService,
+  getCardService,
+  getCategoryService,
+  getProfileService,
+  getRecurringService,
+  getSettingsService,
+  getTransactionService,
+  type NeededLine,
+  type NeededSummary,
+} from "../database";
+import type { NetWorthSummary } from "../types";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -12,6 +23,9 @@ const TAB = {
 // Every profile also gets its own dashboard tab. The prefix marks tabs this service owns, so ones
 // left behind by a deleted or renamed profile can be found and removed.
 const PROFILE_TAB_PREFIX = "Profile - ";
+
+/** Columns on the Transactions tab: the nine Pull reads, then Month and Card. */
+const TRANSACTION_COLUMNS = 11;
 
 /** Sheet names in A1 ranges must be quoted when they contain spaces or punctuation. */
 const quoteTab = (title: string) => `'${title.replace(/'/g, "''")}'`;
@@ -34,7 +48,16 @@ const BLACK = { red: 0, green: 0, blue: 0 };
 const MUTED = { red: 0.451, green: 0.451, blue: 0.451 }; // #737373 notes and the ID column
 const RED = { red: 0.863, green: 0.149, blue: 0.149 }; // #dc2626
 const GREEN = { red: 0.082, green: 0.502, blue: 0.239 }; // #15803d
-const MONEY = "#,##0.00";
+
+/** Money in the user's own currency symbol, e.g. "₹"#,##0.00. The symbol is a quoted literal. */
+const moneyPattern = (symbol: string) => {
+  const quoted = `"${symbol.replace(/"/g, "")}"`;
+  return `${quoted}#,##0.00;-${quoted}#,##0.00`;
+};
+
+/** A date as local "YYYY-MM-DD". toISOString would shift it to UTC, a day early east of Greenwich. */
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 // Google's default spreadsheet theme (white background, black text). An earlier version of this
 // service forced a black theme onto the spreadsheet, so it is restored once on those files.
@@ -106,11 +129,13 @@ class SheetsWorkbookService {
     const titles = [TAB.DASHBOARD, ...data.profileTabs.map((p) => p.title), TAB.TRANSACTIONS, TAB.ACCOUNTS, TAB.CATEGORIES];
     const sheetIds = await this.ensureStructure(accessToken, spreadsheetId, existing, titles);
     const dashboard = this.buildDashboard(data);
-    const profileDashboards = data.profileTabs.map((profile) => this.buildProfileDashboard(profile));
+    const profileDashboards = data.profileTabs.map((profile) => this.buildProfileDashboard(profile, data.currency));
 
     // Re-setting a basic filter wipes whatever filter the user has applied, so only create it once.
     const transactionsSheet = existing.sheets.find((s) => s.properties.sheetId === sheetIds[TAB.TRANSACTIONS]);
-    const hasTransactionFilter = !!transactionsSheet?.basicFilter;
+    // Kept when it already spans every column, so the viewer's own filter choices survive a push
+    const filterRange = (transactionsSheet?.basicFilter as { range?: { endColumnIndex?: number } } | undefined)?.range;
+    const hasTransactionFilter = !!transactionsSheet?.basicFilter && (filterRange?.endColumnIndex ?? 0) >= TRANSACTION_COLUMNS;
 
     // A black spreadsheet background means an earlier version of this service forced a dark
     // theme onto the file. That needs undoing once so the sheet can follow the viewer's theme.
@@ -160,8 +185,9 @@ class SheetsWorkbookService {
     const transactionService = getTransactionService();
 
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+    const monthStart = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const monthEnd = localDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    const recurringService = getRecurringService();
 
     const totalBalance = accountService.getTotalAccountsBalance();
     const monthlyIncome = transactionService.getTotalIncome(monthStart, monthEnd);
@@ -196,6 +222,8 @@ class SheetsWorkbookService {
       return {
         ...row,
         title: profileTabTitle(p.name, p.id, usedTitles),
+        needed: recurringService.getNeededThisMonth(p.id),
+        worth: accountService.getNetWorthSummary(p.id),
         savingsRate: row.income > 0 ? row.net / row.income : 0,
         monthlyTrend: transactionService.getMonthlyTrend(6, p.id),
         categorySummary: summary.map((c) => ({ ...c, percentage: summaryTotal > 0 ? c.amount / summaryTotal : 0 })),
@@ -213,6 +241,11 @@ class SheetsWorkbookService {
     const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
 
     const transactions = transactionService.getAllTransactionsForExport();
+    const cardNameById = new Map(
+      [...getCardService().getCardsForAccounts(accounts.filter((a) => a.type === "credit_card").map((a) => a.id)).values()]
+        .flat()
+        .map((card) => [card.id, card.name]),
+    );
     const categoryNames = getCategoryService()
       .getCategories()
       .map((c) => c.name);
@@ -234,7 +267,11 @@ class SheetsWorkbookService {
       accounts,
       accountNameById,
       transactions,
+      cardNameById,
       categoryNames,
+      needed: recurringService.getNeededThisMonth(),
+      worth: accountService.getNetWorthSummary(),
+      currency: getSettingsService().getSetting("currency") || "$",
     };
   }
 
@@ -373,6 +410,48 @@ class SheetsWorkbookService {
   }
 
   /**
+   * "Due this month" (the app's Money needed list, with how it compares with what you have) and
+   * "Net worth", shared by the Dashboard and each profile tab. Returns the row each part landed on.
+   */
+  private addPlanSections(
+    add: (row?: any[]) => number,
+    needed: NeededSummary,
+    worth: NetWorthSummary,
+    currency: string,
+  ) {
+    const money = (amount: number) =>
+      `${currency}${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+    const notes = (line: NeededLine) =>
+      [
+        line.overdue ? "Overdue" : "",
+        line.payAtMonthEnd ? "Paid at month end" : "",
+        line.emiAmount ? `Includes ${money(line.emiAmount)} EMI` : "",
+        line.kind === "savings" ? "Savings" : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+    const dueTitle = add([`Due this month (by ${new Date(`${needed.monthEnd}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })})`]);
+    const dueHeader = add(["What", "Due date", "Amount", "Notes"]);
+    const dueFirst = dueHeader + 1;
+    // The date goes in as text the sheet reads as a date, so it sorts and formats as one
+    needed.lines.forEach((line) => add([line.label, line.dueDate, line.amount, notes(line)]));
+    const dueEnd = dueFirst + needed.lines.length;
+    if (needed.lines.length === 0) add(["Nothing left to pay this month"]);
+    const dueTotal = add(["Total due", "", needed.total]);
+    const dueAvailable = add(["You have (cash, bank, savings)", "", needed.available]);
+    const dueLeftOver = add([needed.leftOver < 0 ? "Short by" : "Left over", "", Math.abs(needed.leftOver), needed.expectedIncome > 0 ? `+ ${money(needed.expectedIncome)} income expected, not counted` : ""]);
+    add();
+
+    const worthTitle = add(["Net worth"]);
+    const worthHeader = add(["Assets", "Liabilities", "Net worth", "Monthly commitments"]);
+    const worthValues = add([worth.totalAssets, worth.totalLiabilities, worth.netWorth, needed.monthlyCommitments]);
+    add();
+
+    return { dueTitle, dueHeader, dueFirst, dueEnd, dueTotal, dueAvailable, dueLeftOver, short: needed.leftOver < 0, overdue: needed.lines.map((l) => l.overdue), worthTitle, worthHeader, worthValues };
+  }
+
+  /**
    * Lays out the Dashboard top to bottom and records which row each block landed on, so the
    * formatting and charts never depend on hard-coded row numbers (the number of profiles varies).
    */
@@ -383,7 +462,7 @@ class SheetsWorkbookService {
     add(["Kakeibo Dashboard"]);
     add([`Last updated: ${new Date().toLocaleString()}`]);
     add([
-      "A copy of your Kakeibo app data. To change transactions, edit the Transactions tab, then tap Pull in the app. Leave the ID blank when adding a new row.",
+      "A copy of your Kakeibo app data, updated each time you push from the app. To change transactions, edit the Transactions tab, then tap Pull in the app. Leave the ID blank when adding a new row; Month and Card are filled in by the app.",
     ]);
     add();
 
@@ -391,6 +470,8 @@ class SheetsWorkbookService {
     const glanceHeader = add(["Total balance", "Income this month", "Expenses this month", "Net this month", "Savings rate"]);
     const glanceValues = add([data.totalBalance, data.monthlyIncome, data.monthlyExpenses, data.net, data.savingsRate]);
     add();
+
+    const plan = this.addPlanSections(add, data.needed, data.worth, data.currency);
 
     const profileTitle = add(["By profile"]);
     const profileHeader = add(["Profile", "Balance", "Income this month", "Expenses this month", "Net this month"]);
@@ -419,6 +500,7 @@ class SheetsWorkbookService {
 
     return {
       values,
+      plan,
       rows: {
         glanceTitle,
         glanceHeader,
@@ -442,7 +524,7 @@ class SheetsWorkbookService {
    * The same layout as the Dashboard, for a single profile: at a glance, the 6-month trend, this
    * month's spending by category (the pie chart reads it from this tab), its accounts, and charts.
    */
-  private buildProfileDashboard(profile: ReturnType<SheetsWorkbookService["gatherData"]>["profileTabs"][number]) {
+  private buildProfileDashboard(profile: ReturnType<SheetsWorkbookService["gatherData"]>["profileTabs"][number], currency: string) {
     const values: any[][] = [];
     const add = (row: any[] = []) => values.push(row) - 1;
 
@@ -455,6 +537,8 @@ class SheetsWorkbookService {
     const glanceHeader = add(["Total balance", "Income this month", "Expenses this month", "Net this month", "Savings rate"]);
     const glanceValues = add([profile.balance, profile.income, profile.expenses, profile.net, profile.savingsRate]);
     add();
+
+    const plan = this.addPlanSections(add, profile.needed, profile.worth, currency);
 
     const trendTitle = add(["Last 6 months"]);
     const trendHeader = add(["Month", "Income", "Expenses", "Net"]);
@@ -484,6 +568,7 @@ class SheetsWorkbookService {
 
     return {
       values,
+      plan,
       rows: {
         glanceTitle,
         glanceHeader,
@@ -514,7 +599,9 @@ class SheetsWorkbookService {
     profileDashboards: Array<ReturnType<SheetsWorkbookService["buildProfileDashboard"]>>,
   ) {
     const transactionsValues = [
-      ["ID", "Date", "Type", "Category", "Amount", "Description", "Payment method", "Account", "Profile"],
+      // Pull reads the first nine columns by position; Month and Card come after them and are only
+      // there to filter and pivot on, filled in by the app
+      ["ID", "Date", "Type", "Category", "Amount", "Description", "Payment method", "Account", "Profile", "Month", "Card"],
       ...data.transactions.map((t) => [
         t.id,
         t.date,
@@ -525,6 +612,9 @@ class SheetsWorkbookService {
         t.paymentMethod,
         t.accountId != null ? (data.accountNameById.get(t.accountId) ?? "") : "",
         data.profileNameById.get(t.profileId) ?? "",
+        // The apostrophe keeps "2026-09" as text instead of turning it into a date
+        `'${t.date.slice(0, 7)}`,
+        t.cardId != null ? (data.cardNameById.get(t.cardId) ?? "") : "",
       ]),
     ];
 
@@ -583,6 +673,7 @@ class SheetsWorkbookService {
     hadDarkCells: boolean,
   ) {
     const requests: any[] = [];
+    const MONEY = moneyPattern(data.currency);
 
     // Range helpers. Leaving the end row/column out means "to the end of the sheet", which is
     // what we want for anything the user might extend by typing new rows.
@@ -685,8 +776,10 @@ class SheetsWorkbookService {
     [dashSheetId, ...profileSheetIds].forEach((sheetId) => requests.push({ unmergeCells: { range: { sheetId } } }));
 
     // --- Transactions sheet ---
-    requests.push(headerRow(txSheetId, 0, 9));
-    [50, 100, 80, 120, 100, 240, 120, 170, 110].forEach((pixels, column) => requests.push(columnWidth(txSheetId, column, pixels)));
+    requests.push(headerRow(txSheetId, 0, TRANSACTION_COLUMNS));
+    [50, 100, 80, 120, 110, 240, 120, 170, 110, 80, 110].forEach((pixels, column) => requests.push(columnWidth(txSheetId, column, pixels)));
+    // Month and Card are filled in by the app, so they read as secondary
+    requests.push(format(range(txSheetId, 1, undefined, 9, TRANSACTION_COLUMNS), { textFormat: { foregroundColor: MUTED } }, "userEnteredFormat.textFormat.foregroundColor"));
     requests.push(format(range(txSheetId, 1, undefined, 0, 1), { textFormat: { foregroundColor: MUTED } }, "userEnteredFormat.textFormat.foregroundColor")); // ID: needed for sync, not for reading
     requests.push(number(range(txSheetId, 1, undefined, 1, 2), "DATE", "yyyy-mm-dd")); // ISO so Pull can read it back
     requests.push(number(range(txSheetId, 1, undefined, 4, 5), "NUMBER", MONEY));
@@ -703,7 +796,7 @@ class SheetsWorkbookService {
     if (profileNames.length > 0) requests.push(dropdown(txSheetId, 8, profileNames));
 
     if (!hasTransactionFilter) {
-      requests.push({ setBasicFilter: { filter: { range: range(txSheetId, 0, undefined, 0, 9) } } });
+      requests.push({ setBasicFilter: { filter: { range: range(txSheetId, 0, undefined, 0, TRANSACTION_COLUMNS) } } });
     }
 
     // --- Accounts sheet ---
@@ -743,6 +836,34 @@ class SheetsWorkbookService {
 
     // At a glance: big numbers, money in the first four, a percentage in the last.
     const bigNumber = { textFormat: { bold: true, fontSize: 14 } };
+
+    // Due this month and Net worth, laid out by addPlanSections
+    const formatPlan = (sheetId: number, plan: ReturnType<SheetsWorkbookService["addPlanSections"]>) => {
+      [plan.dueTitle, plan.worthTitle].forEach((row) => requests.push(...sectionRow(sheetId, row)));
+      requests.push(headerRow(sheetId, plan.dueHeader, 4));
+      requests.push(headerRow(sheetId, plan.worthHeader, 4));
+
+      if (plan.dueEnd > plan.dueFirst) {
+        requests.push(number(range(sheetId, plan.dueFirst, plan.dueEnd, 1, 2), "DATE", "d mmm yyyy"));
+        requests.push(format(range(sheetId, plan.dueFirst, plan.dueEnd, 3, 4), { textFormat: { foregroundColor: MUTED } }, "userEnteredFormat.textFormat.foregroundColor"));
+        plan.overdue.forEach((overdue, index) => {
+          if (overdue) {
+            requests.push(format(range(sheetId, plan.dueFirst + index, plan.dueFirst + index + 1, 1, 4), { textFormat: { foregroundColor: RED, bold: true } }, "userEnteredFormat.textFormat"));
+          }
+        });
+      }
+      requests.push(number(range(sheetId, plan.dueFirst, plan.dueLeftOver + 1, 2, 3), "NUMBER", MONEY));
+      requests.push(format(range(sheetId, plan.dueTotal, plan.dueLeftOver + 1, 0, 3), { textFormat: { bold: true } }, "userEnteredFormat.textFormat.bold"));
+      requests.push({ updateBorders: { range: range(sheetId, plan.dueTotal, plan.dueTotal + 1, 0, 4), top: { style: "SOLID", colorStyle: { rgbColor: MUTED } } } });
+      requests.push(format(range(sheetId, plan.dueLeftOver, plan.dueLeftOver + 1, 2, 3), { textFormat: { foregroundColor: plan.short ? RED : GREEN, bold: true } }, "userEnteredFormat.textFormat"));
+      requests.push(format(range(sheetId, plan.dueLeftOver, plan.dueLeftOver + 1, 3, 4), { textFormat: { foregroundColor: MUTED, italic: true } }, "userEnteredFormat.textFormat"));
+
+      requests.push(format(range(sheetId, plan.worthValues, plan.worthValues + 1, 0, 4), { ...bigNumber, numberFormat: { type: "NUMBER", pattern: MONEY } }, "userEnteredFormat(numberFormat,textFormat)"));
+      requests.push(rowHeight(sheetId, plan.worthValues, 32));
+      redGreen([range(sheetId, plan.worthValues, plan.worthValues + 1, 2, 3)]).forEach((rule) => requests.push(rule));
+    };
+    formatPlan(dashSheetId, dashboard.plan);
+    data.profileTabs.forEach((profile, index) => formatPlan(sheetIds[profile.title], profileDashboards[index].plan));
     requests.push(format(range(dashSheetId, r.glanceValues, r.glanceValues + 1, 0, 4), { ...bigNumber, numberFormat: { type: "NUMBER", pattern: MONEY } }, "userEnteredFormat(numberFormat,textFormat)"));
     requests.push(format(range(dashSheetId, r.glanceValues, r.glanceValues + 1, 4, 5), { ...bigNumber, numberFormat: { type: "PERCENT", pattern: "0%" } }, "userEnteredFormat(numberFormat,textFormat)"));
     requests.push(rowHeight(dashSheetId, r.glanceValues, 32));
