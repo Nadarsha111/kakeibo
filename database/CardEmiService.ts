@@ -1,17 +1,17 @@
 import DatabaseConnector from './DatabaseConnector';
 import TransactionService from './TransactionService';
 import { CardEmi } from '../types';
-import { addMonths, interestDue, isValidDate, monthlyPayment, round2 } from '../utils/loanMath';
+import { addMonths, interestDue, monthlyPayment, round2 } from '../utils/loanMath';
 
 // Advancing a very old, unopened EMI catches up at most this many installments in one go; anything
 // further back is picked up the next time the app runs. Roughly two years of monthly installments.
 const MAX_CATCH_UP = 24;
 
 /**
- * A purchase on a credit card converted to fixed monthly installments. An EMI is usually paid
- * simply by paying the card's own bill, which already includes it, so its schedule advances by
- * itself once its due date has passed (see advanceDueEmis), the same way an auto-posting recurring
- * item does. It can also be marked paid by hand (see markPaid), e.g. when paid early.
+ * A purchase on a credit card converted to fixed monthly installments. There is no separate
+ * payment action, the way there is for a loan: an EMI is paid simply by paying the card's own
+ * bill, which already includes it, so its schedule instead advances by itself once its due date
+ * has passed (see advanceDueEmis), the same way an auto-posting recurring item does.
  */
 class CardEmiService {
   private db: ReturnType<DatabaseConnector['getDatabase']>;
@@ -138,91 +138,6 @@ class CardEmiService {
       });
     } catch (error) {
       console.error('Error advancing card EMIs:', error);
-    }
-  }
-
-  getEmiById(id: number): CardEmi | null {
-    try {
-      return (this.db.getFirstSync('SELECT * FROM card_emis WHERE id = ?', [id]) as CardEmi) ?? null;
-    } catch (error) {
-      console.error('Error getting card EMI:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Marks an EMI's current installment as paid and moves it on to the next one, without waiting
-   * for its due date to pass. With an account, the installment is also recorded as a payment from
-   * that account to the card: its interest as a "Loan Interest" expense on the card, and the whole
-   * installment as a transfer into it, so the card ends up owing only the principal just paid off
-   * less. With no account, only the schedule moves on and no balances change.
-   */
-  markPaid(id: number, payment: { accountId: number | null; date: string }): void {
-    try {
-      DatabaseConnector.getInstance().withTransaction(() => {
-        const emi = this.getEmiById(id);
-        if (!emi || emi.status !== 'active' || !emi.isActive || !emi.nextDueDate) {
-          throw new Error('This EMI has nothing left to pay.');
-        }
-        const outstanding = round2((emi.principal || 0) - (emi.returnedAmount || 0));
-        if (outstanding <= 0.005) throw new Error('This EMI has nothing left to pay.');
-
-        const { interest, principalPortion } = this.splitInstallment(emi, outstanding);
-
-        if (payment.accountId != null) {
-          if (!isValidDate(payment.date)) throw new Error('Enter the date as YYYY-MM-DD.');
-          const card = this.db.getFirstSync('SELECT id, name, profileId FROM accounts WHERE id = ?', [emi.accountId]) as
-            | { id: number; name: string; profileId: number }
-            | null;
-          const from = this.db.getFirstSync('SELECT id, type, profileId FROM accounts WHERE id = ? AND isActive = 1', [payment.accountId]) as
-            | { id: number; type: string; profileId: number }
-            | null;
-          if (!card) throw new Error('The card for this EMI no longer exists.');
-          if (!from || from.id === card.id || from.type === 'loan' || from.type === 'credit_card' || from.profileId !== card.profileId) {
-            throw new Error('Choose a bank or cash account to pay from.');
-          }
-
-          if (interest > 0) {
-            this.transactionService.addTransactionUnsafe({
-              profileId: card.profileId,
-              amount: interest,
-              type: 'expense',
-              category: 'Loan Interest',
-              description: `Interest on ${emi.name} (EMI)`,
-              date: payment.date,
-              paymentMethod: 'credit_card',
-              accountId: card.id,
-              cardId: emi.cardId ?? null,
-            });
-          }
-          this.transactionService.addTransferUnsafe({
-            fromAccountId: from.id,
-            toAccountId: card.id,
-            amount: round2(principalPortion + interest),
-            date: payment.date,
-            description: `${emi.name} EMI`,
-            profileId: card.profileId,
-            toCardId: emi.cardId ?? null,
-          });
-        }
-
-        const returnedAmount = round2((emi.returnedAmount || 0) + principalPortion);
-        const fullyPaid = round2((emi.principal || 0) - returnedAmount) <= 0.005;
-        this.db.runSync(
-          `UPDATE card_emis SET returnedAmount = ?, interestPaid = ?, nextDueDate = ?, status = ?, updatedAt = ? WHERE id = ?`,
-          [
-            returnedAmount,
-            round2((emi.interestPaid || 0) + interest),
-            fullyPaid ? null : addMonths(emi.nextDueDate, 1, emi.paymentDay || undefined),
-            fullyPaid ? 'fully_paid' : 'active',
-            new Date().toISOString(),
-            emi.id,
-          ],
-        );
-      });
-    } catch (error) {
-      console.error('Error marking card EMI paid:', error);
-      throw error;
     }
   }
 

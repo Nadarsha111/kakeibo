@@ -50,12 +50,13 @@ export interface NeededLine {
   payAtMonthEnd?: boolean;
   /** What paying this line means, so it can be marked paid straight from the list. */
   pay?: NeededPayment;
+  /** For a card bill: how much of the amount is EMI installments, which are billed and paid with it. */
+  emiAmount?: number;
 }
 
 export type NeededPayment =
   | { kind: 'recurring'; itemId: number }
   | { kind: 'loan'; accountId: number }
-  | { kind: 'cardEmi'; emiId: number }
   /** cardId null: the account's own bill, for whatever isn't charged to one of its physical cards. */
   | { kind: 'cardBill'; accountId: number; cardId: number | null };
 
@@ -415,6 +416,45 @@ class RecurringService {
       }
     });
 
+    // Credit card EMI installments falling due by month end, per bill they go on (a physical card's,
+    // or the account's own for EMIs not charged to one). They are billed and paid with that bill,
+    // on top of its regular amount, which already leaves out their outstanding principal.
+    const emiDue = new Map<string, { amount: number; dueDate: string; label: string; accountId: number; cardId: number | null }>();
+    const billedEmis = new Set<string>();
+    const emiBillKey = (accountId: number, cardId: number | null) => `${accountId}-${cardId ?? 'account'}`;
+    let cardEmiQuery = `SELECT ce.accountId, ce.cardId, ce.principal, ce.returnedAmount, ce.interestRate, ce.installmentAmount, ce.paymentDay,
+        ce.nextDueDate, a.name as accountName FROM card_emis ce
+      JOIN accounts a ON a.id = ce.accountId
+      WHERE ce.status = 'active' AND ce.isActive = 1 AND a.isActive = 1`;
+    const cardEmiParams: any[] = [];
+    if (profileId) {
+      cardEmiQuery += ' AND a.profileId = ?';
+      cardEmiParams.push(profileId);
+    }
+    (this.db.getAllSync(cardEmiQuery, cardEmiParams) as any[]).forEach((emi) => {
+      const outstanding = round2((emi.principal || 0) - (emi.returnedAmount || 0));
+      if (outstanding <= 0 || !emi.nextDueDate) return;
+      const installments = countDue(emi.nextDueDate, monthEnd, 'monthly', emi.paymentDay, MAX_CATCH_UP);
+      if (installments === 0) return;
+      // The last installment cannot come to more than what is left to pay off
+      const payoff = round2(outstanding + interestDue(outstanding, emi.interestRate || 0));
+      const amount = Math.min(round2(installments * emi.installmentAmount), payoff);
+      const key = emiBillKey(emi.accountId, emi.cardId ?? null);
+      const existing = emiDue.get(key);
+      emiDue.set(key, {
+        amount: round2((existing?.amount ?? 0) + amount),
+        dueDate: existing && existing.dueDate < emi.nextDueDate ? existing.dueDate : emi.nextDueDate,
+        label: emi.accountName,
+        accountId: emi.accountId,
+        cardId: emi.cardId ?? null,
+      });
+    });
+    const takeEmiDue = (accountId: number, cardId: number | null) => {
+      const key = emiBillKey(accountId, cardId);
+      billedEmis.add(key);
+      return emiDue.get(key);
+    };
+
     // A credit card with a bill day and something owed is a bill: what is owed now, due on that day.
     // A bill day already past this month means the next bill falls next month, so it is not needed yet,
     // unless the card is paid at month end: then its already-issued bill is still to be paid this month.
@@ -440,6 +480,7 @@ class RecurringService {
           key: `card-account-${account.id}`,
           label: account.name,
           pay: { kind: 'cardBill', accountId: account.id, cardId: null },
+          emiDue: takeEmiDue(account.id, null),
           owed: round2(round2(-account.balance) - this.outstandingEmiPrincipal(account.id, null)),
           billDay: account.billDay,
           payAtMonthEnd: !!account.payAtMonthEnd,
@@ -466,6 +507,7 @@ class RecurringService {
           key: `card-${card.id}`,
           label: `${account.name} – ${card.name}`,
           pay: { kind: 'cardBill', accountId: account.id, cardId: card.id },
+          emiDue: takeEmiDue(account.id, card.id),
           owed: round2(owed - this.outstandingEmiPrincipal(account.id, card.id)),
           billDay: card.billDay,
           payAtMonthEnd: !!card.payAtMonthEnd,
@@ -488,6 +530,7 @@ class RecurringService {
         key: `card-account-${account.id}`,
         label: account.name,
         pay: { kind: 'cardBill', accountId: account.id, cardId: null },
+        emiDue: takeEmiDue(account.id, null),
         owed: round2(round2(-account.balance) - cardsOwedTotal - this.outstandingEmiPrincipal(account.id, null)),
         billDay: account.billDay,
         payAtMonthEnd: !!account.payAtMonthEnd,
@@ -500,34 +543,19 @@ class RecurringService {
       });
     });
 
-    // Each active credit card EMI bills its own fixed installment this cycle, on top of (not
-    // instead of) the card's own bill above, which already excludes its outstanding principal.
-    let cardEmiQuery = `SELECT ce.id, ce.name, ce.principal, ce.returnedAmount, ce.interestRate, ce.installmentAmount, ce.paymentDay, ce.nextDueDate,
-        a.name as accountName FROM card_emis ce
-      JOIN accounts a ON a.id = ce.accountId
-      WHERE ce.status = 'active' AND ce.isActive = 1 AND a.isActive = 1`;
-    const cardEmiParams: any[] = [];
-    if (profileId) {
-      cardEmiQuery += ' AND a.profileId = ?';
-      cardEmiParams.push(profileId);
-    }
-
-    (this.db.getAllSync(cardEmiQuery, cardEmiParams) as any[]).forEach((emi) => {
-      const outstanding = round2((emi.principal || 0) - (emi.returnedAmount || 0));
-      if (outstanding <= 0 || !emi.nextDueDate) return;
-
-      const installments = countDue(emi.nextDueDate, monthEnd, 'monthly', emi.paymentDay, MAX_CATCH_UP);
-      if (installments === 0) return;
-      // The last installment cannot come to more than what is left to pay off
-      const payoff = round2(outstanding + interestDue(outstanding, emi.interestRate || 0));
+    // EMIs whose bill was never looked at above (e.g. charged to a physical card since removed)
+    // still have installments to pay, so those get a line of their own instead of disappearing
+    emiDue.forEach((due, billKey) => {
+      if (billedEmis.has(billKey)) return;
       lines.push({
-        key: `card-emi-${emi.id}`,
-        label: `${emi.accountName} – ${emi.name} (EMI)`,
-        amount: Math.min(round2(installments * emi.installmentAmount), payoff),
-        dueDate: emi.nextDueDate,
-        overdue: emi.nextDueDate < today,
-        kind: 'loan',
-        pay: { kind: 'cardEmi', emiId: emi.id },
+        key: `card-emi-${billKey}`,
+        label: `${due.label} EMI`,
+        amount: due.amount,
+        dueDate: due.dueDate,
+        overdue: due.dueDate < today,
+        kind: 'card',
+        pay: { kind: 'cardBill', accountId: due.accountId, cardId: due.cardId },
+        emiAmount: due.amount,
       });
     });
 
@@ -562,15 +590,18 @@ class RecurringService {
    * end of the month. Shared between the plain, single-bill account and each physical card of an
    * account that splits its balance across more than one, so both follow the same rule: before the
    * bill day everything owed goes on the coming bill; from then on the bill is fixed at what was
-   * owed that day, and later purchases belong to the next one.
+   * owed that day, and later purchases belong to the next one. EMI installments on the card are
+   * billed and paid with it, so they are added to the same line rather than listed on their own.
    */
   private pushCardBillLine(
     lines: NeededLine[],
-    { key, label, pay, owed, billDay, payAtMonthEnd, expensesSince, today, monthEnd }: {
+    { key, label, pay, emiDue, owed, billDay, payAtMonthEnd, expensesSince, today, monthEnd }: {
       key: string;
       label: string;
       pay: NeededPayment;
-      /** What is currently owed (a positive amount) by this card or card-less account. */
+      /** EMI installments on this bill falling due by month end, which are paid with it. */
+      emiDue?: { amount: number; dueDate: string };
+      /** What is currently owed (a positive amount) by this card or card-less account, EMI principal left out. */
       owed: number;
       billDay: number | null | undefined;
       payAtMonthEnd: boolean;
@@ -580,7 +611,8 @@ class RecurringService {
       monthEnd: string;
     },
   ): void {
-    if (owed <= 0) return;
+    const emi = emiDue?.amount ?? 0;
+    const emiAmount = emi > 0 ? emi : undefined;
 
     if (payAtMonthEnd) {
       let amount = owed;
@@ -590,15 +622,26 @@ class RecurringService {
           amount = round2(owed - expensesSince(billDate));
         }
       }
+      amount = round2(amount + emi);
       if (amount <= 0) return;
-      lines.push({ key, label: `${label} bill`, amount, dueDate: monthEnd, overdue: false, kind: 'card', payAtMonthEnd: true, pay });
+      lines.push({ key, label: `${label} bill`, amount, dueDate: monthEnd, overdue: false, kind: 'card', payAtMonthEnd: true, pay, emiAmount });
       return;
     }
 
-    if (!billDay) return;
+    if (!billDay) {
+      // With no bill day there is no knowing when the regular balance is due, but the EMI
+      // installments still fall due on their own dates
+      if (emiDue && emi > 0) {
+        lines.push({ key, label: `${label} EMI`, amount: emi, dueDate: emiDue.dueDate, overdue: emiDue.dueDate < today, kind: 'card', pay, emiAmount });
+      }
+      return;
+    }
+    // A bill that falls after month end takes this month's installments with it
     const dueDate = nextBillDate(billDay, today);
     if (dueDate > monthEnd) return;
-    lines.push({ key, label: `${label} bill`, amount: owed, dueDate, overdue: false, kind: 'card', pay });
+    const amount = round2(owed + emi);
+    if (amount <= 0) return;
+    lines.push({ key, label: `${label} bill`, amount, dueDate, overdue: false, kind: 'card', pay, emiAmount });
   }
 
   /**
