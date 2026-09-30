@@ -40,9 +40,16 @@ export interface NeededLine {
    * counts this month.
    */
   payAtMonthEnd?: boolean;
-  /** Set for a credit card EMI's installment, so it can be marked paid from the list. */
-  cardEmiId?: number;
+  /** What paying this line means, so it can be marked paid straight from the list. */
+  pay?: NeededPayment;
 }
+
+export type NeededPayment =
+  | { kind: 'recurring'; itemId: number }
+  | { kind: 'loan'; accountId: number }
+  | { kind: 'cardEmi'; emiId: number }
+  /** cardId null: the account's own bill, for whatever isn't charged to one of its physical cards. */
+  | { kind: 'cardBill'; accountId: number; cardId: number | null };
 
 export interface NeededSummary {
   monthEnd: string;
@@ -350,6 +357,7 @@ class RecurringService {
         dueDate: item.nextDueDate,
         overdue: item.nextDueDate < today,
         kind: item.type === 'transfer' ? 'savings' : 'bill',
+        pay: { kind: 'recurring', itemId: item.id },
       });
     });
 
@@ -383,6 +391,7 @@ class RecurringService {
           overdue: loan.loanNextDueDate < today,
           kind: 'loan',
           payAtMonthEnd: !!loan.payAtMonthEnd && loan.loanNextDueDate > monthEnd,
+          pay: { kind: 'loan', accountId: loan.id },
         });
       } else if (loan.loanExpectedReturnDate && loan.loanExpectedReturnDate <= cutoff) {
         lines.push({
@@ -393,6 +402,7 @@ class RecurringService {
           overdue: loan.loanExpectedReturnDate < today,
           kind: 'loan',
           payAtMonthEnd: !!loan.payAtMonthEnd && loan.loanExpectedReturnDate > monthEnd,
+          pay: { kind: 'loan', accountId: loan.id },
         });
       }
     });
@@ -421,6 +431,7 @@ class RecurringService {
         this.pushCardBillLine(lines, {
           key: `card-account-${account.id}`,
           label: account.name,
+          pay: { kind: 'cardBill', accountId: account.id, cardId: null },
           owed: round2(round2(-account.balance) - this.outstandingEmiPrincipal(account.id, null)),
           billDay: account.billDay,
           payAtMonthEnd: !!account.payAtMonthEnd,
@@ -446,6 +457,7 @@ class RecurringService {
         this.pushCardBillLine(lines, {
           key: `card-${card.id}`,
           label: `${account.name} – ${card.name}`,
+          pay: { kind: 'cardBill', accountId: account.id, cardId: card.id },
           owed: round2(owed - this.outstandingEmiPrincipal(account.id, card.id)),
           billDay: card.billDay,
           payAtMonthEnd: !!card.payAtMonthEnd,
@@ -467,6 +479,7 @@ class RecurringService {
       this.pushCardBillLine(lines, {
         key: `card-account-${account.id}`,
         label: account.name,
+        pay: { kind: 'cardBill', accountId: account.id, cardId: null },
         owed: round2(round2(-account.balance) - cardsOwedTotal - this.outstandingEmiPrincipal(account.id, null)),
         billDay: account.billDay,
         payAtMonthEnd: !!account.payAtMonthEnd,
@@ -506,7 +519,7 @@ class RecurringService {
         dueDate: emi.nextDueDate,
         overdue: emi.nextDueDate < today,
         kind: 'loan',
-        cardEmiId: emi.id,
+        pay: { kind: 'cardEmi', emiId: emi.id },
       });
     });
 
@@ -545,9 +558,10 @@ class RecurringService {
    */
   private pushCardBillLine(
     lines: NeededLine[],
-    { key, label, owed, billDay, payAtMonthEnd, expensesSince, today, monthEnd }: {
+    { key, label, pay, owed, billDay, payAtMonthEnd, expensesSince, today, monthEnd }: {
       key: string;
       label: string;
+      pay: NeededPayment;
       /** What is currently owed (a positive amount) by this card or card-less account. */
       owed: number;
       billDay: number | null | undefined;
@@ -569,14 +583,14 @@ class RecurringService {
         }
       }
       if (amount <= 0) return;
-      lines.push({ key, label: `${label} bill`, amount, dueDate: monthEnd, overdue: false, kind: 'card', payAtMonthEnd: true });
+      lines.push({ key, label: `${label} bill`, amount, dueDate: monthEnd, overdue: false, kind: 'card', payAtMonthEnd: true, pay });
       return;
     }
 
     if (!billDay) return;
     const dueDate = nextBillDate(billDay, today);
     if (dueDate > monthEnd) return;
-    lines.push({ key, label: `${label} bill`, amount: owed, dueDate, overdue: false, kind: 'card' });
+    lines.push({ key, label: `${label} bill`, amount: owed, dueDate, overdue: false, kind: 'card', pay });
   }
 
   /**

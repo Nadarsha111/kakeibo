@@ -12,8 +12,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { router } from 'expo-router';
-import { getAccountService, getProfileService, getRecurringService, type MonthlySummary, type NeededLine, type NeededSummary } from '../../database';
-import { NetWorthItem, NetWorthSummary, Profile, RecurringItem } from '../../types';
+import { getAccountService, getProfileService, getRecurringService, type MonthlySummary, type NeededLine, type NeededPayment, type NeededSummary } from '../../database';
+import { Account, NetWorthItem, NetWorthSummary, Profile, RecurringItem } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { formatDate } from '../../utils/format';
@@ -21,6 +21,8 @@ import { useTabBarInset } from '../../components/PebbleTabBar';
 import RecurringItemModal from '../../components/modals/RecurringItemModal';
 import MarkPaidModal from '../../components/modals/MarkPaidModal';
 import MarkEmiPaidModal from '../../components/modals/MarkEmiPaidModal';
+import LoanPaymentModal from '../../components/modals/LoanPaymentModal';
+import PayCardBillModal, { type CardBillToPay } from '../../components/modals/PayCardBillModal';
 import MonthEndBadge from '../../components/MonthEndBadge';
 import { describeLine } from '../../components/NeededThisMonthCard';
 import { FREQUENCIES, dueStatus, daysBetween, formatDay, monthlyEquivalent } from '../../utils/recurring';
@@ -56,6 +58,8 @@ export default function WorthScreen() {
   const [showForm, setShowForm] = useState(false);
   const [paying, setPaying] = useState<RecurringItem | null>(null);
   const [payingEmiId, setPayingEmiId] = useState<number | null>(null);
+  const [payingLoan, setPayingLoan] = useState<Account | null>(null);
+  const [payingBill, setPayingBill] = useState<CardBillToPay | null>(null);
 
   const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
   const today = new Date().toISOString().split('T')[0];
@@ -132,6 +136,7 @@ export default function WorthScreen() {
     const frequency = FREQUENCIES.find((f) => f.value === item.frequency)?.label ?? item.frequency;
     const income = item.type === 'income';
     const transfer = item.type === 'transfer';
+    const payText = income ? 'Mark Received' : transfer ? 'Mark Saved' : 'Mark Paid';
     const route = transfer ? ` · ${accountNames[item.accountId ?? -1] ?? '?'} → ${accountNames[item.toAccountId ?? -1] ?? '?'}` : ` · ${item.category}`;
 
     return (
@@ -155,7 +160,17 @@ export default function WorthScreen() {
             )}
           </View>
         </View>
-        {badge && <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text>}
+        {badge && (
+          <View style={styles.badgeRow}>
+            <Text style={[styles.badge, { color: badge.color, marginTop: 0 }]}>{badge.text}</Text>
+            {!isSelected && (
+              <TouchableOpacity style={[styles.inlineAction, { marginTop: 0 }]} onPress={() => setPaying(item)} hitSlop={8}>
+                <MaterialCommunityIcons name="check-circle-outline" size={16} color={theme.colors.primary} />
+                <Text style={[styles.inlineActionText, { color: theme.colors.primary }]}>{payText}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {isSelected && (
           <View style={styles.cardActions}>
@@ -169,7 +184,7 @@ export default function WorthScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionButton} onPress={() => setPaying(item)}>
               <MaterialCommunityIcons name="check-circle-outline" size={20} color={theme.colors.primary} />
-              <Text style={[styles.actionText, { color: theme.colors.primary }]}>{income ? 'Mark Received' : transfer ? 'Mark Saved' : 'Mark Paid'}</Text>
+              <Text style={[styles.actionText, { color: theme.colors.primary }]}>{payText}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -191,6 +206,41 @@ export default function WorthScreen() {
 
   const left = monthly?.leftAfterCommitments ?? 0;
 
+  const payLabel = (pay: NeededPayment, line: NeededLine) => {
+    switch (pay.kind) {
+      case 'cardBill':
+        return 'Pay Bill';
+      case 'loan':
+        return 'Record Payment';
+      default:
+        return line.kind === 'savings' ? 'Mark Saved' : 'Mark Paid';
+    }
+  };
+
+  const openLoanPayment = (accountId: number) => {
+    const loan = getAccountService().getAccountById(accountId);
+    if (loan) setPayingLoan(loan);
+  };
+
+  const startPayment = (pay: NeededPayment, line: NeededLine) => {
+    switch (pay.kind) {
+      case 'recurring': {
+        const item = items.find((i) => i.id === pay.itemId) ?? getRecurringService().getItemById(pay.itemId);
+        if (item) setPaying(item);
+        break;
+      }
+      case 'loan':
+        openLoanPayment(pay.accountId);
+        break;
+      case 'cardEmi':
+        setPayingEmiId(pay.emiId);
+        break;
+      case 'cardBill':
+        setPayingBill({ accountId: pay.accountId, cardId: pay.cardId, label: line.label, amount: line.amount });
+        break;
+    }
+  };
+
   const renderNeededRow = (line: NeededLine) => (
     <View key={line.key} style={styles.listRow}>
       <View style={styles.cardText}>
@@ -202,10 +252,10 @@ export default function WorthScreen() {
       </View>
       <View style={styles.neededAmountBox}>
         <Text style={[styles.listAmount, { color: theme.colors.text }]}>{formatCurrency(line.amount)}</Text>
-        {line.cardEmiId != null && (
-          <TouchableOpacity style={styles.inlineAction} onPress={() => setPayingEmiId(line.cardEmiId!)} hitSlop={8}>
+        {line.pay && (
+          <TouchableOpacity style={styles.inlineAction} onPress={() => startPayment(line.pay!, line)} hitSlop={8}>
             <MaterialCommunityIcons name="check-circle-outline" size={16} color={theme.colors.primary} />
-            <Text style={[styles.inlineActionText, { color: theme.colors.primary }]}>Mark Paid</Text>
+            <Text style={[styles.inlineActionText, { color: theme.colors.primary }]}>{payLabel(line.pay, line)}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -369,12 +419,18 @@ export default function WorthScreen() {
                     <View style={styles.cardText}>
                       <Text style={styles.cardTitle} numberOfLines={1}>{emi.name}</Text>
                       <Text style={styles.cardSubtitle}>
-                        Monthly{emi.nextDueDate ? ` · due ${formatDate(emi.nextDueDate)}` : ''} · manage on the Accounts tab
+                        Monthly{emi.nextDueDate ? ` · due ${formatDate(emi.nextDueDate)}` : ''}
                       </Text>
                     </View>
                     <Text style={styles.cardAmount}>{formatCurrency(emi.amount)}</Text>
                   </View>
                   {badge && <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text>}
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => openLoanPayment(emi.id)}>
+                      <MaterialCommunityIcons name="check-circle-outline" size={20} color={theme.colors.primary} />
+                      <Text style={[styles.actionText, { color: theme.colors.primary }]}>Record Payment</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               );
             })}
@@ -417,6 +473,8 @@ export default function WorthScreen() {
       />
       <MarkPaidModal visible={paying !== null} item={paying} onClose={() => setPaying(null)} onSaved={load} />
       <MarkEmiPaidModal visible={payingEmiId !== null} emiId={payingEmiId} onClose={() => setPayingEmiId(null)} onSaved={load} />
+      <LoanPaymentModal visible={payingLoan !== null} loan={payingLoan} onClose={() => setPayingLoan(null)} onPaymentRecorded={load} />
+      <PayCardBillModal visible={payingBill !== null} bill={payingBill} onClose={() => setPayingBill(null)} onSaved={load} />
     </View>
   );
 }
@@ -591,6 +649,12 @@ const createStyles = (theme: any) =>
       justifyContent: 'flex-end',
       flexWrap: 'wrap',
       gap: 8,
+    },
+    badgeRow: {
+      marginTop: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
     },
     neededAmountBox: {
       alignItems: 'flex-end',
