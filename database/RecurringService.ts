@@ -2,7 +2,7 @@ import DatabaseConnector from './DatabaseConnector';
 import AccountService from './AccountService';
 import TransactionService from './TransactionService';
 import { Account, RecurringItem } from '../types';
-import { FREQUENCIES, advanceDueDate, countDue, endOfMonth, endOfNextMonth, monthlyEquivalent, nextBillDate } from '../utils/recurring';
+import { FREQUENCIES, advanceDueDate, countDue, endOfMonth, endOfNextMonth, localToday, monthlyEquivalent, nextBillDate } from '../utils/recurring';
 import { addMonths, interestDue, isValidDate, round2 } from '../utils/loanMath';
 
 export interface MonthlyEmi {
@@ -297,7 +297,7 @@ class RecurringService {
    * whose accounts are missing or invalid is skipped and left untouched; the others carry on.
    * Running it again straight away does nothing. Returns how many payments were recorded.
    */
-  postDue(today: string = new Date().toISOString().split('T')[0]): number {
+  postDue(today: string = localToday()): number {
     let posted = 0;
 
     this.getItems()
@@ -345,7 +345,7 @@ class RecurringService {
    * anything falling due by the end of next month. For a card that means the statement amount: what
    * is owed minus what was charged since the bill day, because those charges go on the next bill.
    */
-  getNeededThisMonth(profileId?: number, today: string = new Date().toISOString().split('T')[0]): NeededSummary {
+  getNeededThisMonth(profileId?: number, today: string = localToday()): NeededSummary {
     const monthEnd = endOfMonth(today);
     const nextMonthEnd = endOfNextMonth(today);
     const lines: NeededLine[] = [];

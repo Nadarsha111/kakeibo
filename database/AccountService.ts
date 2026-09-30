@@ -1,6 +1,7 @@
 import DatabaseConnector from './DatabaseConnector';
 import { Account, AccountBalanceRow, NetWorthItem, NetWorthSummary } from '../types';
 import { round2 } from '../utils/loanMath';
+import { localToday } from '../utils/recurring';
 
 /**
  * Service class for managing accounts and account balances
@@ -495,7 +496,7 @@ class AccountService {
    */
   markOverdueLoans(): number {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localToday();
       const result = this.db.runSync(
         `UPDATE accounts 
          SET loanStatus = 'overdue', updatedAt = ? 
@@ -545,7 +546,7 @@ class AccountService {
     this.updateAccount(loanAccountId, {
       loanReturnedAmount: newReturnedAmount,
       loanStatus: newStatus as any,
-      loanActualReturnDate: newStatus === 'fully_paid' ? new Date().toISOString().split('T')[0] : loanAccount.loanActualReturnDate,
+      loanActualReturnDate: newStatus === 'fully_paid' ? localToday() : loanAccount.loanActualReturnDate,
     });
   }
 
