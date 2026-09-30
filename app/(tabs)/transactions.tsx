@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl, Alert, Platform, Modal, Pressable } from 'react-native';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { getTransactionService, getAccountService, getCategoryService } from '../../database';
@@ -90,6 +91,7 @@ export default function TransactionsScreen() {
   const [customStart, setCustomStart] = useState(() => presetRange('This month')![0]);
   const [customEnd, setCustomEnd] = useState(() => toLocalDateString(new Date()));
   const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(null);
+  const [showPeriods, setShowPeriods] = useState(false);
 
   // Categories state
   const [categorySummary, setCategorySummary] = useState<{ category: string; amount: number; color: string; icon?: string | null; percentage: number }[]>([]);
@@ -306,19 +308,28 @@ export default function TransactionsScreen() {
         <Text style={styles.headerTitle}>Transactions</Text>
       </View>
 
-      {/* Tab Switcher */}
-      <View style={styles.tabContainer}>
-        {(['transactions', 'categories'] as const).map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.activeTab]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
-              {tab === 'transactions' ? 'List' : 'Categories'}
-            </Text>
+      {/* Tab Switcher, with the period button beside it on the list */}
+      <View style={styles.toolbar}>
+        <View style={styles.tabContainer}>
+          {(['transactions', 'categories'] as const).map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tab, activeTab === tab && styles.activeTab]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
+                {tab === 'transactions' ? 'List' : 'Categories'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {activeTab === 'transactions' && (
+          <TouchableOpacity style={styles.periodButton} onPress={() => setShowPeriods(true)} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="calendar-month-outline" size={18} color={theme.colors.primary} />
+            <Text style={styles.periodButtonText} numberOfLines={1}>{dateFilter}</Text>
+            <MaterialCommunityIcons name="chevron-down" size={16} color={theme.colors.textSecondary} />
           </TouchableOpacity>
-        ))}
+        )}
       </View>
 
       {/* Content */}
@@ -335,43 +346,6 @@ export default function TransactionsScreen() {
             />
           }
         >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periodRow}>
-            {DATE_FILTERS.map((filter) => (
-              <TouchableOpacity
-                key={filter}
-                style={[styles.periodChip, dateFilter === filter && styles.periodChipActive]}
-                onPress={() => setDateFilter(filter)}
-              >
-                <Text style={[styles.periodChipText, dateFilter === filter && styles.periodChipTextActive]}>
-                  {filter}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {dateFilter === 'Custom' && (
-            <View style={styles.customRange}>
-              <TouchableOpacity style={styles.dateField} onPress={() => setPickerTarget('start')}>
-                <Text style={styles.dateFieldLabel}>From</Text>
-                <Text style={styles.dateFieldValue}>{formatShortDate(parseLocalDate(customStart))}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.dateField} onPress={() => setPickerTarget('end')}>
-                <Text style={styles.dateFieldLabel}>To</Text>
-                <Text style={styles.dateFieldValue}>{formatShortDate(parseLocalDate(customEnd))}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {pickerTarget && (
-            <DateTimePicker
-              value={parseLocalDate(pickerTarget === 'start' ? customStart : customEnd)}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              onChange={handleDatePicked}
-              themeVariant={theme.isDark ? 'dark' : 'light'}
-              accentColor={theme.colors.primary}
-            />
-          )}
-
           {/* Spent / received in the period; tapping one shows only those */}
           <View style={styles.summaryRow}>
             <TouchableOpacity
@@ -448,6 +422,59 @@ export default function TransactionsScreen() {
           }
         />
       )}
+
+      {/* Period picker */}
+      <Modal visible={showPeriods} transparent animationType="fade" onRequestClose={() => setShowPeriods(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setShowPeriods(false)}>
+          <Pressable style={[styles.sheet, { paddingBottom: 24 + (Platform.OS === 'ios' ? 12 : 0) }]} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>Show transactions from</Text>
+            {DATE_FILTERS.map((filter) => {
+              const active = dateFilter === filter;
+              return (
+                <TouchableOpacity
+                  key={filter}
+                  style={styles.sheetOption}
+                  onPress={() => {
+                    setDateFilter(filter);
+                    if (filter !== 'Custom') setShowPeriods(false);
+                  }}
+                >
+                  <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]}>{filter}</Text>
+                  {active && <MaterialCommunityIcons name="check" size={20} color={theme.colors.primary} />}
+                </TouchableOpacity>
+              );
+            })}
+
+            {dateFilter === 'Custom' && (
+              <>
+                <View style={styles.customRange}>
+                  <TouchableOpacity style={styles.dateField} onPress={() => setPickerTarget('start')}>
+                    <Text style={styles.dateFieldLabel}>From</Text>
+                    <Text style={styles.dateFieldValue}>{formatShortDate(parseLocalDate(customStart))}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.dateField} onPress={() => setPickerTarget('end')}>
+                    <Text style={styles.dateFieldLabel}>To</Text>
+                    <Text style={styles.dateFieldValue}>{formatShortDate(parseLocalDate(customEnd))}</Text>
+                  </TouchableOpacity>
+                </View>
+                {pickerTarget && (
+                  <DateTimePicker
+                    value={parseLocalDate(pickerTarget === 'start' ? customStart : customEnd)}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                    onChange={handleDatePicked}
+                    themeVariant={theme.isDark ? 'dark' : 'light'}
+                    accentColor={theme.colors.primary}
+                  />
+                )}
+                <TouchableOpacity style={styles.sheetDone} onPress={() => setShowPeriods(false)}>
+                  <Text style={styles.sheetDoneText}>Done</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -472,10 +499,16 @@ function createStyles(theme: any) {
       fontWeight: 'bold',
       color: theme.colors.text,
     },
+    toolbar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: 16,
+      gap: 8,
+    },
     tabContainer: {
+      flex: 1,
       flexDirection: 'row',
       backgroundColor: theme.colors.surface,
-      marginHorizontal: 16,
       borderRadius: 10,
       padding: 3,
       borderWidth: 1,
@@ -501,33 +534,71 @@ function createStyles(theme: any) {
     scrollView: {
       flex: 1,
     },
-    periodRow: {
-      paddingHorizontal: 16,
-      paddingTop: 14,
-      paddingBottom: 4,
+    periodButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      maxWidth: 150,
+      backgroundColor: theme.colors.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
     },
-    periodChip: {
-      paddingHorizontal: 14,
-      paddingVertical: 6,
-      borderRadius: 16,
-      marginRight: 6,
-    },
-    periodChipActive: {
-      backgroundColor: theme.colors.primary,
-    },
-    periodChipText: {
+    periodButtonText: {
+      flexShrink: 1,
       fontSize: 14,
-      color: theme.colors.textSecondary,
-      fontWeight: '500',
+      fontWeight: '600',
+      color: theme.colors.text,
     },
-    periodChipTextActive: {
+    backdrop: {
+      flex: 1,
+      justifyContent: 'flex-end',
+      backgroundColor: 'rgba(0,0,0,0.4)',
+    },
+    sheet: {
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingHorizontal: 20,
+      paddingTop: 20,
+    },
+    sheetTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: theme.colors.text,
+      marginBottom: 8,
+    },
+    sheetOption: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 12,
+    },
+    sheetOptionText: {
+      fontSize: 16,
+      color: theme.colors.text,
+    },
+    sheetOptionTextActive: {
+      color: theme.colors.primary,
+      fontWeight: '600',
+    },
+    sheetDone: {
+      marginTop: 16,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    sheetDoneText: {
       color: '#fff',
+      fontSize: 16,
       fontWeight: '600',
     },
     customRange: {
       flexDirection: 'row',
       marginTop: 8,
-      marginHorizontal: 16,
       gap: 8,
     },
     dateField: {
@@ -553,7 +624,7 @@ function createStyles(theme: any) {
       flexDirection: 'row',
       gap: 10,
       marginHorizontal: 16,
-      marginTop: 12,
+      marginTop: 14,
     },
     summaryTile: {
       flex: 1,
