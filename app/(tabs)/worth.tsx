@@ -20,6 +20,7 @@ import { formatDate } from '../../utils/format';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 import RecurringItemModal from '../../components/modals/RecurringItemModal';
 import MarkPaidModal from '../../components/modals/MarkPaidModal';
+import MarkEmiPaidModal from '../../components/modals/MarkEmiPaidModal';
 import MonthEndBadge from '../../components/MonthEndBadge';
 import { describeLine } from '../../components/NeededThisMonthCard';
 import { FREQUENCIES, dueStatus, daysBetween, formatDay, monthlyEquivalent } from '../../utils/recurring';
@@ -54,6 +55,7 @@ export default function WorthScreen() {
   const [editing, setEditing] = useState<RecurringItem | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [paying, setPaying] = useState<RecurringItem | null>(null);
+  const [payingEmiId, setPayingEmiId] = useState<number | null>(null);
 
   const profileId = selectedProfileId === 'all' ? undefined : selectedProfileId;
   const today = new Date().toISOString().split('T')[0];
@@ -198,7 +200,15 @@ export default function WorthScreen() {
         </View>
         <Text style={[styles.cardSubtitle, line.overdue && { color: RED, fontWeight: '600' }]}>{describeLine(line)}</Text>
       </View>
-      <Text style={[styles.listAmount, { color: theme.colors.text }]}>{formatCurrency(line.amount)}</Text>
+      <View style={styles.neededAmountBox}>
+        <Text style={[styles.listAmount, { color: theme.colors.text }]}>{formatCurrency(line.amount)}</Text>
+        {line.cardEmiId != null && (
+          <TouchableOpacity style={styles.inlineAction} onPress={() => setPayingEmiId(line.cardEmiId!)} hitSlop={8}>
+            <MaterialCommunityIcons name="check-circle-outline" size={16} color={theme.colors.primary} />
+            <Text style={[styles.inlineActionText, { color: theme.colors.primary }]}>Mark Paid</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 
@@ -406,6 +416,7 @@ export default function WorthScreen() {
         onSaved={load}
       />
       <MarkPaidModal visible={paying !== null} item={paying} onClose={() => setPaying(null)} onSaved={load} />
+      <MarkEmiPaidModal visible={payingEmiId !== null} emiId={payingEmiId} onClose={() => setPayingEmiId(null)} onSaved={load} />
     </View>
   );
 }
@@ -580,6 +591,19 @@ const createStyles = (theme: any) =>
       justifyContent: 'flex-end',
       flexWrap: 'wrap',
       gap: 8,
+    },
+    neededAmountBox: {
+      alignItems: 'flex-end',
+    },
+    inlineAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 4,
+    },
+    inlineActionText: {
+      fontSize: 13,
+      fontWeight: '600',
+      marginLeft: 4,
     },
     actionButton: {
       flexDirection: 'row',
