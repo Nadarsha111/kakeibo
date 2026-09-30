@@ -544,6 +544,7 @@ const createStyles = (theme: any) =>
       marginBottom: 4,
     },
     statValue: {
+      color: theme.colors.text,
       fontSize: 16,
       fontWeight: '600',
     },
@@ -583,6 +584,7 @@ const createStyles = (theme: any) =>
       color: theme.colors.text,
     },
     sectionTotal: {
+      color: theme.colors.text,
       fontSize: 16,
       fontWeight: '600',
     },
@@ -714,6 +716,7 @@ const createStyles = (theme: any) =>
       lineHeight: 17,
     },
     listAmount: {
+      color: theme.colors.text,
       fontSize: 15,
       fontWeight: '600',
     },
