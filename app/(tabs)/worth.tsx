@@ -17,6 +17,7 @@ import { Account, NetWorthItem, NetWorthSummary, Profile, RecurringItem } from '
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { formatDate } from '../../utils/format';
+import { round2 } from '../../utils/loanMath';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 import RecurringItemModal from '../../components/modals/RecurringItemModal';
 import MarkPaidModal from '../../components/modals/MarkPaidModal';
@@ -192,12 +193,21 @@ export default function WorthScreen() {
     );
   };
 
+  // How much of each credit card's balance is purchases still being paid off in EMIs
+  const onEmiByCard: Record<number, number> = {};
+  monthly?.emis.forEach((emi) => {
+    if (emi.kind === 'card' && emi.cardAccountId != null) {
+      onEmiByCard[emi.cardAccountId] = round2((onEmiByCard[emi.cardAccountId] ?? 0) + (emi.outstanding ?? 0));
+    }
+  });
+
   const renderWorthRow = (item: NetWorthItem, owned: boolean) => (
     <View key={`${item.type}-${item.id}`} style={styles.listRow}>
       <View style={styles.cardText}>
         <Text style={styles.listName} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.cardSubtitle}>
           {item.type === 'loan' ? (owned ? 'Money lent' : 'Borrowed') : (TYPE_LABELS[item.type] ?? item.type)}
+          {!owned && item.type === 'credit_card' && onEmiByCard[item.id] > 0 ? ` · includes ${formatCurrency(onEmiByCard[item.id])} on EMI` : ''}
         </Text>
       </View>
       <Text style={[styles.listAmount, { color: owned ? GREEN : RED }]}>{formatCurrency(item.amount)}</Text>
@@ -358,6 +368,12 @@ export default function WorthScreen() {
               <Text style={styles.breakdownLabel}>Loan installments</Text>
               <Text style={styles.breakdownValue}>{formatCurrency(monthly?.loanEmis ?? 0)}</Text>
             </View>
+            {(monthly?.cardEmis ?? 0) > 0 && (
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Credit card EMIs</Text>
+                <Text style={styles.breakdownValue}>{formatCurrency(monthly?.cardEmis ?? 0)}</Text>
+              </View>
+            )}
             {(monthly?.regularSavings ?? 0) > 0 && (
               <View style={styles.breakdownRow}>
                 <Text style={styles.breakdownLabel}>Regular savings (not a liability)</Text>
@@ -395,30 +411,33 @@ export default function WorthScreen() {
           items.map(renderRecurring)
         )}
 
-        {/* Loan installments */}
+        {/* Installments: loans and credit card EMIs */}
         {(monthly?.emis.length ?? 0) > 0 && (
           <>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Loan installments</Text>
+              <Text style={styles.sectionTitle}>Installments</Text>
+              <Text style={styles.sectionTotal}>{formatCurrency(round2((monthly?.loanEmis ?? 0) + (monthly?.cardEmis ?? 0)))} / month</Text>
             </View>
             {monthly!.emis.map((emi) => {
               const badge = emi.nextDueDate ? dueBadge(emi.nextDueDate) : null;
+              const card = emi.kind === 'card';
               return (
-                <View key={emi.id} style={styles.card}>
+                <View key={`${emi.kind}-${emi.id}`} style={styles.card}>
                   <View style={styles.cardTop}>
                     <View style={styles.cardText}>
                       <Text style={styles.cardTitle} numberOfLines={1}>{emi.name}</Text>
-                      <Text style={styles.cardSubtitle}>
-                        Monthly{emi.nextDueDate ? ` · due ${formatDate(emi.nextDueDate)}` : ''}
+                      <Text style={styles.cardSubtitle} numberOfLines={2}>
+                        {card ? `${emi.cardName} EMI` : 'Loan'}{emi.nextDueDate ? ` · due ${formatDate(emi.nextDueDate)}` : ''}
+                        {card && emi.outstanding != null ? ` · ${formatCurrency(emi.outstanding)} left` : ''}
                       </Text>
                     </View>
                     <Text style={styles.cardAmount}>{formatCurrency(emi.amount)}</Text>
                   </View>
                   {badge && <Text style={[styles.badge, { color: badge.color }]}>{badge.text}</Text>}
                   <View style={styles.cardActions}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => openLoanPayment(emi.id)}>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => (card ? setPayingEmiId(emi.id) : openLoanPayment(emi.id))}>
                       <MaterialCommunityIcons name="check-circle-outline" size={20} color={theme.colors.primary} />
-                      <Text style={[styles.actionText, { color: theme.colors.primary }]}>Record Payment</Text>
+                      <Text style={[styles.actionText, { color: theme.colors.primary }]}>{card ? 'Mark Paid' : 'Record Payment'}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

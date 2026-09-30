@@ -6,10 +6,16 @@ import { FREQUENCIES, advanceDueDate, countDue, endOfMonth, endOfNextMonth, mont
 import { addMonths, interestDue, isValidDate, round2 } from '../utils/loanMath';
 
 export interface MonthlyEmi {
+  /** The loan account's id, or the card EMI's own id for kind 'card'. */
   id: number;
+  kind: 'loan' | 'card';
   name: string;
   amount: number;
   nextDueDate: string | null;
+  /** For a card EMI: the card account it is on, and how much of the purchase is still to be paid off. */
+  cardAccountId?: number;
+  cardName?: string;
+  outstanding?: number;
 }
 
 export interface MonthlySummary {
@@ -17,7 +23,9 @@ export interface MonthlySummary {
   recurringExpenses: number;
   /** Monthly installments on money you borrowed and are still paying back. */
   loanEmis: number;
-  /** Everything you have to pay every month: recurring expenses plus loan installments. */
+  /** Monthly installments on credit card purchases converted to EMI. */
+  cardEmis: number;
+  /** Everything you have to pay every month: recurring expenses plus loan and card installments. */
   totalLiability: number;
   /** Money moved into savings or investment accounts on a schedule, per average month. Not spending, so not part of the liability. */
   regularSavings: number;
@@ -621,17 +629,49 @@ class RecurringService {
       params.push(profileId);
     }
     emiQuery += ' ORDER BY loanNextDueDate';
-    const emis = this.db.getAllSync(emiQuery, params) as MonthlyEmi[];
+    const loans = (this.db.getAllSync(emiQuery, params) as Omit<MonthlyEmi, 'kind'>[]).map((e) => ({ ...e, kind: 'loan' as const }));
+
+    // Each card EMI bills its own fixed installment every month on top of the card's regular bill
+    let cardEmiQuery = `SELECT ce.id, ce.name, ce.principal, ce.returnedAmount, ce.interestRate, ce.installmentAmount, ce.nextDueDate,
+        ce.accountId, a.name as cardName FROM card_emis ce
+      JOIN accounts a ON a.id = ce.accountId
+      WHERE ce.status = 'active' AND ce.isActive = 1 AND a.isActive = 1`;
+    const cardEmiParams: any[] = [];
+    if (profileId) {
+      cardEmiQuery += ' AND a.profileId = ?';
+      cardEmiParams.push(profileId);
+    }
+    const cards: MonthlyEmi[] = [];
+    (this.db.getAllSync(cardEmiQuery, cardEmiParams) as any[]).forEach((emi) => {
+      const outstanding = round2((emi.principal || 0) - (emi.returnedAmount || 0));
+      if (outstanding <= 0) return;
+      // The last installment cannot come to more than what is left to pay off
+      const payoff = round2(outstanding + interestDue(outstanding, emi.interestRate || 0));
+      cards.push({
+        id: emi.id,
+        kind: 'card',
+        name: emi.name,
+        amount: Math.min(emi.installmentAmount, payoff),
+        nextDueDate: emi.nextDueDate,
+        cardAccountId: emi.accountId,
+        cardName: emi.cardName,
+        outstanding,
+      });
+    });
+
+    const emis = [...loans, ...cards].sort((a, b) => (a.nextDueDate ?? '9999').localeCompare(b.nextDueDate ?? '9999'));
 
     const recurringExpenses = sumMonthly('expense');
     const recurringIncome = sumMonthly('income');
     const regularSavings = sumMonthly('transfer');
-    const loanEmis = round2(emis.reduce((total, e) => total + e.amount, 0));
-    const totalLiability = round2(recurringExpenses + loanEmis);
+    const loanEmis = round2(loans.reduce((total, e) => total + e.amount, 0));
+    const cardEmis = round2(cards.reduce((total, e) => total + e.amount, 0));
+    const totalLiability = round2(recurringExpenses + loanEmis + cardEmis);
 
     return {
       recurringExpenses,
       loanEmis,
+      cardEmis,
       totalLiability,
       regularSavings,
       recurringIncome,
