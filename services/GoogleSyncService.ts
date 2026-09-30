@@ -297,7 +297,12 @@ class GoogleSyncService {
       throw new Error("Could not find the spreadsheet. Push your data to Google Sheets first.");
     }
 
-    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${SHEET_TABS.TRANSACTIONS}`;
+    // Raw values, not what the sheet displays: an amount shown as "12,500.00" would otherwise be
+    // read as 12, since parsing stops at the thousands separator. Dates still come back as text in
+    // the column's yyyy-mm-dd format rather than as spreadsheet serial numbers.
+    const readUrl =
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${SHEET_TABS.TRANSACTIONS}` +
+      "?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING";
     const response = await fetch(readUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -307,7 +312,8 @@ class GoogleSyncService {
     }
 
     const result = await response.json();
-    const rows: string[][] = result.values || [];
+    // Unformatted cells come back as numbers where they hold numbers; the row parser expects text
+    const rows: string[][] = (result.values || []).map((row: unknown[]) => row.map((cell) => (cell == null ? "" : String(cell))));
     const dataRows = rows.slice(1); // Drop the header row
 
     const transactionService = getTransactionService();
