@@ -332,26 +332,16 @@ export default function WorthScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} colors={[theme.colors.primary]} />
         }
       >
-        {/* Everything counted in "Money needed this month" on Home, with month-end ones set apart */}
-        {needed && needed.lines.length > 0 && renderNeeded(needed)}
+        {/* This month: everything counted in "Money needed this month" on Home, with month-end ones set apart */}
+        {needed && needed.lines.length > 0 && (
+          <>
+            <Text style={[styles.groupTitle, styles.firstGroupTitle]}>This month</Text>
+            {renderNeeded(needed)}
+          </>
+        )}
 
-        {/* Net worth */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Net worth</Text>
-          <Text style={[styles.summaryAmount, { color: (worth?.netWorth ?? 0) < 0 ? RED : theme.colors.text }]}>
-            {formatCurrency(worth?.netWorth ?? 0)}
-          </Text>
-          <View style={styles.statsRow}>
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>Assets</Text>
-              <Text style={[styles.statValue, { color: GREEN }]}>{formatCurrency(worth?.totalAssets ?? 0)}</Text>
-            </View>
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>Liabilities</Text>
-              <Text style={[styles.statValue, { color: RED }]}>{formatCurrency(worth?.totalLiabilities ?? 0)}</Text>
-            </View>
-          </View>
-        </View>
+        {/* Commitments: what you pay or put aside every month */}
+        <Text style={[styles.groupTitle, !(needed && needed.lines.length > 0) && styles.firstGroupTitle]}>Commitments</Text>
 
         {/* Monthly liability */}
         <View style={styles.summaryCard}>
@@ -405,7 +395,7 @@ export default function WorthScreen() {
           items.map(renderRecurring)
         )}
 
-        {/* Loan installments (managed on the Accounts tab) */}
+        {/* Loan installments */}
         {(monthly?.emis.length ?? 0) > 0 && (
           <>
             <View style={styles.sectionHeader}>
@@ -436,6 +426,25 @@ export default function WorthScreen() {
             })}
           </>
         )}
+
+        {/* Net worth: what you own against what you owe */}
+        <Text style={styles.groupTitle}>Net worth</Text>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Net worth</Text>
+          <Text style={[styles.summaryAmount, { color: (worth?.netWorth ?? 0) < 0 ? RED : theme.colors.text }]}>
+            {formatCurrency(worth?.netWorth ?? 0)}
+          </Text>
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>Assets</Text>
+              <Text style={[styles.statValue, { color: GREEN }]}>{formatCurrency(worth?.totalAssets ?? 0)}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>Liabilities</Text>
+              <Text style={[styles.statValue, { color: RED }]}>{formatCurrency(worth?.totalLiabilities ?? 0)}</Text>
+            </View>
+          </View>
+        </View>
 
         {/* Assets */}
         <View style={styles.sectionHeader}>
@@ -651,6 +660,20 @@ const createStyles = (theme: any) =>
       justifyContent: 'flex-end',
       flexWrap: 'wrap',
       gap: 8,
+    },
+    groupTitle: {
+      fontSize: 24,
+      fontWeight: '800',
+      color: theme.colors.text,
+      marginTop: 36,
+      paddingTop: 24,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    firstGroupTitle: {
+      marginTop: 8,
+      paddingTop: 0,
+      borderTopWidth: 0,
     },
     badgeRow: {
       marginTop: 8,
