@@ -100,6 +100,7 @@ class TransactionService {
     date: string;
     description?: string;
     profileId: number;
+    toCardId?: number | null;
   }): void {
     try {
       DatabaseConnector.getInstance().withTransaction(() => this.addTransferUnsafe(data));

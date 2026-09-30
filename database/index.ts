@@ -19,7 +19,7 @@ export { default as TransactionService } from './TransactionService';
 export { default as CategoryService } from './CategoryService';
 export { default as BudgetService, type BudgetSummary } from './BudgetService';
 export { default as SettingsService } from './SettingsService';
-export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine } from './RecurringService';
+export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine, type NeededPayment } from './RecurringService';
 export { default as CardService } from './CardService';
 export { default as CardEmiService } from './CardEmiService';
 export { default as StatementService } from './StatementService';
