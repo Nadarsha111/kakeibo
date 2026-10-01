@@ -44,7 +44,7 @@ database/
 └── *Service.ts           # One service per entity (accounts, transactions, budgets, ...)
 context/                 # React context providers (settings, theme, transaction modal)
 hooks/                   # Reusable hooks (data export, tab swipe/scrub, Drizzle Studio)
-services/                # Google Sign-In + Google Sheets export/sync
+services/                # Google Sign-In, Google Sheets export/sync, statement import (PDF + Gmail)
 utils/                   # Formatting, loan math, recurring-item math, etc.
 types/                   # Shared TypeScript domain types
 ```
@@ -125,6 +125,19 @@ npm run web
 - Category-wise expense breakdown
 - Percentage distribution
 - Quick category overview grid
+
+### Statements from Gmail
+In an account's Statement screen, enter the sender your bank emails statements from (for example
+`statements@yourbank.com`, or any Gmail search such as `from:bank.com subject:statement`) and tap
+**Find statement emails**. Tapping an email downloads its PDF and imports it exactly like a picked
+file, including the saved statement password. Everything runs on the phone; Gmail access is
+requested only the first time you use this.
+
+Google Cloud setup (once): enable the **Gmail API** for the project behind
+`EXPO_PUBLIC_GOOGLE_CLIENT_ID`, and add the `gmail.readonly` scope to the OAuth consent screen.
+`gmail.readonly` is a restricted scope, so keep the app in "Testing" with your Google account as a
+test user. Google then withdraws access after about 7 days; when Gmail access is refused, sign out
+of Google in Settings and sign in again.
 
 ## Database Schema
 
