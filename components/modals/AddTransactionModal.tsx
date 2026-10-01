@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -92,6 +92,66 @@ function paymentMethodForAccount(account?: Account): PaymentMethod {
   if (account?.type === "credit_card") return "credit_card";
   if (account?.type === "cash") return "cash";
   return "debit_card";
+}
+
+/**
+ * A horizontal row of chips that scrolls the selected one into view, so a preselected chip
+ * (e.g. the last used account) isn't left hidden off the edge of the row.
+ */
+function ChipScrollRow({
+  activeIndex,
+  contentContainerStyle,
+  children,
+}: {
+  activeIndex: number;
+  contentContainerStyle: any;
+  children: React.ReactNode;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const chipLayouts = useRef<Record<number, { x: number; width: number }>>({});
+  const viewportWidth = useRef(0);
+  const scrollX = useRef(0);
+  const [layoutVersion, setLayoutVersion] = useState(0);
+
+  useEffect(() => {
+    const chip = chipLayouts.current[activeIndex];
+    const width = viewportWidth.current;
+    if (activeIndex < 0 || !chip || !width) return;
+    const fullyVisible = chip.x >= scrollX.current && chip.x + chip.width <= scrollX.current + width;
+    if (fullyVisible) return;
+    scrollRef.current?.scrollTo({ x: Math.max(0, chip.x - (width - chip.width) / 2), animated: true });
+  }, [activeIndex, layoutVersion]);
+
+  return (
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={contentContainerStyle}
+      keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={16}
+      onScroll={(e) => {
+        scrollX.current = e.nativeEvent.contentOffset.x;
+      }}
+      onLayout={(e) => {
+        viewportWidth.current = e.nativeEvent.layout.width;
+        setLayoutVersion((v) => v + 1);
+      }}
+    >
+      {React.Children.toArray(children).map((child, index) => (
+        <View
+          key={(child as React.ReactElement).key ?? index}
+          onLayout={(e) => {
+            const { x, width } = e.nativeEvent.layout;
+            chipLayouts.current[index] = { x, width };
+            if (index === activeIndex) setLayoutVersion((v) => v + 1);
+          }}
+        >
+          {child}
+        </View>
+      ))}
+    </ScrollView>
+  );
 }
 
 /** Values to start a fresh (non-edit) form with, e.g. from a matched statement line item. */
@@ -405,15 +465,10 @@ export default function AddTransactionModal({
     </TouchableOpacity>
   );
 
-  const renderChipRow = (children: React.ReactNode) => (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.chipRow}
-      keyboardShouldPersistTaps="handled"
-    >
+  const renderChipRow = (activeIndex: number, children: React.ReactNode) => (
+    <ChipScrollRow activeIndex={activeIndex} contentContainerStyle={styles.chipRow}>
       {children}
-    </ScrollView>
+    </ChipScrollRow>
   );
 
   return (
@@ -489,6 +544,7 @@ export default function AddTransactionModal({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Category</Text>
               {renderChipRow(
+                getFilteredCategories().findIndex((category) => category.name === selectedCategory),
                 getFilteredCategories().map((category) =>
                   renderChip(
                     category.id,
@@ -508,6 +564,7 @@ export default function AddTransactionModal({
               {type === "transfer" ? "From" : type === "income" ? "Received in" : "Paid from"}
             </Text>
             {renderChipRow(
+              accounts.findIndex((account) => account.id === fromAccount),
               accounts.map((account) =>
                 renderChip(
                   account.id,
@@ -524,6 +581,7 @@ export default function AddTransactionModal({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Card</Text>
               {renderChipRow(
+                cardId === undefined ? 0 : cardsForAccount.findIndex((card) => card.id === cardId) + 1,
                 [{ id: undefined, name: "Unassigned" }, ...cardsForAccount].map((card) =>
                   renderChip(card.id ?? "unassigned", card.name, cardId === card.id, () => setCardId(card.id)),
                 ),
@@ -535,6 +593,9 @@ export default function AddTransactionModal({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>To</Text>
               {renderChipRow(
+                accounts
+                  .filter((acc) => acc.id !== fromAccount)
+                  .findIndex((account) => account.id === toAccount),
                 accounts
                   .filter((acc) => acc.id !== fromAccount)
                   .map((account) =>
