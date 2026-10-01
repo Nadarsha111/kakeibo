@@ -18,6 +18,13 @@ import { useSettings } from '../../context/SettingsContext';
 import { formatShortDate } from '../../utils/format';
 import ChipSelect from '../ChipSelect';
 import { importStatement } from '../../services/StatementImportService';
+import {
+  downloadStatementPdf,
+  findStatementEmails,
+  getSavedMailQuery,
+  saveMailQuery,
+  StatementEmail,
+} from '../../services/GmailStatementService';
 
 interface StatementModalProps {
   visible: boolean;
@@ -68,6 +75,10 @@ export default function StatementModal({ visible, account, onClose }: StatementM
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [mailQuery, setMailQuery] = useState('');
+  const [searchingMail, setSearchingMail] = useState(false);
+  // null until searched, so "no emails found" can be told apart from "not searched yet"
+  const [emails, setEmails] = useState<StatementEmail[] | null>(null);
 
   const expenseCategories = useMemo(() => (visible ? getCategoryService().getCategoriesByType('expense') : []), [visible]);
   const incomeCategories = useMemo(() => (visible ? getCategoryService().getCategoriesByType('income') : []), [visible]);
@@ -90,6 +101,8 @@ export default function StatementModal({ visible, account, onClose }: StatementM
       setImportState('idle');
       setPasswordInput('');
       setPasswordError(null);
+      setMailQuery(getSavedMailQuery(account.id));
+      setEmails(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, account?.id]);
@@ -138,6 +151,33 @@ export default function StatementModal({ visible, account, onClose }: StatementM
     if (result.canceled || !result.assets?.[0]) return;
     setPendingFileUri(result.assets[0].uri);
     runImport(result.assets[0].uri);
+  };
+
+  const handleFindEmails = async () => {
+    if (!account || !mailQuery.trim()) return;
+    saveMailQuery(account.id, mailQuery);
+    setSearchingMail(true);
+    const outcome = await findStatementEmails(mailQuery);
+    setSearchingMail(false);
+    if (outcome.status === 'no_access') {
+      Alert.alert('Gmail not connected', 'Sign in to Google and allow Gmail access to fetch statements from your mail.');
+    } else if (outcome.status === 'error') {
+      Alert.alert('Gmail search failed', outcome.message);
+    } else {
+      setEmails(outcome.emails);
+    }
+  };
+
+  const handleImportEmail = async (email: StatementEmail) => {
+    setImportState('importing');
+    try {
+      const uri = await downloadStatementPdf(email);
+      setPendingFileUri(uri);
+      await runImport(uri);
+    } catch (error) {
+      setImportState('idle');
+      Alert.alert('Download failed', error instanceof Error ? error.message : 'Could not download the statement from Gmail.');
+    }
   };
 
   const handlePasswordSubmit = () => {
@@ -257,6 +297,60 @@ export default function StatementModal({ visible, account, onClose }: StatementM
               <Text style={styles.helperText}>
                 Saved once unlocked - you won't need to enter this account's statement password again next month.
               </Text>
+
+              <Text style={[styles.label, { marginTop: 20, marginBottom: 6 }]}>Or fetch it from Gmail</Text>
+              <TextInput
+                style={styles.textInput}
+                value={mailQuery}
+                onChangeText={setMailQuery}
+                onSubmitEditing={handleFindEmails}
+                placeholder="Sender, e.g. statements@yourbank.com"
+                placeholderTextColor={theme.colors.textSecondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                returnKeyType="search"
+              />
+              <TouchableOpacity
+                style={[styles.secondaryButton, !mailQuery.trim() && { opacity: 0.5 }]}
+                onPress={handleFindEmails}
+                disabled={searchingMail || importState === 'importing' || !mailQuery.trim()}
+              >
+                {searchingMail ? (
+                  <ActivityIndicator color={theme.colors.primary} />
+                ) : (
+                  <Text style={styles.secondaryButtonText}>Find statement emails</Text>
+                )}
+              </TouchableOpacity>
+
+              {emails && emails.length === 0 && (
+                <Text style={styles.helperText}>
+                  No emails with a PDF attachment matched in the last year. Some banks email a download link instead of
+                  attaching the PDF - those have to be downloaded and imported by hand.
+                </Text>
+              )}
+              {emails && emails.length > 0 && (
+                <>
+                  <Text style={styles.helperText}>Tap one to import it as the {monthLabel(selectedMonth)} statement.</Text>
+                  {emails.map((email) => (
+                    <TouchableOpacity
+                      key={`${email.messageId}-${email.attachmentId}`}
+                      style={styles.row}
+                      onPress={() => handleImportEmail(email)}
+                      disabled={importState === 'importing'}
+                      activeOpacity={0.6}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.value} numberOfLines={1}>{email.subject}</Text>
+                        <Text style={styles.label} numberOfLines={1}>
+                          {formatShortDate(email.date)} · {email.attachmentName}
+                        </Text>
+                      </View>
+                      <Text style={styles.linkText}>Import</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
             </View>
           )}
 
@@ -394,6 +488,14 @@ const createStyles = (theme: any) =>
       alignItems: 'center',
     },
     primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+    secondaryButton: {
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+    },
+    secondaryButtonText: { color: theme.colors.primary, fontSize: 16, fontWeight: '600' },
     helperText: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 8, fontStyle: 'italic' },
     errorText: { fontSize: 13, color: '#dc2626', marginBottom: 12 },
     matchedBadge: { fontSize: 18, color: '#15803d', fontWeight: '700', width: 44, textAlign: 'center' },
