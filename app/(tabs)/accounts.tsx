@@ -64,6 +64,8 @@ export default function AccountsScreen() {
   const [allAccounts, setAllAccounts] = useState<Account[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
+  // What the Add Account form opens on; a section's + button presets its own kind of account
+  const [addPreset, setAddPreset] = useState<{ type: Account["type"]; isLending?: boolean }>({ type: "checking" });
   const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
   const [limitAccount, setLimitAccount] = useState<Account | null>(null);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
@@ -161,6 +163,11 @@ export default function AccountsScreen() {
   const handleAccountAdded = () => {
     loadData();
     setShowAddAccount(false);
+  };
+
+  const openAddAccount = (type: Account["type"] = "checking", isLending?: boolean) => {
+    setAddPreset({ type, isLending });
+    setShowAddAccount(true);
   };
 
   // Effect to debounce search term
@@ -719,10 +726,10 @@ export default function AccountsScreen() {
     const cardsOwed = sum(cards, (a) => Math.max(0, -a.balance));
 
     return [
-      { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)) },
-      { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed" },
-      { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding` },
-      { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding` },
+      { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)), addType: "checking" as const },
+      { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed", addType: "credit_card" as const },
+      { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding`, addType: "loan" as const, isLending: false },
+      { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding`, addType: "loan" as const, isLending: true },
     ]
       .filter((group) => group.items.length > 0)
       .map((group) => ({
@@ -730,13 +737,17 @@ export default function AccountsScreen() {
         title: group.title,
         meta: group.meta,
         count: group.items.length,
+        addType: group.addType as Account["type"],
+        isLending: group.isLending,
         data: collapsedSections[group.key] ? [] : group.items,
       }));
   }, [displayedAccounts, collapsedSections, formatCurrency]);
 
   const toggleSection = (key: string) => setCollapsedSections((previous) => ({ ...previous, [key]: !previous[key] }));
 
-  const renderSectionHeader = ({ section }: { section: { key: string; title: string; meta: string; count: number } }) => (
+  const renderSectionHeader = ({ section }: {
+    section: { key: string; title: string; meta: string; count: number; addType: Account["type"]; isLending?: boolean };
+  }) => (
     <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(section.key)} activeOpacity={0.7}>
       <View style={styles.sectionHeaderText}>
         <Text style={styles.sectionTitle}>
@@ -744,6 +755,14 @@ export default function AccountsScreen() {
         </Text>
         <Text style={styles.sectionMeta}>{section.meta}</Text>
       </View>
+      <TouchableOpacity
+        style={styles.sectionAddButton}
+        onPress={() => openAddAccount(section.addType, section.isLending)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel={`Add to ${section.title}`}
+      >
+        <MaterialCommunityIcons name="plus" size={20} color={theme.colors.primary} />
+      </TouchableOpacity>
       <MaterialCommunityIcons
         name={collapsedSections[section.key] ? "chevron-down" : "chevron-up"}
         size={22}
@@ -850,7 +869,7 @@ export default function AccountsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => setShowAddAccount(true)}
+            onPress={() => openAddAccount()}
           >
             <Text style={styles.addButtonText}>+ Add</Text>
           </TouchableOpacity>
@@ -881,6 +900,8 @@ export default function AccountsScreen() {
       {/* Add Account Modal */}
       <AddAccountModal
         visible={showAddAccount}
+        initialType={addPreset.type}
+        initialIsLending={addPreset.isLending}
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
@@ -1255,6 +1276,17 @@ const createStyles = (theme: any) =>
     },
     sectionHeaderText: {
       flex: 1,
+    },
+    sectionAddButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
     },
     sectionTitle: {
       fontSize: 16,

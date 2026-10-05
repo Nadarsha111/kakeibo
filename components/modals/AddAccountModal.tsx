@@ -23,6 +23,10 @@ interface AddAccountModalProps {
   profileId?: number | 'all';
   /** When set, the form edits this (non-loan) account instead of adding one. onAccountAdded fires after the save. */
   account?: Account | null;
+  /** The type the form opens on when adding (e.g. from a section's + button). Defaults to checking. */
+  initialType?: Account['type'];
+  /** For a loan: open on "Money Lent" (true) or "Money Borrowed" (false). */
+  initialIsLending?: boolean;
 }
 
 export default function AddAccountModal({
@@ -31,6 +35,8 @@ export default function AddAccountModal({
   onAccountAdded,
   profileId,
   account,
+  initialType,
+  initialIsLending,
 }: AddAccountModalProps) {
   const { theme } = useTheme();
   // Amounts everywhere use the currency chosen in Settings, so accounts don't get one of their own
@@ -80,6 +86,13 @@ export default function AddAccountModal({
     setPayAtMonthEnd(!!account.payAtMonthEnd);
     setShowDetails(!!(account.bankName || account.accountNumber || account.creditLimit || account.billDay || account.payAtMonthEnd));
   }, [visible, account?.id]);
+
+  // Each time the add form opens, start on the type it was opened for
+  useEffect(() => {
+    if (!visible || account) return;
+    setType(initialType ?? 'checking');
+    setIsLending(initialIsLending ?? true);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible || type !== 'loan' || !profileId || profileId === 'all') return;
