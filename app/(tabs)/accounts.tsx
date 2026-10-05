@@ -717,12 +717,13 @@ export default function AccountsScreen() {
     );
   };
 
-  // The two parts Total Balance is made of, so the card can show the sum: what is in bank, cash,
-  // savings and investment accounts, plus the credit card balances (negative when money is owed)
+  // The parts Total Balance is made of, so the card can show the sum: what is in bank, cash and
+  // savings accounts, what is invested, plus the credit card balances (negative when money is owed)
   const balanceParts = useMemo(() => {
     const sum = (items: Account[]) => Math.round(items.reduce((total, a) => total + a.balance, 0) * 100) / 100;
     return {
-      inAccounts: sum(allAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card")),
+      inAccounts: sum(allAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card" && a.type !== "investment")),
+      invested: sum(allAccounts.filter((a) => a.type === "investment")),
       onCards: sum(allAccounts.filter((a) => a.type === "credit_card")),
     };
   }, [allAccounts]);
@@ -732,7 +733,8 @@ export default function AccountsScreen() {
     const sum = (items: Account[], value: (a: Account) => number) => items.reduce((total, a) => total + value(a), 0);
     const byUrgency = (a: Account, b: Account) => loanRank(a) - loanRank(b);
 
-    const cashAccounts = displayedAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card");
+    const cashAccounts = displayedAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card" && a.type !== "investment");
+    const investments = displayedAccounts.filter((a) => a.type === "investment");
     const cards = displayedAccounts.filter((a) => a.type === "credit_card");
     const loans = displayedAccounts.filter((a) => a.type === "loan");
     const borrowed = loans.filter((l) => !isLendingLoan(l)).sort(byUrgency);
@@ -741,6 +743,7 @@ export default function AccountsScreen() {
 
     return [
       { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)), addType: "checking" as const },
+      { key: "investments", title: "Investments", items: investments, meta: formatCurrency(sum(investments, (a) => a.balance)), addType: "investment" as const },
       { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed", addType: "credit_card" as const },
       { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding`, addType: "loan" as const, isLending: false },
       { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding`, addType: "loan" as const, isLending: true },
@@ -819,9 +822,15 @@ export default function AccountsScreen() {
         {/* The sum that makes up the total, line by line */}
         <View style={styles.breakdown}>
           <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Bank, cash, savings & investments</Text>
+            <Text style={styles.breakdownLabel}>Bank, cash & savings</Text>
             <Text style={styles.breakdownValue}>{formatCurrency(balanceParts.inAccounts)}</Text>
           </View>
+          {balanceParts.invested !== 0 && (
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Investments</Text>
+              <Text style={styles.breakdownValue}>{`${balanceParts.invested < 0 ? "− " : "+ "}${formatCurrency(Math.abs(balanceParts.invested))}`}</Text>
+            </View>
+          )}
           <View style={styles.breakdownRow}>
             <Text style={styles.breakdownLabel}>
               {balanceParts.onCards > 0 ? "Credit cards (paid in advance)" : "Credit card dues"}
