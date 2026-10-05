@@ -718,7 +718,8 @@ export default function AccountsScreen() {
   };
 
   // The parts Total Balance is made of, so the card can show the sum: what is in bank, cash and
-  // savings accounts, what is invested, plus the credit card balances (negative when money is owed)
+  // savings accounts plus the credit card balances (negative when money is owed). Investments are
+  // shown beside it but, like loans, are not part of it.
   const balanceParts = useMemo(() => {
     const sum = (items: Account[]) => Math.round(items.reduce((total, a) => total + a.balance, 0) * 100) / 100;
     return {
@@ -825,12 +826,6 @@ export default function AccountsScreen() {
             <Text style={styles.breakdownLabel}>Bank, cash & savings</Text>
             <Text style={styles.breakdownValue}>{formatCurrency(balanceParts.inAccounts)}</Text>
           </View>
-          {balanceParts.invested !== 0 && (
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Investments</Text>
-              <Text style={styles.breakdownValue}>{`${balanceParts.invested < 0 ? "− " : "+ "}${formatCurrency(Math.abs(balanceParts.invested))}`}</Text>
-            </View>
-          )}
           <View style={styles.breakdownRow}>
             <Text style={styles.breakdownLabel}>
               {balanceParts.onCards > 0 ? "Credit cards (paid in advance)" : "Credit card dues"}
@@ -850,6 +845,10 @@ export default function AccountsScreen() {
         {/* Loans are tracked here but kept out of the total; Net Worth brings them in */}
         <Text style={styles.breakdownNote}>Not included above (see Net Worth)</Text>
         <View style={styles.loanStats}>
+          <View style={styles.loanStatItem}>
+            <Text style={styles.loanStatLabel}>Investments</Text>
+            <Text style={[styles.loanStatValue, { color: theme.colors.text }]}>{formatCurrency(balanceParts.invested)}</Text>
+          </View>
           <View style={styles.loanStatItem}>
             <Text style={styles.loanStatLabel}>You owe</Text>
             <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>{formatCurrency(loanSummary.outstandingBorrowings)}</Text>

@@ -29,24 +29,25 @@ const CATEGORIES: Array<{ type: AccountCategory; label: string }> = [
   { type: 'checking', label: 'Checking' },
   { type: 'cash', label: 'Cash' },
   { type: 'savings', label: 'Savings' },
-  { type: 'investment', label: 'Investments' },
   { type: 'credit_card', label: 'Credit Cards' },
 ];
 
 export interface GroupedBalances {
-  /** Every account except loans, in the order given. */
+  /** Every account except loans and investments, in the order given. */
   accounts: AccountBalanceRow[];
   /** The same accounts grouped by type; categories with no accounts are left out. */
   categories: BalanceCategory[];
   /** The sum of exactly the rows in `accounts`, so the list always adds up to it. */
   accountsTotal: number;
+  /** Investment accounts, kept out of the accounts total like loans; null when there are none. */
+  investments: BalanceCategory | null;
   /** Loans you borrowed and are still paying back. */
   youOwe: LoanBalanceRow[];
   /** Loans you lent that have not all come back. */
   owedToYou: LoanBalanceRow[];
   totalOwed: number;
   totalLent: number;
-  /** Accounts total, plus what is owed to you, minus what you owe. */
+  /** Accounts total, plus investments and what is owed to you, minus what you owe. */
   netWorth: number;
 }
 
@@ -65,12 +66,12 @@ const toLoanRow = (row: AccountBalanceRow, lent: boolean): LoanBalanceRow => {
 };
 
 /**
- * Splits the balance rows into ordinary accounts and loans. Loans are not balances you can spend,
- * so they are kept out of the accounts total and listed on their own, with net worth as the line
- * that brings everything together.
+ * Splits the balance rows into ordinary accounts, investments and loans. Investments and loans are
+ * not balances you can spend, so they are kept out of the accounts total and listed on their own,
+ * with net worth as the line that brings everything together.
  */
 export function groupAccountBalances(rows: AccountBalanceRow[]): GroupedBalances {
-  const accounts = rows.filter((row) => row.type !== 'loan');
+  const accounts = rows.filter((row) => row.type !== 'loan' && row.type !== 'investment');
   const activeLoans = rows.filter((row) => row.type === 'loan' && row.loanStatus !== 'fully_paid');
 
   const isLent = (row: AccountBalanceRow) => row.isLending === 1 || row.isLending === true;
@@ -84,12 +85,25 @@ export function groupAccountBalances(rows: AccountBalanceRow[]): GroupedBalances
   const totalOwed = sum(youOwe);
   const totalLent = sum(owedToYou);
 
-  const categories = CATEGORIES.map(({ type, label }) => {
-    const members = accounts
+  const toCategory = (type: AccountCategory, label: string): BalanceCategory => {
+    const members = rows
       .filter((row) => row.type === type)
       .sort((a, b) => Math.abs(b.closingBalance) - Math.abs(a.closingBalance));
     return { type, label, total: round2(members.reduce((total, row) => total + row.closingBalance, 0)), accounts: members };
-  }).filter((category) => category.accounts.length > 0);
+  };
+  const categories = CATEGORIES.map(({ type, label }) => toCategory(type, label)).filter((category) => category.accounts.length > 0);
+  const investmentCategory = toCategory('investment', 'Investments');
+  const investments = investmentCategory.accounts.length > 0 ? investmentCategory : null;
 
-  return { accounts, categories, accountsTotal, youOwe, owedToYou, totalOwed, totalLent, netWorth: round2(accountsTotal + totalLent - totalOwed) };
+  return {
+    accounts,
+    categories,
+    accountsTotal,
+    investments,
+    youOwe,
+    owedToYou,
+    totalOwed,
+    totalLent,
+    netWorth: round2(accountsTotal + (investments?.total ?? 0) + totalLent - totalOwed),
+  };
 }
