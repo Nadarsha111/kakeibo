@@ -2,6 +2,7 @@ import DatabaseConnector from './DatabaseConnector';
 import TransactionService from './TransactionService';
 import { CardEmi } from '../types';
 import { addMonths, interestDue, monthlyPayment, round2 } from '../utils/loanMath';
+import { localToday } from '../utils/recurring';
 
 // Advancing a very old, unopened EMI catches up at most this many installments in one go; anything
 // further back is picked up the next time the app runs. Roughly two years of monthly installments.
@@ -108,7 +109,7 @@ class CardEmiService {
    */
   advanceDueEmis(): void {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localToday();
       const dueEmis = this.db.getAllSync(
         "SELECT * FROM card_emis WHERE status = 'active' AND isActive = 1 AND nextDueDate IS NOT NULL AND nextDueDate <= ?",
         [today],
@@ -122,10 +123,7 @@ class CardEmiService {
         let iterations = 0;
 
         while (nextDueDate <= today && outstanding > 0.005 && iterations < MAX_CATCH_UP) {
-          const interest = interestDue(outstanding, emi.interestRate || 0);
-          // Clamped at 0: an installment set too low to cover its own interest should never let
-          // the outstanding principal grow, just pay it off more slowly than planned.
-          const principalPortion = Math.max(0, Math.min(outstanding, round2(emi.installmentAmount - interest)));
+          const { interest, principalPortion } = this.splitInstallment(emi, outstanding);
           returnedAmount = round2(returnedAmount + principalPortion);
           interestPaid = round2(interestPaid + interest);
           outstanding = round2((emi.principal || 0) - returnedAmount);
@@ -142,6 +140,15 @@ class CardEmiService {
     } catch (error) {
       console.error('Error advancing card EMIs:', error);
     }
+  }
+
+  /** How one installment, paid with `outstanding` principal left, splits into interest and principal. */
+  private splitInstallment(emi: CardEmi, outstanding: number): { interest: number; principalPortion: number } {
+    const interest = interestDue(outstanding, emi.interestRate || 0);
+    // Clamped at 0: an installment set too low to cover its own interest should never let
+    // the outstanding principal grow, just pay it off more slowly than planned.
+    const principalPortion = Math.max(0, Math.min(outstanding, round2(emi.installmentAmount - interest)));
+    return { interest, principalPortion };
   }
 
   /** Permanently removes an EMI plan. The purchase transaction itself is untouched. */

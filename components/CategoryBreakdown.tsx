@@ -4,11 +4,13 @@ import { useTheme } from "../context/ThemeContext";
 import { useSettings } from "../context/SettingsContext";
 import DonutChart from "./DonutChart";
 import { useTabBarInset } from './PebbleTabBar';
+import { categoryIcon } from '../utils/categoryIcon';
 
 interface CategorySummary {
   category: string;
   amount: number;
   color: string;
+  icon?: string | null;
   percentage: number;
 }
 
@@ -254,23 +256,7 @@ const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({
                   ]}
                 >
                   <Text style={styles.categoryIcon}>
-                    {category.category === "Transport"
-                      ? "🚗"
-                      : category.category === "Restaurant"
-                      ? "🍽️"
-                      : category.category === "Shopping"
-                      ? "🛍️"
-                      : category.category === "Food"
-                      ? "🍎"
-                      : category.category === "Gift"
-                      ? "🎁"
-                      : category.category === "Free time"
-                      ? "🎮"
-                      : category.category === "Family"
-                      ? "👨‍👩‍👧‍👦"
-                      : category.category === "Health"
-                      ? "🏥"
-                      : "💰"}
+                    {categoryIcon(category.category, category.icon, 'expense')}
                   </Text>
                 </View>
                 <View style={styles.categoryContent}>

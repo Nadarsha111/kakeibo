@@ -77,6 +77,20 @@ class TransactionService {
   }
 
   /**
+   * Add several transactions atomically - either all are saved (with their balance updates) or none.
+   */
+  addTransactions(transactions: Array<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>>): number[] {
+    try {
+      return DatabaseConnector.getInstance().withTransaction(() =>
+        transactions.map((transaction) => this.addTransactionUnsafe(transaction))
+      );
+    } catch (error) {
+      console.error('Error adding transactions:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Adds a transfer between two accounts. This involves two transactions.
    */
   addTransfer(data: {
@@ -86,6 +100,7 @@ class TransactionService {
     date: string;
     description?: string;
     profileId: number;
+    toCardId?: number | null;
   }): void {
     try {
       DatabaseConnector.getInstance().withTransaction(() => this.addTransferUnsafe(data));
@@ -106,6 +121,8 @@ class TransactionService {
     date: string;
     description?: string;
     profileId: number;
+    /** Which of the destination account's physical cards the payment is for, if it has any. */
+    toCardId?: number | null;
   }): void {
     const fromAccount = this.accountService.getAccountById(data.fromAccountId);
     const toAccount = this.accountService.getAccountById(data.toAccountId);
@@ -132,6 +149,7 @@ class TransactionService {
       date: data.date,
       paymentMethod: 'cash', // Internal transfer, method is nominal
       accountId: data.toAccountId,
+      cardId: data.toCardId ?? null,
     });
 
     // If money is flowing INTO a loan account
@@ -621,10 +639,10 @@ class TransactionService {
   /**
    * Get category summary for expenses in a date range
    */
-  getCategorySummary(startDate: string, endDate: string, profileId?: number): { category: string; amount: number; color: string }[] {
+  getCategorySummary(startDate: string, endDate: string, profileId?: number): { category: string; amount: number; color: string; icon: string | null }[] {
     try {
       // LEFT JOIN so spending in a category without a row of its own (e.g. "Loan Interest") still counts
-      let query = `SELECT t.category, SUM(t.amount) as amount, COALESCE(c.color, '#6b7280') as color 
+      let query = `SELECT t.category, SUM(t.amount) as amount, COALESCE(c.color, '#6b7280') as color, c.icon as icon
          FROM transactions t 
          LEFT JOIN categories c ON t.category = c.name 
          WHERE t.type = 'expense' AND t.category != 'Transfer Out' AND DATE(t.date) BETWEEN DATE(?) AND DATE(?)`;
@@ -635,12 +653,12 @@ class TransactionService {
         params.push(profileId);
       }
 
-      query += ' GROUP BY t.category, c.color ORDER BY amount DESC';
+      query += ' GROUP BY t.category, c.color, c.icon ORDER BY amount DESC';
 
       return this.db.getAllSync(
         query,
         params
-      ) as { category: string; amount: number; color: string }[];
+      ) as { category: string; amount: number; color: string; icon: string | null }[];
     } catch (error) {
       console.error('Error getting category summary:', error);
       return [];

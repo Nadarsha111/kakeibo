@@ -1,5 +1,7 @@
-import { Alert } from "react-native";
-import { getTransactionService } from "../database";
+import { Alert, DevSettings } from "react-native";
+import * as FileSystem from "expo-file-system";
+import * as Updates from "expo-updates";
+import { getBackupService, getSettingsService, getTransactionService, type BackupSnapshot, type BackupSummary } from "../database";
 import {
   statusCodes,
   GoogleSignin,
@@ -9,6 +11,10 @@ import { getSheetsWorkbookService, SHEET_TABS } from "./SheetsWorkbookService";
 
 class GoogleSyncService {
   private static SPREADSHEET_NAME = "Kakeibo App Data";
+  /** A complete copy of the app's data, kept next to the sheet in the user's Drive. */
+  private static BACKUP_NAME = "Kakeibo Backup.json";
+  /** Settings key holding when the last backup to Drive was saved. */
+  public static LAST_BACKUP_KEY = "last_drive_backup";
 
   constructor() {
     GoogleSignin.configure({
@@ -67,7 +73,8 @@ class GoogleSyncService {
   }
 
   /**
-   * Overwrites the Google Sheet with the current local data (local wins).
+   * Saves a full backup to Google Drive, then overwrites the Google Sheet with the current local
+   * data (local wins). The backup goes first: it is what a restore needs, the sheet is a report.
    */
   public async push(): Promise<void> {
     try {
@@ -82,12 +89,13 @@ class GoogleSyncService {
 
       Alert.alert(
         "Pushing...",
-        "Your data is being pushed to Google Sheets. This may take a moment.",
+        "Backing up your data and updating Google Sheets. This may take a moment.",
       );
+      await this.backupToDrive();
       await this.syncTransactions();
       Alert.alert(
         "Success",
-        "Your data has been successfully pushed to Google Sheets.",
+        "Your full backup is saved to Google Drive and the sheet is up to date.",
       );
     } catch (error: any) {
       console.error("Push process failed:", error);
@@ -122,6 +130,7 @@ class GoogleSyncService {
         "Reading changes from Google Sheets. This may take a moment.",
       );
       const summary = await this.pullTransactions();
+      await this.backupToDrive();
       await this.syncTransactions();
       Alert.alert(
         "Pull Complete",
@@ -133,6 +142,137 @@ class GoogleSyncService {
         "Pull Failed",
         error.message || "An unexpected error occurred during pull.",
       );
+    }
+  }
+
+  /**
+   * Replaces everything on this phone with the backup saved in Google Drive, after showing what is
+   * in it and asking to confirm. The current data is first saved to a file on the phone, so a
+   * mistaken restore can still be undone by hand. The app restarts afterwards so every screen
+   * reloads from the restored data.
+   */
+  public async restore(): Promise<void> {
+    try {
+      if (!(await this.isSignedIn()) && !(await this.signIn())) return;
+
+      const { accessToken } = await GoogleSignin.getTokens();
+      const fileId = await this.findBackupFile(accessToken);
+      if (!fileId) {
+        Alert.alert(
+          "No Backup Found",
+          "There is no Kakeibo backup in this Google account yet. Push to Google Sheets once on the phone that has your data, then restore here.",
+        );
+        return;
+      }
+
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) throw new Error("Could not download the backup from Google Drive.");
+
+      let parsed: unknown;
+      try {
+        parsed = await response.json();
+      } catch {
+        throw new Error("The backup file in Google Drive is damaged and can't be read.");
+      }
+      const { snapshot, summary } = getBackupService().validate(parsed);
+
+      if (!(await this.confirmRestore(summary))) return;
+
+      await this.saveLocalCopy();
+      getBackupService().restoreSnapshot(snapshot);
+
+      Alert.alert("Restored", "Your data has been restored. The app will now restart.", [
+        { text: "OK", onPress: () => this.restartApp() },
+      ]);
+    } catch (error: any) {
+      console.error("Restore failed:", error);
+      Alert.alert("Restore Failed", error.message || "An unexpected error occurred during restore. Nothing on this phone was changed.");
+    }
+  }
+
+  /** When the last backup to Drive was saved from this phone, if ever. */
+  public getLastBackupTime(): string | null {
+    return getSettingsService().getSetting(GoogleSyncService.LAST_BACKUP_KEY);
+  }
+
+  private async backupToDrive(): Promise<void> {
+    const { accessToken } = await GoogleSignin.getTokens();
+    const snapshot: BackupSnapshot = getBackupService().createSnapshot();
+    const body = JSON.stringify(snapshot);
+    const fileId = await this.findBackupFile(accessToken);
+
+    let response: Response;
+    if (fileId) {
+      response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body,
+      });
+    } else {
+      const boundary = `kakeibo-${Date.now()}`;
+      const multipart =
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+        JSON.stringify({ name: GoogleSyncService.BACKUP_NAME, mimeType: "application/json" }) +
+        `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
+        body +
+        `\r\n--${boundary}--`;
+      response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+        body: multipart,
+      });
+    }
+    if (!response.ok) throw new Error("Could not save the backup to Google Drive.");
+
+    // The snapshot records its own time, so this matches what a restore will show
+    getSettingsService().setSetting(GoogleSyncService.LAST_BACKUP_KEY, snapshot.createdAt);
+  }
+
+  /** The backup file this app saved in the user's Drive, if any (the newest, should there be more). */
+  private async findBackupFile(accessToken: string): Promise<string | null> {
+    const query = encodeURIComponent(`name='${GoogleSyncService.BACKUP_NAME}' and trashed=false`);
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=modifiedTime desc&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!response.ok) throw new Error("Could not look for the backup in Google Drive.");
+    const result = await response.json();
+    return result.files?.[0]?.id ?? null;
+  }
+
+  private confirmRestore(summary: BackupSummary): Promise<boolean> {
+    const when = new Date(summary.createdAt).toLocaleString();
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    return new Promise((resolve) => {
+      Alert.alert(
+        "Restore This Backup?",
+        `Saved ${when}\n\n` +
+          `${plural(summary.profiles, "profile")}, ${plural(summary.accounts, "account")}, ` +
+          `${plural(summary.transactions, "transaction")}, ${plural(summary.recurringItems, "recurring item")}.\n\n` +
+          "Everything on this phone will be replaced with this backup.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "Restore", style: "destructive", onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+  }
+
+  /** Keeps what was on the phone before a restore, in the app's own files, just in case. */
+  private async saveLocalCopy(): Promise<void> {
+    if (!FileSystem.documentDirectory) return;
+    const copy = getBackupService().createSnapshot();
+    await FileSystem.writeAsStringAsync(`${FileSystem.documentDirectory}kakeibo-before-restore.json`, JSON.stringify(copy));
+  }
+
+  private restartApp(): void {
+    if (Updates.isEnabled) {
+      Updates.reloadAsync().catch(() => DevSettings.reload());
+    } else {
+      DevSettings.reload();
     }
   }
 
@@ -157,7 +297,12 @@ class GoogleSyncService {
       throw new Error("Could not find the spreadsheet. Push your data to Google Sheets first.");
     }
 
-    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${SHEET_TABS.TRANSACTIONS}`;
+    // Raw values, not what the sheet displays: an amount shown as "12,500.00" would otherwise be
+    // read as 12, since parsing stops at the thousands separator. Dates still come back as text in
+    // the column's yyyy-mm-dd format rather than as spreadsheet serial numbers.
+    const readUrl =
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${SHEET_TABS.TRANSACTIONS}` +
+      "?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING";
     const response = await fetch(readUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -167,7 +312,8 @@ class GoogleSyncService {
     }
 
     const result = await response.json();
-    const rows: string[][] = result.values || [];
+    // Unformatted cells come back as numbers where they hold numbers; the row parser expects text
+    const rows: string[][] = (result.values || []).map((row: unknown[]) => row.map((cell) => (cell == null ? "" : String(cell))));
     const dataRows = rows.slice(1); // Drop the header row
 
     const transactionService = getTransactionService();

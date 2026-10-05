@@ -43,6 +43,16 @@ export function daysBetween(from: string, to: string): number {
 }
 
 /**
+ * Today as the phone's local "YYYY-MM-DD", the same way transactions are dated. Taking it from
+ * toISOString instead gives the UTC date, which east of Greenwich is still yesterday for the first
+ * hours after midnight (until 5:30 AM in India).
+ */
+export function localToday(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * The due date after `date`. Monthly, quarterly and yearly items keep their day of the month
  * (`dueDay`), falling back to the month's last day when it is shorter, so a bill due on the 31st
  * returns to the 31st after February instead of drifting to the 28th.

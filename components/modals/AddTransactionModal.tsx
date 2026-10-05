@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -8,16 +8,160 @@ import {
   StyleSheet,
   Alert,
   Modal,
+  Platform,
+  Keyboard,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AmountKeypad, { evaluateAmount, hasOperator } from "../AmountKeypad";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import {
   getCategoryService,
   getAccountService,
   getTransactionService,
   getCardService,
+  getSettingsService,
 } from "../../database";
 import { Category, Account, CreditCard, Transaction } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
+import { isValidDate } from "../../utils/loanMath";
+
+type PaymentMethod = "cash" | "credit_card" | "debit_card";
+
+const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: "cash", label: "💵 Cash" },
+  { value: "credit_card", label: "💳 Credit card" },
+  { value: "debit_card", label: "🏧 Debit card" },
+];
+
+/** YYYY-MM-DD in the device's own timezone (toISOString would give the UTC day). */
+function toLocalDateString(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function todayString(): string {
+  return toLocalDateString(new Date());
+}
+
+function shiftDate(date: string, days: number): string {
+  const base = parseLocalDate(date);
+  base.setDate(base.getDate() + days);
+  return toLocalDateString(base);
+}
+
+function parseLocalDate(date: string): Date {
+  return isValidDate(date) ? new Date(`${date}T00:00:00`) : new Date();
+}
+
+function formatLongDate(date: string): string {
+  return parseLocalDate(date).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function relativeDayLabel(date: string): string | null {
+  const today = todayString();
+  if (date === today) return "Today";
+  if (date === shiftDate(today, -1)) return "Yesterday";
+  if (date === shiftDate(today, 1)) return "Tomorrow";
+  return null;
+}
+
+// New transactions start from whatever was last saved, so repeat entries need fewer taps.
+const LAST_ACCOUNT_KEY = "addTransaction.lastAccountId";
+const lastCategoryKey = (type: "income" | "expense") => `addTransaction.lastCategory.${type}`;
+
+function defaultAccount(accounts: Account[]): Account | undefined {
+  const lastId = Number(getSettingsService().getSetting(LAST_ACCOUNT_KEY));
+  return accounts.find((acc) => acc.id === lastId) ?? accounts[0];
+}
+
+function defaultCategory(type: "income" | "expense" | "transfer", categories: Category[]): string {
+  if (type === "transfer") return "";
+  const last = getSettingsService().getSetting(lastCategoryKey(type));
+  const match = categories.find((cat) => cat.type === type && cat.name === last);
+  return (match ?? categories.find((cat) => cat.type === type))?.name || "";
+}
+
+/** The payment method an account most likely implies, so the user rarely has to pick one. */
+function paymentMethodForAccount(account?: Account): PaymentMethod {
+  if (account?.type === "credit_card") return "credit_card";
+  if (account?.type === "cash") return "cash";
+  return "debit_card";
+}
+
+/**
+ * A horizontal row of chips that scrolls the selected one into view, so a preselected chip
+ * (e.g. the last used account) isn't left hidden off the edge of the row.
+ */
+function ChipScrollRow({
+  activeIndex,
+  contentContainerStyle,
+  children,
+}: {
+  activeIndex: number;
+  contentContainerStyle: any;
+  children: React.ReactNode;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const chipLayouts = useRef<Record<number, { x: number; width: number }>>({});
+  const viewportWidth = useRef(0);
+  const scrollX = useRef(0);
+  const [layoutVersion, setLayoutVersion] = useState(0);
+
+  useEffect(() => {
+    const chip = chipLayouts.current[activeIndex];
+    const width = viewportWidth.current;
+    if (activeIndex < 0 || !chip || !width) return;
+    const fullyVisible = chip.x >= scrollX.current && chip.x + chip.width <= scrollX.current + width;
+    if (fullyVisible) return;
+    scrollRef.current?.scrollTo({ x: Math.max(0, chip.x - (width - chip.width) / 2), animated: true });
+  }, [activeIndex, layoutVersion]);
+
+  return (
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={contentContainerStyle}
+      keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={16}
+      onScroll={(e) => {
+        scrollX.current = e.nativeEvent.contentOffset.x;
+      }}
+      onLayout={(e) => {
+        viewportWidth.current = e.nativeEvent.layout.width;
+        setLayoutVersion((v) => v + 1);
+      }}
+    >
+      {React.Children.toArray(children).map((child, index) => (
+        <View
+          key={(child as React.ReactElement).key ?? index}
+          onLayout={(e) => {
+            const { x, width } = e.nativeEvent.layout;
+            chipLayouts.current[index] = { x, width };
+            if (index === activeIndex) setLayoutVersion((v) => v + 1);
+          }}
+        >
+          {child}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+/** Values to start a fresh (non-edit) form with, e.g. from a matched statement line item. */
+interface TransactionPrefill {
+  amount?: number;
+  description?: string;
+  date?: string;
+  type?: 'income' | 'expense';
+  accountId?: number;
+}
 
 interface AddTransactionModalProps {
   visible: boolean;
@@ -27,6 +171,7 @@ interface AddTransactionModalProps {
   loanForRepayment?: Account | null;
   initialType?: 'income' | 'expense' | 'transfer';
   initialFromAccount?: Account | null;
+  prefill?: TransactionPrefill | null;
 }
 
 export default function AddTransactionModal({
@@ -37,17 +182,17 @@ export default function AddTransactionModal({
   loanForRepayment,
   initialType,
   initialFromAccount,
+  prefill,
 }: AddTransactionModalProps) {
   const { theme } = useTheme();
-  const { selectedProfileId } = useSettings();
+  const { selectedProfileId, formatCurrency } = useSettings();
+  const insets = useSafeAreaInsets();
   const styles = createStyles(theme);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<"income" | "expense" | "transfer">("expense");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<
-    "cash" | "credit_card" | "debit_card"
-  >("credit_card");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("credit_card");
   const [fromAccount, setFromAccount] = useState<number | undefined>(
     undefined,
   );
@@ -59,21 +204,26 @@ export default function AddTransactionModal({
   );
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(todayString());
+  const [showMore, setShowMore] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [keypadVisible, setKeypadVisible] = useState(true);
 
   const resetForm = useCallback((accounts: Account[], categories: Category[]) => {
     setAmount("");
     setDescription("");
     setType("expense");
-    setPaymentMethod("credit_card");
-    setDate(new Date().toISOString().split("T")[0]);
+    setDate(todayString());
     setPriority(undefined);
     setToAccount(undefined);
     setCardId(undefined);
+    setShowMore(false);
+    setShowDatePicker(false);
 
-    const defaultCategory = categories.find(cat => cat.type === 'expense');
-    setSelectedCategory(defaultCategory?.name || "");
-    setFromAccount(accounts.length > 0 ? accounts[0].id : undefined);
+    setSelectedCategory(defaultCategory("expense", categories));
+    const account = defaultAccount(accounts);
+    setFromAccount(account?.id);
+    setPaymentMethod(paymentMethodForAccount(account));
   }, []);
 
   const loadDataAndSetState = useCallback(() => {
@@ -85,6 +235,7 @@ export default function AddTransactionModal({
     const profileId = selectedProfileId === "all" ? undefined : selectedProfileId;
     const profileAccounts = accountService.getAccounts(profileId);
     setAccounts(profileAccounts);
+    setKeypadVisible(!transactionToEdit);
 
     if (transactionToEdit) {
       setAmount(String(transactionToEdit.amount));
@@ -97,6 +248,7 @@ export default function AddTransactionModal({
       setPriority(transactionToEdit.priority || undefined);
       setDate(transactionToEdit.date);
       setToAccount(undefined);
+      setShowMore(!!transactionToEdit.priority);
     } else {
       resetForm(profileAccounts, allCategories);
       if (loanForRepayment) {
@@ -112,9 +264,22 @@ export default function AddTransactionModal({
         setFromAccount(initialFromAccount.id);
       } else if (initialType) {
         setType(initialType);
+        setSelectedCategory(defaultCategory(initialType, allCategories));
+      } else if (prefill) {
+        if (prefill.type) {
+          setType(prefill.type);
+          setSelectedCategory(defaultCategory(prefill.type, allCategories));
+        }
+        if (prefill.amount !== undefined) setAmount(String(prefill.amount));
+        if (prefill.description !== undefined) setDescription(prefill.description);
+        if (prefill.date) setDate(prefill.date);
+        if (prefill.accountId !== undefined) {
+          setFromAccount(prefill.accountId);
+          setPaymentMethod(paymentMethodForAccount(profileAccounts.find((acc) => acc.id === prefill.accountId)));
+        }
       }
     }
-  }, [selectedProfileId, transactionToEdit, loanForRepayment, initialType, initialFromAccount, resetForm]);
+  }, [selectedProfileId, transactionToEdit, loanForRepayment, initialType, initialFromAccount, prefill, resetForm]);
 
   useEffect(() => {
     if (visible) {
@@ -138,9 +303,7 @@ export default function AddTransactionModal({
 
   const handleTypeChange = (newType: "income" | "expense" | "transfer") => {
     setType(newType);
-    // Reset category selection when type changes
-    const categoryForType = categories.find((cat) => cat.type === newType);
-    setSelectedCategory(categoryForType?.name || "");
+    setSelectedCategory(defaultCategory(newType, categories));
 
     // Reset priority for income transactions
     if (newType === "income" || newType === "transfer") {
@@ -150,7 +313,8 @@ export default function AddTransactionModal({
 
   const handleSubmit = () => {
     // Validation
-    if (!amount || parseFloat(amount) <= 0) {
+    const total = evaluateAmount(amount);
+    if (isNaN(total) || total <= 0) {
       Alert.alert("Error", "Please enter a valid amount");
       return;
     }
@@ -160,16 +324,8 @@ export default function AddTransactionModal({
       return;
     }
 
-    // For expense transactions, priority is optional but recommended
-    if (type === "expense" && !priority) {
-      Alert.alert(
-        "Priority Selection",
-        "Would you like to classify this expense as a Need or Want? This helps with budgeting.",
-        [
-          { text: "Skip", style: "cancel", onPress: () => submitTransaction() },
-          { text: "Select Priority", onPress: () => {} },
-        ],
-      );
+    if (!isValidDate(date)) {
+      Alert.alert("Error", "Please enter the date as YYYY-MM-DD");
       return;
     }
 
@@ -179,6 +335,7 @@ export default function AddTransactionModal({
   const submitTransaction = () => {
     try {
       const transactionService = getTransactionService();
+      const total = evaluateAmount(amount);
 
       if (type === 'transfer') {
         if (!fromAccount || !toAccount) {
@@ -196,7 +353,7 @@ export default function AddTransactionModal({
         transactionService.addTransfer({
           fromAccountId: fromAccount,
           toAccountId: toAccount,
-          amount: parseFloat(amount),
+          amount: total,
           date,
           description: description.trim() || 'Fund Transfer',
           profileId: selectedProfileId,
@@ -214,7 +371,7 @@ export default function AddTransactionModal({
 
         const transactionData = {
           profileId: profileIdToUse,
-          amount: parseFloat(amount),
+          amount: total,
           type,
           category: selectedCategory,
           description: description.trim() || null,
@@ -232,6 +389,10 @@ export default function AddTransactionModal({
           );
         } else {
           transactionService.addTransaction(transactionData);
+          getSettingsService().setSettings({
+            [LAST_ACCOUNT_KEY]: String(fromAccount),
+            [lastCategoryKey(type)]: selectedCategory,
+          });
         }
       }
 
@@ -262,6 +423,54 @@ export default function AddTransactionModal({
     return emojiMap[type] || "💰";
   };
 
+
+  const accountLabel = (account: Account) =>
+    account.bankName ? `${account.name} (${account.bankName})` : account.name;
+
+  const selectAccount = (account: Account) => {
+    setFromAccount(account.id);
+    setPaymentMethod(paymentMethodForAccount(account));
+  };
+
+  // Android shows the picker as a one-shot dialog; iOS keeps it inline until toggled closed.
+  const handleDatePicked = (event: DateTimePickerEvent, picked?: Date) => {
+    if (Platform.OS === "android") setShowDatePicker(false);
+    if (event.type === "set" && picked) setDate(toLocalDateString(picked));
+  };
+
+  const enteredTotal = evaluateAmount(amount);
+  const saveLabel = [
+    transactionToEdit ? "Update" : "Save",
+    type,
+    enteredTotal > 0 ? `· ${formatCurrency(enteredTotal)}` : "",
+  ].join(" ").trim();
+
+  const typeColor = (t: typeof type) =>
+    t === "expense" ? theme.colors.error : t === "income" ? theme.colors.success : theme.colors.primary;
+
+  const renderChip = (
+    key: string | number,
+    label: string,
+    active: boolean,
+    onPress: () => void,
+    emoji?: string,
+  ) => (
+    <TouchableOpacity
+      key={key}
+      style={[styles.chip, active && styles.chipActive]}
+      onPress={onPress}
+    >
+      {emoji ? <Text style={styles.chipEmoji}>{emoji}</Text> : null}
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+
+  const renderChipRow = (activeIndex: number, children: React.ReactNode) => (
+    <ChipScrollRow activeIndex={activeIndex} contentContainerStyle={styles.chipRow}>
+      {children}
+    </ChipScrollRow>
+  );
+
   return (
     <Modal
       visible={visible}
@@ -271,320 +480,237 @@ export default function AddTransactionModal({
     >
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton} hitSlop={12}>
+            <Text style={styles.closeButtonText}>✕</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {transactionToEdit ? "Edit" : "Add"} Transaction
           </Text>
-          <TouchableOpacity onPress={handleSubmit} style={styles.saveButton}>
-            <Text style={styles.saveButtonText}>
-              {transactionToEdit ? "Update" : "Save"}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.closeButton} />
         </View>
 
-        <ScrollView style={styles.content}>
-          {/* Amount Input */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Amount</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={setAmount}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              autoFocus
-            />
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentInner}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Type */}
+          <View style={styles.typeSelector}>
+            {(["expense", "income", "transfer"] as const).map((t) => {
+              const active = type === t;
+              const disabled = t === "transfer" && !!transactionToEdit;
+              return (
+                <TouchableOpacity
+                  key={t}
+                  style={[
+                    styles.typeButton,
+                    active && { backgroundColor: typeColor(t) },
+                    disabled && styles.disabled,
+                  ]}
+                  onPress={() => handleTypeChange(t)}
+                  disabled={disabled}
+                >
+                  <Text style={[styles.typeButtonText, active && styles.typeButtonTextActive]}>
+                    {t === "expense" ? "Expense" : t === "income" ? "Income" : "Transfer"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* Type Selector */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Type</Text>
-            <View style={styles.typeSelector}>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  type === "expense" && styles.typeButtonActive,
-                ]}
-                onPress={() => handleTypeChange("expense")}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    type === "expense" && styles.typeButtonTextActive,
-                  ]}
-                >
-                  Expense
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  type === "income" && styles.typeButtonActive,
-                ]}
-                onPress={() => handleTypeChange("income")}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    type === "income" && styles.typeButtonTextActive,
-                  ]}
-                >
-                  Income
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  type === "transfer" && styles.typeButtonActive,
-                ]}
-                onPress={() => handleTypeChange("transfer")}
-                disabled={!!transactionToEdit} // Disable for edits
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    type === "transfer" && styles.typeButtonTextActive,
-                    !!transactionToEdit && { color: theme.colors.disabled },
-                  ]}
-                >
-                  Transfer
-                </Text>
-              </TouchableOpacity>
+          {/* Amount: typed on AmountKeypad so + and − work on every platform */}
+          <TouchableOpacity
+            style={[styles.amountBox, keypadVisible && { borderColor: typeColor(type) }]}
+            onPress={() => {
+              Keyboard.dismiss();
+              setShowDatePicker(false);
+              setKeypadVisible(true);
+            }}
+          >
+            <Text
+              style={[styles.amountText, { color: amount ? typeColor(type) : theme.colors.textSecondary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {amount || "0"}
+            </Text>
+            {hasOperator(amount) && !isNaN(evaluateAmount(amount)) && (
+              <Text style={styles.amountResult}>= {formatCurrency(evaluateAmount(amount))}</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Category */}
+          {type !== "transfer" && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Category</Text>
+              {renderChipRow(
+                getFilteredCategories().findIndex((category) => category.name === selectedCategory),
+                getFilteredCategories().map((category) =>
+                  renderChip(
+                    category.id,
+                    category.name,
+                    selectedCategory === category.name,
+                    () => setSelectedCategory(category.name),
+                    category.icon,
+                  ),
+                ),
+              )}
             </View>
-          </View>
+          )}
 
-          {/* Category Selector */}
+          {/* Account */}
           <View style={styles.section}>
-            {type !== 'transfer' && (<>
-            <Text style={styles.sectionTitle}>Category & Description</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoryScrollContent}
-            >
-              {getFilteredCategories().map((category) => (
-                <TouchableOpacity
-                  key={category.id}
-                  style={[
-                    styles.categoryItemCompact,
-                    selectedCategory === category.name &&
-                      styles.categoryItemCompactActive,
-                  ]}
-                  onPress={() => setSelectedCategory(category.name)}
-                >
-                  <Text style={styles.categoryEmojiCompact}>
-                    {category.icon}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.categoryNameCompact,
-                      selectedCategory === category.name &&
-                        styles.categoryNameCompactActive,
-                    ]}
-                  >
-                    {category.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TextInput
-              style={[styles.textInput, { marginTop: 16 }]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Add a note (optional)"
-              placeholderTextColor={theme.colors.textSecondary}
-            />
-            </>)}
+            <Text style={styles.sectionTitle}>
+              {type === "transfer" ? "From" : type === "income" ? "Received in" : "Paid from"}
+            </Text>
+            {renderChipRow(
+              accounts.findIndex((account) => account.id === fromAccount),
+              accounts.map((account) =>
+                renderChip(
+                  account.id,
+                  accountLabel(account),
+                  fromAccount === account.id,
+                  () => selectAccount(account),
+                  getAccountTypeEmoji(account.type),
+                ),
+              ),
+            )}
           </View>
 
-          {/* Account Selector */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{type === 'transfer' ? 'From Account' : 'Account'}</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoryScrollContent}
-            >
-              {accounts.map((account) => (
-                <TouchableOpacity
-                  key={account.id}
-                  style={[
-                    styles.categoryItemCompact,
-                    fromAccount === account.id &&
-                      styles.categoryItemCompactActive,
-                  ]}
-                  onPress={() => setFromAccount(account.id)}
-                >
-                  <Text style={styles.categoryEmojiCompact}>
-                    {getAccountTypeEmoji(account.type)}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.categoryNameCompact,
-                      fromAccount === account.id &&
-                        styles.categoryNameCompactActive,
-                    ]}
-                  >
-                    {account.bankName
-                      ? `${account.name} (${account.bankName})`
-                      : account.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {type !== 'transfer' && cardsForAccount.length > 0 && (
+          {type !== "transfer" && cardsForAccount.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Card</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoryScrollContent}
-              >
-                {[{ id: undefined, name: 'Unassigned' }, ...cardsForAccount].map((card) => (
-                  <TouchableOpacity
-                    key={card.id ?? 'unassigned'}
-                    style={[
-                      styles.categoryItemCompact,
-                      cardId === card.id && styles.categoryItemCompactActive,
-                    ]}
-                    onPress={() => setCardId(card.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryNameCompact,
-                        cardId === card.id && styles.categoryNameCompactActive,
-                      ]}
-                    >
-                      {card.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {renderChipRow(
+                cardId === undefined ? 0 : cardsForAccount.findIndex((card) => card.id === cardId) + 1,
+                [{ id: undefined, name: "Unassigned" }, ...cardsForAccount].map((card) =>
+                  renderChip(card.id ?? "unassigned", card.name, cardId === card.id, () => setCardId(card.id)),
+                ),
+              )}
             </View>
           )}
 
-          {type === 'transfer' && (
+          {type === "transfer" && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>To Account</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoryScrollContent}
-              >
-                {accounts.filter(acc => acc.id !== fromAccount).map((account) => (
-                  <TouchableOpacity
-                    key={account.id}
-                    style={[
-                      styles.categoryItemCompact,
-                      toAccount === account.id &&
-                        styles.categoryItemCompactActive,
-                    ]}
-                    onPress={() => setToAccount(account.id)}
-                  >
-                    <Text style={styles.categoryEmojiCompact}>
-                      {getAccountTypeEmoji(account.type)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.categoryNameCompact,
-                        toAccount === account.id &&
-                          styles.categoryNameCompactActive,
-                      ]}
-                    >
-                      {account.bankName ? `${account.name} (${account.bankName})` : account.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <Text style={styles.sectionTitle}>To</Text>
+              {renderChipRow(
+                accounts
+                  .filter((acc) => acc.id !== fromAccount)
+                  .findIndex((account) => account.id === toAccount),
+                accounts
+                  .filter((acc) => acc.id !== fromAccount)
+                  .map((account) =>
+                    renderChip(
+                      account.id,
+                      accountLabel(account),
+                      toAccount === account.id,
+                      () => setToAccount(account.id),
+                      getAccountTypeEmoji(account.type),
+                    ),
+                  ),
+              )}
             </View>
           )}
-
-          {/* Payment Method & Priority (Combined) */}
-          {type !== 'transfer' && <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {type === "expense" ? "Payment & Priority" : "Payment Method"}
-            </Text>
-
-            {/* Compact Payment Method Selector */}
-            <View style={styles.compactRow}>
-              <Text style={styles.compactLabel}>Method:</Text>
-              <View style={styles.compactSelector}>
-                {[
-                  { value: "cash", emoji: "💵" },
-                  { value: "credit_card", emoji: "💳" },
-                  { value: "debit_card", emoji: "🏧" },
-                ].map((method) => (
-                  <TouchableOpacity
-                    key={method.value}
-                    style={[
-                      styles.compactButton,
-                      paymentMethod === method.value &&
-                        styles.compactButtonActive,
-                    ]}
-                    onPress={() => setPaymentMethod(method.value as any)}
-                  >
-                    <Text style={styles.compactEmoji}>{method.emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Compact Priority Selector (for expenses only) */}
-            {type === "expense" && (
-              <View style={styles.compactRow}>
-                <Text style={styles.compactLabel}>Priority:</Text>
-                <View style={styles.compactSelector}>
-                  <TouchableOpacity
-                    style={[
-                      styles.compactButton,
-                      priority === "need" && styles.compactButtonActive,
-                    ]}
-                    onPress={() =>
-                      setPriority(priority === "need" ? undefined : "need")
-                    }
-                  >
-                    <Text style={styles.compactEmoji}>🎯</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.compactButton,
-                      priority === "want" && styles.compactButtonActive,
-                    ]}
-                    onPress={() =>
-                      setPriority(priority === "want" ? undefined : "want")
-                    }
-                  >
-                    <Text style={styles.compactEmoji}>✨</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.compactButton,
-                      !priority && styles.compactButtonActive,
-                    ]}
-                    onPress={() => setPriority(undefined)}
-                  >
-                    <Text style={styles.compactText}>Skip</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          </View>}
 
           {/* Date */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Date</Text>
+            <View style={styles.dateRow}>
+              <TouchableOpacity style={styles.dateStep} onPress={() => setDate(shiftDate(date, -1))}>
+                <Text style={styles.dateStepText}>‹</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dateCenter}
+                onPress={() => {
+                  setKeypadVisible(false);
+                  setShowDatePicker((v) => !v);
+                }}
+              >
+                <Text style={styles.dateText}>📅 {formatLongDate(date)}</Text>
+                {relativeDayLabel(date) && (
+                  <Text style={styles.dateCaption}>{relativeDayLabel(date)}</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.dateStep} onPress={() => setDate(shiftDate(date, 1))}>
+                <Text style={styles.dateStepText}>›</Text>
+              </TouchableOpacity>
+            </View>
+            {showDatePicker && (
+              <DateTimePicker
+                value={parseLocalDate(date)}
+                mode="date"
+                display={Platform.OS === "ios" ? "inline" : "default"}
+                onChange={handleDatePicked}
+                themeVariant={theme.isDark ? "dark" : "light"}
+                accentColor={theme.colors.primary}
+              />
+            )}
+          </View>
+
+          {/* Note */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Note</Text>
             <TextInput
               style={styles.textInput}
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
+              value={description}
+              onChangeText={setDescription}
+              onFocus={() => setKeypadVisible(false)}
+              placeholder={type === "transfer" ? "Fund Transfer" : "Optional"}
+              placeholderTextColor={theme.colors.textSecondary}
             />
           </View>
+
+          {/* Less common fields */}
+          {type !== "transfer" && (
+            <View style={styles.section}>
+              <TouchableOpacity onPress={() => setShowMore((v) => !v)} style={styles.moreToggle}>
+                <Text style={styles.moreToggleText}>
+                  {showMore ? "Hide options ▴" : "More options ▾"}
+                </Text>
+              </TouchableOpacity>
+
+              {showMore && (
+                <>
+                  <Text style={styles.subTitle}>Payment method</Text>
+                  <View style={styles.chipWrap}>
+                    {PAYMENT_METHODS.map((method) =>
+                      renderChip(method.value, method.label, paymentMethod === method.value, () =>
+                        setPaymentMethod(method.value),
+                      ),
+                    )}
+                  </View>
+
+                  {type === "expense" && (
+                    <>
+                      <Text style={styles.subTitle}>Need or want?</Text>
+                      <View style={styles.chipWrap}>
+                        {renderChip("need", "🎯 Need", priority === "need", () =>
+                          setPriority(priority === "need" ? undefined : "need"),
+                        )}
+                        {renderChip("want", "✨ Want", priority === "want", () =>
+                          setPriority(priority === "want" ? undefined : "want"),
+                        )}
+                      </View>
+                    </>
+                  )}
+                </>
+              )}
+            </View>
+          )}
         </ScrollView>
+
+        {keypadVisible && (
+          <AmountKeypad value={amount} onChange={setAmount} onDone={() => setKeypadVisible(false)} />
+        )}
+
+        {/* Save sits at the bottom, within thumb reach on large phones */}
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <TouchableOpacity
+            style={[styles.saveButton, { backgroundColor: typeColor(type) }]}
+            onPress={handleSubmit}
+          >
+            <Text style={styles.saveButtonText}>{saveLabel}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
@@ -606,136 +732,107 @@ const createStyles = (theme: any) =>
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },
-    cancelButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 8,
+    closeButton: {
+      width: 32,
+      alignItems: "center",
     },
-    cancelButtonText: {
+    closeButtonText: {
       color: theme.colors.textSecondary,
-      fontSize: 16,
+      fontSize: 20,
     },
     headerTitle: {
       fontSize: 18,
       fontWeight: "600",
       color: theme.colors.text,
     },
-    saveButton: {
+    footer: {
       paddingHorizontal: 16,
-      paddingVertical: 8,
-      backgroundColor: theme.colors.primary,
-      borderRadius: 8,
+      paddingTop: 10,
+      backgroundColor: theme.colors.surface,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    saveButton: {
+      paddingVertical: 16,
+      borderRadius: 14,
+      alignItems: "center",
     },
     saveButtonText: {
       color: "#fff",
-      fontSize: 16,
-      fontWeight: "600",
+      fontSize: 17,
+      fontWeight: "700",
+      textTransform: "capitalize",
     },
     content: {
       flex: 1,
       paddingHorizontal: 16,
     },
+    contentInner: {
+      paddingTop: 16,
+      paddingBottom: 48,
+    },
     section: {
-      marginTop: 24,
+      marginTop: 20,
     },
     sectionTitle: {
-      fontSize: 16,
+      fontSize: 13,
       fontWeight: "600",
-      color: theme.colors.text,
-      marginBottom: 12,
+      color: theme.colors.textSecondary,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      marginBottom: 8,
     },
-    amountInput: {
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 16,
-      fontSize: 24,
-      fontWeight: "bold",
-      textAlign: "center",
-      borderWidth: 1,
-      borderColor: theme.colors.border,
+    subTitle: {
+      fontSize: 14,
+      fontWeight: "500",
       color: theme.colors.text,
+      marginTop: 12,
+      marginBottom: 8,
     },
     typeSelector: {
       flexDirection: "row",
       backgroundColor: theme.colors.surface,
       borderRadius: 12,
       padding: 4,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
     },
     typeButton: {
       flex: 1,
-      paddingVertical: 12,
+      paddingVertical: 10,
       alignItems: "center",
       borderRadius: 8,
     },
-    typeButtonActive: {
-      backgroundColor: theme.colors.primary,
-    },
     typeButtonText: {
       color: theme.colors.textSecondary,
-      fontWeight: "500",
+      fontWeight: "600",
     },
     typeButtonTextActive: {
       color: "#fff",
     },
-    categoryGrid: {
-      flexDirection: "row",
-      paddingVertical: 8,
+    disabled: {
+      opacity: 0.4,
     },
-    categoryItem: {
+    amountBox: {
+      marginTop: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
       alignItems: "center",
-      marginRight: 16,
-      padding: 12,
       borderRadius: 12,
-      backgroundColor: theme.colors.surface,
-      minWidth: 80,
-    },
-    categoryItemActive: {
-      backgroundColor: theme.colors.primary,
-    },
-    categoryIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: "center",
-      justifyContent: "center",
-      marginBottom: 8,
-    },
-    categoryEmoji: {
-      fontSize: 20,
-      color: theme.colors.text,
-    },
-    categoryName: {
-      fontSize: 12,
-      textAlign: "center",
-      color: theme.colors.text,
-    },
-    paymentGrid: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-    },
-    paymentItem: {
-      flex: 1,
-      alignItems: "center",
-      padding: 16,
-      marginHorizontal: 4,
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      borderWidth: 2,
+      borderWidth: 1.5,
       borderColor: "transparent",
     },
-    paymentItemActive: {
-      borderColor: theme.colors.primary,
+    amountText: {
+      fontSize: 40,
+      fontWeight: "bold",
     },
-    paymentEmoji: {
-      fontSize: 24,
-      marginBottom: 8,
+    amountResult: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: theme.colors.textSecondary,
+      marginTop: 2,
     },
-    paymentLabel: {
-      fontSize: 12,
-      color: theme.colors.text,
-      textAlign: "center",
-    },
-    descriptionInput: {
+    textInput: {
       backgroundColor: theme.colors.surface,
       borderRadius: 12,
       paddingHorizontal: 16,
@@ -743,142 +840,80 @@ const createStyles = (theme: any) =>
       fontSize: 16,
       borderWidth: 1,
       borderColor: theme.colors.border,
-      textAlignVertical: "top",
       color: theme.colors.text,
     },
-    dateInput: {
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      paddingHorizontal: 16,
-      paddingVertical: 16,
-      fontSize: 16,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      color: theme.colors.text,
+    chipRow: {
+      paddingVertical: 2,
     },
-    sectionSubtitle: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      marginBottom: 12,
-      marginTop: 4,
-    },
-    priorityGrid: {
+    chipWrap: {
       flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: 16,
+      flexWrap: "wrap",
+      rowGap: 8,
     },
-    priorityItem: {
-      flex: 1,
-      alignItems: "center",
-      padding: 16,
-      marginHorizontal: 4,
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      borderWidth: 2,
-      borderColor: "transparent",
-    },
-    priorityItemActive: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primaryLight || theme.colors.surface,
-    },
-    priorityEmoji: {
-      fontSize: 24,
-      marginBottom: 8,
-    },
-    priorityLabel: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: theme.colors.text,
-      textAlign: "center",
-      marginBottom: 4,
-    },
-    priorityDescription: {
-      fontSize: 10,
-      color: theme.colors.textSecondary,
-      textAlign: "center",
-    },
-    clearPriorityButton: {
-      alignSelf: "center",
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-    },
-    clearPriorityText: {
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-      textDecorationLine: "underline",
-    },
-    // Compact UI styles
-    compactRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 16,
-      paddingHorizontal: 4,
-    },
-    compactLabel: {
-      fontSize: 14,
-      fontWeight: "500",
-      color: theme.colors.text,
-      flex: 1,
-    },
-    compactSelector: {
-      flexDirection: "row",
-      backgroundColor: theme.colors.surface,
-      borderRadius: 8,
-      padding: 2,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-    },
-    compactButton: {
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      marginHorizontal: 2,
-      borderRadius: 6,
-      minWidth: 44,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    compactButtonActive: {
-      backgroundColor: theme.colors.primary,
-    },
-    compactEmoji: {
-      fontSize: 16,
-    },
-    compactText: {
-      fontSize: 12,
-      color: theme.colors.text,
-      fontWeight: "500",
-    },
-    // Compact category styles
-    categoryScrollContent: {
-      paddingVertical: 8,
-      paddingHorizontal: 4,
-    },
-    categoryItemCompact: {
+    chip: {
       flexDirection: "row",
       alignItems: "center",
       paddingVertical: 8,
-      paddingHorizontal: 12,
+      paddingHorizontal: 14,
       marginRight: 8,
       backgroundColor: theme.colors.surface,
       borderRadius: 20,
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
-    categoryItemCompactActive: {
+    chipActive: {
       backgroundColor: theme.colors.primary,
       borderColor: theme.colors.primary,
     },
-    categoryEmojiCompact: {
+    chipEmoji: {
       fontSize: 16,
       marginRight: 6,
     },
-    categoryNameCompact: {
-      fontSize: 12,
+    chipText: {
+      fontSize: 14,
       color: theme.colors.text,
       fontWeight: "500",
     },
-    categoryNameCompactActive: {
+    chipTextActive: {
       color: "#fff",
+    },
+    dateRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.colors.surface,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    dateStep: {
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+    },
+    dateStepText: {
+      fontSize: 24,
+      color: theme.colors.primary,
+      fontWeight: "600",
+    },
+    dateCenter: {
+      flex: 1,
+      alignItems: "center",
+      paddingVertical: 10,
+    },
+    dateText: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: theme.colors.text,
+    },
+    dateCaption: {
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+    },
+    moreToggle: {
+      paddingVertical: 8,
+    },
+    moreToggleText: {
+      fontSize: 14,
+      color: theme.colors.primary,
+      fontWeight: "600",
     },
   });

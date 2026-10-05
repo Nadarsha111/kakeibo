@@ -1,6 +1,7 @@
 import DatabaseConnector from './DatabaseConnector';
 import { Account, AccountBalanceRow, NetWorthItem, NetWorthSummary } from '../types';
 import { round2 } from '../utils/loanMath';
+import { localToday } from '../utils/recurring';
 
 /**
  * Service class for managing accounts and account balances
@@ -254,11 +255,13 @@ class AccountService {
   }
 
   /**
-   * Get total balance across all active accounts
+   * Total Balance: money in bank, cash and savings accounts, minus what is owed on credit cards
+   * (stored as negative balances). Loans and investments are left out, since neither is money you
+   * can spend now; net worth is where they count.
    */
   getTotalAccountsBalance(profileId?: number): number {
     try {
-      let query = "SELECT SUM(balance) as total FROM accounts WHERE isActive = 1 AND type != 'loan'";
+      let query = "SELECT SUM(balance) as total FROM accounts WHERE isActive = 1 AND type NOT IN ('loan', 'investment')";
       const params: any[] = [];
 
       if (profileId) {
@@ -495,7 +498,7 @@ class AccountService {
    */
   markOverdueLoans(): number {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localToday();
       const result = this.db.runSync(
         `UPDATE accounts 
          SET loanStatus = 'overdue', updatedAt = ? 
@@ -545,7 +548,7 @@ class AccountService {
     this.updateAccount(loanAccountId, {
       loanReturnedAmount: newReturnedAmount,
       loanStatus: newStatus as any,
-      loanActualReturnDate: newStatus === 'fully_paid' ? new Date().toISOString().split('T')[0] : loanAccount.loanActualReturnDate,
+      loanActualReturnDate: newStatus === 'fully_paid' ? localToday() : loanAccount.loanActualReturnDate,
     });
   }
 

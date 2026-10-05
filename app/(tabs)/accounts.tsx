@@ -22,6 +22,7 @@ import LoanPaymentModal from "../../components/modals/LoanPaymentModal";
 import CreditLimitModal from "../../components/modals/CreditLimitModal";
 import ManageCardsModal from "../../components/modals/ManageCardsModal";
 import AddCardEmiModal from "../../components/modals/AddCardEmiModal";
+import StatementModal from "../../components/modals/StatementModal";
 import OptionSelector from "../../components/OptionSelector";
 import { useTransactionModal } from "../../context/TransactionModalContext";
 import { useTabBarInset } from '../../components/PebbleTabBar';
@@ -63,13 +64,17 @@ export default function AccountsScreen() {
   const [allAccounts, setAllAccounts] = useState<Account[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
+  // What the Add Account form opens on; a section's + button presets its own kind of account
+  const [addPreset, setAddPreset] = useState<{ type: Account["type"]; isLending?: boolean }>({ type: "checking" });
   const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
   const [limitAccount, setLimitAccount] = useState<Account | null>(null);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [cardsAccount, setCardsAccount] = useState<Account | null>(null);
   const [cardsByAccountId, setCardsByAccountId] = useState<Map<number, CreditCard[]>>(new Map());
+  const [owedByCardId, setOwedByCardId] = useState<Map<number, number>>(new Map());
   const [emiAccount, setEmiAccount] = useState<Account | null>(null);
   const [emisByAccountId, setEmisByAccountId] = useState<Map<number, CardEmi[]>>(new Map());
+  const [statementAccount, setStatementAccount] = useState<Account | null>(null);
 
   // Profiles state
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -132,7 +137,9 @@ export default function AccountsScreen() {
       setLoanSummary(summaryData);
 
       const creditCardIds = allAccountsData.filter((a) => a.type === 'credit_card').map((a) => a.id);
-      setCardsByAccountId(getCardService().getCardsForAccounts(creditCardIds));
+      const cardsByAccount = getCardService().getCardsForAccounts(creditCardIds);
+      setCardsByAccountId(cardsByAccount);
+      setOwedByCardId(getCardService().getOwedByCard([...cardsByAccount.values()].flat().map((card) => card.id)));
 
       const cardEmiService = getCardEmiService();
       setEmisByAccountId(new Map(creditCardIds.map((id) => [id, cardEmiService.getEmisForAccount(id)])));
@@ -156,6 +163,11 @@ export default function AccountsScreen() {
   const handleAccountAdded = () => {
     loadData();
     setShowAddAccount(false);
+  };
+
+  const openAddAccount = (type: Account["type"] = "checking", isLending?: boolean) => {
+    setAddPreset({ type, isLending });
+    setShowAddAccount(true);
   };
 
   // Effect to debounce search term
@@ -337,35 +349,79 @@ export default function AccountsScreen() {
     </Text>
   );
 
-  // An account that shares its balance across more than one physical card shows each card's own
-  // bill day instead of the account's own (which is ignored once cards exist).
-  const renderCards = (cards: CreditCard[]) => (
-    <View style={{ marginTop: 8 }}>
-      {cards.map((card) => (
-        <Text key={card.id} style={styles.accountType}>
-          {card.billDay
-            ? `${card.name}: bill on the ${card.billDay}${ordinalSuffix(card.billDay)} of each month${card.payAtMonthEnd ? " · paid at month end" : ""}`
-            : card.payAtMonthEnd
-              ? `${card.name}: paid at month end`
-              : `${card.name}: no bill day set`}
-        </Text>
-      ))}
-    </View>
-  );
+  // An account that shares its balance across more than one physical card shows each card: its bill
+  // day (the account's own is ignored once cards exist), what is owed on it, and its share of the
+  // shared limit. Whatever isn't charged to any card (e.g. the balance from before the cards were
+  // added) gets a row of its own, so the rows add up to the account's balance.
+  const renderCards = (account: Account, cards: CreditCard[]) => {
+    const limit = account.creditLimit || 0;
+    const totalOwed = Math.max(0, -account.balance);
+    const onCards = cards.reduce((sum, card) => sum + (owedByCardId.get(card.id) ?? 0), 0);
+    const untagged = Math.round((totalOwed - onCards) * 100) / 100;
+    const rows = [
+      ...cards.map((card) => ({
+        key: String(card.id),
+        name: card.name,
+        owed: owedByCardId.get(card.id) ?? 0,
+        detail: card.billDay
+          ? `Bill on the ${card.billDay}${ordinalSuffix(card.billDay)}${card.payAtMonthEnd ? " · paid at month end" : ""}`
+          : card.payAtMonthEnd
+            ? "Paid at month end"
+            : "No bill day set",
+      })),
+      ...(untagged > 0.005 ? [{ key: "untagged", name: "Not on a card", owed: untagged, detail: "e.g. from before the cards were added" }] : []),
+    ];
+
+    return (
+      <View style={styles.cardList}>
+        {rows.map((row) => (
+          <View key={row.key} style={styles.cardRow}>
+            <MaterialCommunityIcons name="credit-card-outline" size={18} color={theme.colors.textSecondary} />
+            <View style={styles.cardRowText}>
+              <View style={styles.cardRowTop}>
+                <Text style={styles.cardRowName} numberOfLines={1}>{row.name}</Text>
+                <Text style={styles.cardRowOwed}>
+                  {row.owed < 0 ? `${formatCurrency(-row.owed)} credit` : formatCurrency(row.owed)}
+                </Text>
+              </View>
+              {limit > 0 && row.owed > 0 && (
+                <View style={[styles.progressBar, styles.cardRowBar]}>
+                  <View style={[styles.progressFill, { width: `${Math.min(100, (row.owed / limit) * 100)}%`, backgroundColor: theme.colors.primary }]} />
+                </View>
+              )}
+              <Text style={styles.accountType} numberOfLines={1}>
+                {row.detail}{limit > 0 && row.owed > 0 ? ` · ${((row.owed / limit) * 100).toFixed(0)}% of the limit` : ""}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   // A purchase converted to EMI bills its own fixed installment each month instead of all at once.
   const renderEmis = (emis: CardEmi[]) => (
     <View style={{ marginTop: 8 }}>
       {emis.map((emi) => {
         const outstanding = Math.max(0, (emi.principal || 0) - (emi.returnedAmount || 0));
+        // How much of the purchase has been paid off so far
+        const paidPercent = emi.principal > 0 ? Math.min(100, Math.max(0, ((emi.returnedAmount || 0) / emi.principal) * 100)) : 0;
         return (
-          <View key={emi.id} style={styles.emiRow}>
-            <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
-              {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""} · ${formatCurrency(outstanding)} left`}
-            </Text>
-            <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
-              <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
-            </TouchableOpacity>
+          <View key={emi.id} style={styles.emiItem}>
+            <View style={styles.emiRow}>
+              <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
+                {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""}`}
+              </Text>
+              <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
+                <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.progressContainer, { marginBottom: 0, marginTop: 4 }]}>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${paidPercent}%` }]} />
+              </View>
+              <Text style={styles.progressText}>{`${paidPercent.toFixed(0)}% · ${formatCurrency(outstanding)} left`}</Text>
+            </View>
           </View>
         );
       })}
@@ -427,14 +483,14 @@ export default function AccountsScreen() {
               >
                 {formatCurrency(account.type === 'credit_card' ? Math.abs(account.balance) : account.balance)}
               </Text>
-              <Text style={styles.currency}>
-                {account.type === 'credit_card' ? (account.balance < 0 ? 'owed' : 'credit') : account.currency}
-              </Text>
+              {account.type === 'credit_card' && (
+                <Text style={styles.currency}>{account.balance < 0 ? 'owed' : 'credit'}</Text>
+              )}
             </View>
           </View>
         </View>
         {account.type === 'credit_card' && (account.creditLimit || 0) > 0 && renderCardUsage(account)}
-        {account.type === 'credit_card' && cards.length > 0 && renderCards(cards)}
+        {account.type === 'credit_card' && cards.length > 0 && renderCards(account, cards)}
         {account.type === 'credit_card' && cards.length === 0 && !!account.billDay && renderBillDay(account)}
         {account.type === 'credit_card' && cards.length === 0 && !account.billDay && !!account.payAtMonthEnd && (
           <Text style={[styles.accountType, { marginTop: 8 }]}>Paid at month end</Text>
@@ -485,6 +541,15 @@ export default function AccountsScreen() {
               >
                 <MaterialCommunityIcons name="calendar-clock-outline" size={20} color={theme.colors.primary} />
                 <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Add EMI</Text>
+              </TouchableOpacity>
+            )}
+            {account.type === 'credit_card' && (
+              <TouchableOpacity
+                style={styles.cardActionButton}
+                onPress={() => setStatementAccount(account)}
+              >
+                <MaterialCommunityIcons name="file-document-outline" size={20} color={theme.colors.primary} />
+                <Text style={[styles.cardActionButtonText, { color: theme.colors.primary }]}>Statement</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -652,18 +717,25 @@ export default function AccountsScreen() {
     );
   };
 
-  // Money owed on credit cards; already subtracted inside Total Balance, shown here so it is visible
-  const cardDebt = useMemo(
-    () => allAccounts.reduce((sum, a) => (a.type === "credit_card" && a.balance < 0 ? sum - a.balance : sum), 0),
-    [allAccounts]
-  );
+  // The parts Total Balance is made of, so the card can show the sum: what is in bank, cash and
+  // savings accounts plus the credit card balances (negative when money is owed). Investments are
+  // shown beside it but, like loans, are not part of it.
+  const balanceParts = useMemo(() => {
+    const sum = (items: Account[]) => Math.round(items.reduce((total, a) => total + a.balance, 0) * 100) / 100;
+    return {
+      inAccounts: sum(allAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card" && a.type !== "investment")),
+      invested: sum(allAccounts.filter((a) => a.type === "investment")),
+      onCards: sum(allAccounts.filter((a) => a.type === "credit_card")),
+    };
+  }, [allAccounts]);
 
   // Everything on one page, grouped so there is nothing to switch between. Empty groups are left out.
   const sections = useMemo(() => {
     const sum = (items: Account[], value: (a: Account) => number) => items.reduce((total, a) => total + value(a), 0);
     const byUrgency = (a: Account, b: Account) => loanRank(a) - loanRank(b);
 
-    const cashAccounts = displayedAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card");
+    const cashAccounts = displayedAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card" && a.type !== "investment");
+    const investments = displayedAccounts.filter((a) => a.type === "investment");
     const cards = displayedAccounts.filter((a) => a.type === "credit_card");
     const loans = displayedAccounts.filter((a) => a.type === "loan");
     const borrowed = loans.filter((l) => !isLendingLoan(l)).sort(byUrgency);
@@ -671,10 +743,11 @@ export default function AccountsScreen() {
     const cardsOwed = sum(cards, (a) => Math.max(0, -a.balance));
 
     return [
-      { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)) },
-      { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed" },
-      { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding` },
-      { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding` },
+      { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)), addType: "checking" as const },
+      { key: "investments", title: "Investments", items: investments, meta: formatCurrency(sum(investments, (a) => a.balance)), addType: "investment" as const },
+      { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed", addType: "credit_card" as const },
+      { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding`, addType: "loan" as const, isLending: false },
+      { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding`, addType: "loan" as const, isLending: true },
     ]
       .filter((group) => group.items.length > 0)
       .map((group) => ({
@@ -682,13 +755,17 @@ export default function AccountsScreen() {
         title: group.title,
         meta: group.meta,
         count: group.items.length,
+        addType: group.addType as Account["type"],
+        isLending: group.isLending,
         data: collapsedSections[group.key] ? [] : group.items,
       }));
   }, [displayedAccounts, collapsedSections, formatCurrency]);
 
   const toggleSection = (key: string) => setCollapsedSections((previous) => ({ ...previous, [key]: !previous[key] }));
 
-  const renderSectionHeader = ({ section }: { section: { key: string; title: string; meta: string; count: number } }) => (
+  const renderSectionHeader = ({ section }: {
+    section: { key: string; title: string; meta: string; count: number; addType: Account["type"]; isLending?: boolean };
+  }) => (
     <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(section.key)} activeOpacity={0.7}>
       <View style={styles.sectionHeaderText}>
         <Text style={styles.sectionTitle}>
@@ -696,6 +773,14 @@ export default function AccountsScreen() {
         </Text>
         <Text style={styles.sectionMeta}>{section.meta}</Text>
       </View>
+      <TouchableOpacity
+        style={styles.sectionAddButton}
+        onPress={() => openAddAccount(section.addType, section.isLending)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel={`Add to ${section.title}`}
+      >
+        <MaterialCommunityIcons name="plus" size={20} color={theme.colors.primary} />
+      </TouchableOpacity>
       <MaterialCommunityIcons
         name={collapsedSections[section.key] ? "chevron-down" : "chevron-up"}
         size={22}
@@ -733,10 +818,36 @@ export default function AccountsScreen() {
         >
           {formatCurrency(totalBalance)}
         </Text>
+        <Text style={styles.accountCount}>Money in your accounts minus credit card dues</Text>
+
+        {/* The sum that makes up the total, line by line */}
+        <View style={styles.breakdown}>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>Bank, cash & savings</Text>
+            <Text style={styles.breakdownValue}>{formatCurrency(balanceParts.inAccounts)}</Text>
+          </View>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>
+              {balanceParts.onCards > 0 ? "Credit cards (paid in advance)" : "Credit card dues"}
+            </Text>
+            <Text style={[styles.breakdownValue, balanceParts.onCards < 0 && { color: '#ef4444' }]}>
+              {`${balanceParts.onCards < 0 ? "− " : "+ "}${formatCurrency(Math.abs(balanceParts.onCards))}`}
+            </Text>
+          </View>
+          <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
+            <Text style={[styles.breakdownLabel, styles.breakdownTotalText]}>Total Balance</Text>
+            <Text style={[styles.breakdownValue, styles.breakdownTotalText, totalBalance < 0 && styles.negativeBalance]}>
+              {formatCurrency(totalBalance)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Loans are tracked here but kept out of the total; Net Worth brings them in */}
+        <Text style={styles.breakdownNote}>Not included above (see Net Worth)</Text>
         <View style={styles.loanStats}>
           <View style={styles.loanStatItem}>
-            <Text style={styles.loanStatLabel}>On credit cards</Text>
-            <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>{formatCurrency(cardDebt)}</Text>
+            <Text style={styles.loanStatLabel}>Investments</Text>
+            <Text style={[styles.loanStatValue, { color: theme.colors.text }]}>{formatCurrency(balanceParts.invested)}</Text>
           </View>
           <View style={styles.loanStatItem}>
             <Text style={styles.loanStatLabel}>You owe</Text>
@@ -758,7 +869,7 @@ export default function AccountsScreen() {
     theme,
     searchTerm,
     totalBalance,
-    cardDebt,
+    balanceParts,
     loanSummary,
     overdueLoans,
     formatCurrency,
@@ -802,7 +913,7 @@ export default function AccountsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => setShowAddAccount(true)}
+            onPress={() => openAddAccount()}
           >
             <Text style={styles.addButtonText}>+ Add</Text>
           </TouchableOpacity>
@@ -833,6 +944,8 @@ export default function AccountsScreen() {
       {/* Add Account Modal */}
       <AddAccountModal
         visible={showAddAccount}
+        initialType={addPreset.type}
+        initialIsLending={addPreset.isLending}
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
@@ -868,6 +981,13 @@ export default function AccountsScreen() {
         account={emiAccount}
         onClose={() => setEmiAccount(null)}
         onAdded={loadData}
+      />
+
+      {/* Statement Import/Reconciliation Modal */}
+      <StatementModal
+        visible={statementAccount !== null}
+        account={statementAccount}
+        onClose={() => setStatementAccount(null)}
       />
 
       {/* Installment Loan Payment Modal */}
@@ -1114,11 +1234,50 @@ const createStyles = (theme: any) =>
       fontWeight: '600',
       color: theme.colors.text,
     },
+    cardList: {
+      marginTop: 4,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.colors.border,
+    },
+    cardRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      paddingTop: 10,
+    },
+    cardRowText: {
+      flex: 1,
+    },
+    cardRowTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 8,
+    },
+    cardRowName: {
+      flexShrink: 1,
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    cardRowOwed: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    cardRowBar: {
+      flex: 0,
+      height: 4,
+      marginTop: 6,
+      marginBottom: 4,
+    },
+    emiItem: {
+      marginTop: 8,
+    },
     emiRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
-      marginTop: 4,
     },
     progressContainer: {
       flexDirection: 'row',
@@ -1164,6 +1323,17 @@ const createStyles = (theme: any) =>
     sectionHeaderText: {
       flex: 1,
     },
+    sectionAddButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
     sectionTitle: {
       fontSize: 16,
       fontWeight: '700',
@@ -1178,6 +1348,50 @@ const createStyles = (theme: any) =>
       fontSize: 13,
       color: theme.colors.textSecondary,
       marginTop: 2,
+    },
+    breakdown: {
+      alignSelf: 'stretch',
+      marginTop: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      gap: 6,
+    },
+    breakdownRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 12,
+    },
+    breakdownLabel: {
+      flex: 1,
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+    },
+    breakdownValue: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    breakdownTotalRow: {
+      marginTop: 4,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    breakdownTotalText: {
+      color: theme.colors.text,
+      fontWeight: '700',
+    },
+    breakdownNote: {
+      alignSelf: 'stretch',
+      marginTop: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
     },
     loanStats: {
       marginTop: 8,

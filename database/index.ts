@@ -9,6 +9,8 @@ import SettingsService from './SettingsService';
 import RecurringService from './RecurringService';
 import CardService from './CardService';
 import CardEmiService from './CardEmiService';
+import StatementService from './StatementService';
+import BackupService from './BackupService';
 
 // Re-export the DatabaseConnector and all services for easy access
 export { default as DatabaseConnector } from './DatabaseConnector';
@@ -18,9 +20,11 @@ export { default as TransactionService } from './TransactionService';
 export { default as CategoryService } from './CategoryService';
 export { default as BudgetService, type BudgetSummary } from './BudgetService';
 export { default as SettingsService } from './SettingsService';
-export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine } from './RecurringService';
+export { default as RecurringService, type MonthlySummary, type MonthlyEmi, type NeededSummary, type NeededLine, type NeededPayment } from './RecurringService';
 export { default as CardService } from './CardService';
 export { default as CardEmiService } from './CardEmiService';
+export { default as StatementService } from './StatementService';
+export { default as BackupService, type BackupSnapshot, type BackupSummary } from './BackupService';
 
 /**
  * Service Factory - provides easy access to all services with a single instance
@@ -36,6 +40,8 @@ export class ServiceFactory {
   private static _recurringService: RecurringService;
   private static _cardService: CardService;
   private static _cardEmiService: CardEmiService;
+  private static _statementService: StatementService;
+  private static _backupService: BackupService;
 
   /**
    * Get AccountService instance
@@ -128,6 +134,26 @@ export class ServiceFactory {
   }
 
   /**
+   * Get StatementService instance
+   */
+  static getStatementService(): StatementService {
+    if (!this._statementService) {
+      this._statementService = new StatementService();
+    }
+    return this._statementService;
+  }
+
+  /**
+   * Get BackupService instance
+   */
+  static getBackupService(): BackupService {
+    if (!this._backupService) {
+      this._backupService = new BackupService();
+    }
+    return this._backupService;
+  }
+
+  /**
    * Get all services at once
    */
   static getAllServices() {
@@ -141,6 +167,7 @@ export class ServiceFactory {
       recurringService: this.getRecurringService(),
       cardService: this.getCardService(),
       cardEmiService: this.getCardEmiService(),
+      statementService: this.getStatementService(),
     };
   }
 
@@ -157,6 +184,8 @@ export class ServiceFactory {
     this._recurringService = undefined as any;
     this._cardService = undefined as any;
     this._cardEmiService = undefined as any;
+    this._statementService = undefined as any;
+    this._backupService = undefined as any;
   }
 }
 
@@ -170,6 +199,8 @@ export const getSettingsService = () => ServiceFactory.getSettingsService();
 export const getRecurringService = () => ServiceFactory.getRecurringService();
 export const getCardService = () => ServiceFactory.getCardService();
 export const getCardEmiService = () => ServiceFactory.getCardEmiService();
+export const getStatementService = () => ServiceFactory.getStatementService();
+export const getBackupService = () => ServiceFactory.getBackupService();
 
 /**
  * Database utility functions

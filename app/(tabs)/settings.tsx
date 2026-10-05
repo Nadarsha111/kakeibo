@@ -77,9 +77,11 @@ export default function SettingsScreen() {
 
   // Google Sync state
   const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [lastBackup, setLastBackup] = useState<string | null>(null);
 
   const checkGoogleSignInStatus = async () => {
     const syncService = getGoogleSyncService();
+    setLastBackup(syncService.getLastBackupTime());
     const isSignedIn = await syncService.isSignedIn();
     if (isSignedIn) {
       const user = await syncService.getCurrentUser();
@@ -200,12 +202,15 @@ export default function SettingsScreen() {
           {googleUser ? (
             <>
               <SettingItem
-                title="Push to Google Sheets"
-                subtitle={`Signed in as ${googleUser.user.email}`}
+                title="Back Up & Push to Google Sheets"
+                subtitle={`Signed in as ${googleUser.user.email}\n${
+                  lastBackup ? `Last full backup ${new Date(lastBackup).toLocaleString()}` : "Not backed up yet"
+                }`}
                 rightComponent={<Text style={styles.chevron}>›</Text>}
                 onPress={async () => {
                   const syncService = getGoogleSyncService();
                   await syncService.push();
+                  checkGoogleSignInStatus(); // Show the new backup time
                 }}
               />
               <SettingItem
@@ -218,6 +223,12 @@ export default function SettingsScreen() {
                 }}
               />
               <SettingItem
+                title="Restore from Google Drive"
+                subtitle="Replace everything on this phone with your last backup"
+                rightComponent={<Text style={styles.chevron}>›</Text>}
+                onPress={() => getGoogleSyncService().restore()}
+              />
+              <SettingItem
                 title="Sign Out from Google"
                 onPress={async () => {
                   const syncService = getGoogleSyncService();
@@ -227,16 +238,27 @@ export default function SettingsScreen() {
               />
             </>
           ) : (
-            <SettingItem
-              title="Sign In with Google to Sync"
-              subtitle="Backup and sync your data"
-              rightComponent={<Text style={styles.chevron}>›</Text>}
-              onPress={async () => {
-                const syncService = getGoogleSyncService();
-                await syncService.push();
-                checkGoogleSignInStatus(); // Refresh UI after sync attempt
-              }}
-            />
+            <>
+              <SettingItem
+                title="Sign In with Google to Back Up"
+                subtitle="Save a full backup to your Google Drive and update a Google Sheet"
+                rightComponent={<Text style={styles.chevron}>›</Text>}
+                onPress={async () => {
+                  const syncService = getGoogleSyncService();
+                  await syncService.push();
+                  checkGoogleSignInStatus(); // Refresh UI after sync attempt
+                }}
+              />
+              <SettingItem
+                title="Restore from Google Drive"
+                subtitle="New phone? Sign in and bring back your last backup"
+                rightComponent={<Text style={styles.chevron}>›</Text>}
+                onPress={async () => {
+                  await getGoogleSyncService().restore();
+                  checkGoogleSignInStatus();
+                }}
+              />
+            </>
           )}
           <SettingItem
             title="Export Data"
