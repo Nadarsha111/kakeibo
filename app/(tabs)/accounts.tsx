@@ -404,14 +404,24 @@ export default function AccountsScreen() {
     <View style={{ marginTop: 8 }}>
       {emis.map((emi) => {
         const outstanding = Math.max(0, (emi.principal || 0) - (emi.returnedAmount || 0));
+        // How much of the purchase has been paid off so far
+        const paidPercent = emi.principal > 0 ? Math.min(100, Math.max(0, ((emi.returnedAmount || 0) / emi.principal) * 100)) : 0;
         return (
-          <View key={emi.id} style={styles.emiRow}>
-            <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
-              {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""} · ${formatCurrency(outstanding)} left`}
-            </Text>
-            <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
-              <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
-            </TouchableOpacity>
+          <View key={emi.id} style={styles.emiItem}>
+            <View style={styles.emiRow}>
+              <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
+                {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""}`}
+              </Text>
+              <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
+                <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.progressContainer, { marginBottom: 0, marginTop: 4 }]}>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${paidPercent}%` }]} />
+              </View>
+              <Text style={styles.progressText}>{`${paidPercent.toFixed(0)}% · ${formatCurrency(outstanding)} left`}</Text>
+            </View>
           </View>
         );
       })}
@@ -1227,11 +1237,13 @@ const createStyles = (theme: any) =>
       marginTop: 6,
       marginBottom: 4,
     },
+    emiItem: {
+      marginTop: 8,
+    },
     emiRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
-      marginTop: 4,
     },
     progressContainer: {
       flexDirection: 'row',
