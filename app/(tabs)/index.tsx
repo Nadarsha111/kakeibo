@@ -489,6 +489,8 @@ export default function OverviewScreen() {
   const renderAccountBalances = () => {
     const groups = groupAccountBalances(data.monthlyAccountBalances);
     const hasLoans = groups.youOwe.length + groups.owedToYou.length > 0;
+    // Investments and loans sit under the total, with net worth bringing them in
+    const hasOutsideTotal = hasLoans || groups.investments !== null;
 
     const loanDetail = (loan: LoanBalanceRow) => {
       if (loan.detail?.kind === 'installment') {
@@ -647,14 +649,15 @@ export default function OverviewScreen() {
               </Text>
             </View>
 
-            {hasLoans && (
+            {hasOutsideTotal && (
               <View className="mt-6">
                 <Text
                   className="text-xs uppercase mb-1"
                   style={{ color: theme.colors.textSecondary }}
                 >
-                  Loans (not part of the total above)
+                  Not part of the total above
                 </Text>
+                {groups.investments && renderCategory(groups.investments)}
                 {groups.youOwe.length > 0 && (
                   <>
                     <Text className="text-xs mt-2" style={{ color: theme.colors.textSecondary }}>

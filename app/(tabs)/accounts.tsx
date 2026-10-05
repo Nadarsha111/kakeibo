@@ -64,6 +64,8 @@ export default function AccountsScreen() {
   const [allAccounts, setAllAccounts] = useState<Account[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [showAddAccount, setShowAddAccount] = useState(false);
+  // What the Add Account form opens on; a section's + button presets its own kind of account
+  const [addPreset, setAddPreset] = useState<{ type: Account["type"]; isLending?: boolean }>({ type: "checking" });
   const [paymentLoan, setPaymentLoan] = useState<Account | null>(null);
   const [limitAccount, setLimitAccount] = useState<Account | null>(null);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
@@ -161,6 +163,11 @@ export default function AccountsScreen() {
   const handleAccountAdded = () => {
     loadData();
     setShowAddAccount(false);
+  };
+
+  const openAddAccount = (type: Account["type"] = "checking", isLending?: boolean) => {
+    setAddPreset({ type, isLending });
+    setShowAddAccount(true);
   };
 
   // Effect to debounce search term
@@ -397,14 +404,24 @@ export default function AccountsScreen() {
     <View style={{ marginTop: 8 }}>
       {emis.map((emi) => {
         const outstanding = Math.max(0, (emi.principal || 0) - (emi.returnedAmount || 0));
+        // How much of the purchase has been paid off so far
+        const paidPercent = emi.principal > 0 ? Math.min(100, Math.max(0, ((emi.returnedAmount || 0) / emi.principal) * 100)) : 0;
         return (
-          <View key={emi.id} style={styles.emiRow}>
-            <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
-              {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""} · ${formatCurrency(outstanding)} left`}
-            </Text>
-            <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
-              <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
-            </TouchableOpacity>
+          <View key={emi.id} style={styles.emiItem}>
+            <View style={styles.emiRow}>
+              <Text style={[styles.accountType, { flex: 1 }]} numberOfLines={1}>
+                {`${emi.name}: ${formatCurrency(emi.installmentAmount)}/mo${emi.nextDueDate ? ` · next ${emi.nextDueDate}` : ""}`}
+              </Text>
+              <TouchableOpacity onPress={() => handleDeleteEmi(emi)} hitSlop={8}>
+                <MaterialCommunityIcons name="close-circle-outline" size={16} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.progressContainer, { marginBottom: 0, marginTop: 4 }]}>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${paidPercent}%` }]} />
+              </View>
+              <Text style={styles.progressText}>{`${paidPercent.toFixed(0)}% · ${formatCurrency(outstanding)} left`}</Text>
+            </View>
           </View>
         );
       })}
@@ -700,18 +717,25 @@ export default function AccountsScreen() {
     );
   };
 
-  // Money owed on credit cards; already subtracted inside Total Balance, shown here so it is visible
-  const cardDebt = useMemo(
-    () => allAccounts.reduce((sum, a) => (a.type === "credit_card" && a.balance < 0 ? sum - a.balance : sum), 0),
-    [allAccounts]
-  );
+  // The parts Total Balance is made of, so the card can show the sum: what is in bank, cash and
+  // savings accounts plus the credit card balances (negative when money is owed). Investments are
+  // shown beside it but, like loans, are not part of it.
+  const balanceParts = useMemo(() => {
+    const sum = (items: Account[]) => Math.round(items.reduce((total, a) => total + a.balance, 0) * 100) / 100;
+    return {
+      inAccounts: sum(allAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card" && a.type !== "investment")),
+      invested: sum(allAccounts.filter((a) => a.type === "investment")),
+      onCards: sum(allAccounts.filter((a) => a.type === "credit_card")),
+    };
+  }, [allAccounts]);
 
   // Everything on one page, grouped so there is nothing to switch between. Empty groups are left out.
   const sections = useMemo(() => {
     const sum = (items: Account[], value: (a: Account) => number) => items.reduce((total, a) => total + value(a), 0);
     const byUrgency = (a: Account, b: Account) => loanRank(a) - loanRank(b);
 
-    const cashAccounts = displayedAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card");
+    const cashAccounts = displayedAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card" && a.type !== "investment");
+    const investments = displayedAccounts.filter((a) => a.type === "investment");
     const cards = displayedAccounts.filter((a) => a.type === "credit_card");
     const loans = displayedAccounts.filter((a) => a.type === "loan");
     const borrowed = loans.filter((l) => !isLendingLoan(l)).sort(byUrgency);
@@ -719,10 +743,11 @@ export default function AccountsScreen() {
     const cardsOwed = sum(cards, (a) => Math.max(0, -a.balance));
 
     return [
-      { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)) },
-      { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed" },
-      { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding` },
-      { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding` },
+      { key: "accounts", title: "Accounts", items: cashAccounts, meta: formatCurrency(sum(cashAccounts, (a) => a.balance)), addType: "checking" as const },
+      { key: "investments", title: "Investments", items: investments, meta: formatCurrency(sum(investments, (a) => a.balance)), addType: "investment" as const },
+      { key: "cards", title: "Credit Cards", items: cards, meta: cardsOwed > 0 ? `${formatCurrency(cardsOwed)} owed` : "Nothing owed", addType: "credit_card" as const },
+      { key: "borrowed", title: "Money You Owe", items: borrowed, meta: `${formatCurrency(sum(borrowed, outstandingOf))} outstanding`, addType: "loan" as const, isLending: false },
+      { key: "lent", title: "Money Owed to You", items: lent, meta: `${formatCurrency(sum(lent, outstandingOf))} outstanding`, addType: "loan" as const, isLending: true },
     ]
       .filter((group) => group.items.length > 0)
       .map((group) => ({
@@ -730,13 +755,17 @@ export default function AccountsScreen() {
         title: group.title,
         meta: group.meta,
         count: group.items.length,
+        addType: group.addType as Account["type"],
+        isLending: group.isLending,
         data: collapsedSections[group.key] ? [] : group.items,
       }));
   }, [displayedAccounts, collapsedSections, formatCurrency]);
 
   const toggleSection = (key: string) => setCollapsedSections((previous) => ({ ...previous, [key]: !previous[key] }));
 
-  const renderSectionHeader = ({ section }: { section: { key: string; title: string; meta: string; count: number } }) => (
+  const renderSectionHeader = ({ section }: {
+    section: { key: string; title: string; meta: string; count: number; addType: Account["type"]; isLending?: boolean };
+  }) => (
     <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(section.key)} activeOpacity={0.7}>
       <View style={styles.sectionHeaderText}>
         <Text style={styles.sectionTitle}>
@@ -744,6 +773,14 @@ export default function AccountsScreen() {
         </Text>
         <Text style={styles.sectionMeta}>{section.meta}</Text>
       </View>
+      <TouchableOpacity
+        style={styles.sectionAddButton}
+        onPress={() => openAddAccount(section.addType, section.isLending)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel={`Add to ${section.title}`}
+      >
+        <MaterialCommunityIcons name="plus" size={20} color={theme.colors.primary} />
+      </TouchableOpacity>
       <MaterialCommunityIcons
         name={collapsedSections[section.key] ? "chevron-down" : "chevron-up"}
         size={22}
@@ -781,10 +818,36 @@ export default function AccountsScreen() {
         >
           {formatCurrency(totalBalance)}
         </Text>
+        <Text style={styles.accountCount}>Money in your accounts minus credit card dues</Text>
+
+        {/* The sum that makes up the total, line by line */}
+        <View style={styles.breakdown}>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>Bank, cash & savings</Text>
+            <Text style={styles.breakdownValue}>{formatCurrency(balanceParts.inAccounts)}</Text>
+          </View>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>
+              {balanceParts.onCards > 0 ? "Credit cards (paid in advance)" : "Credit card dues"}
+            </Text>
+            <Text style={[styles.breakdownValue, balanceParts.onCards < 0 && { color: '#ef4444' }]}>
+              {`${balanceParts.onCards < 0 ? "− " : "+ "}${formatCurrency(Math.abs(balanceParts.onCards))}`}
+            </Text>
+          </View>
+          <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
+            <Text style={[styles.breakdownLabel, styles.breakdownTotalText]}>Total Balance</Text>
+            <Text style={[styles.breakdownValue, styles.breakdownTotalText, totalBalance < 0 && styles.negativeBalance]}>
+              {formatCurrency(totalBalance)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Loans are tracked here but kept out of the total; Net Worth brings them in */}
+        <Text style={styles.breakdownNote}>Not included above (see Net Worth)</Text>
         <View style={styles.loanStats}>
           <View style={styles.loanStatItem}>
-            <Text style={styles.loanStatLabel}>On credit cards</Text>
-            <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>{formatCurrency(cardDebt)}</Text>
+            <Text style={styles.loanStatLabel}>Investments</Text>
+            <Text style={[styles.loanStatValue, { color: theme.colors.text }]}>{formatCurrency(balanceParts.invested)}</Text>
           </View>
           <View style={styles.loanStatItem}>
             <Text style={styles.loanStatLabel}>You owe</Text>
@@ -806,7 +869,7 @@ export default function AccountsScreen() {
     theme,
     searchTerm,
     totalBalance,
-    cardDebt,
+    balanceParts,
     loanSummary,
     overdueLoans,
     formatCurrency,
@@ -850,7 +913,7 @@ export default function AccountsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => setShowAddAccount(true)}
+            onPress={() => openAddAccount()}
           >
             <Text style={styles.addButtonText}>+ Add</Text>
           </TouchableOpacity>
@@ -881,6 +944,8 @@ export default function AccountsScreen() {
       {/* Add Account Modal */}
       <AddAccountModal
         visible={showAddAccount}
+        initialType={addPreset.type}
+        initialIsLending={addPreset.isLending}
         onClose={() => setShowAddAccount(false)}
         onAccountAdded={handleAccountAdded}
         profileId={selectedProfileId === 'all' ? (profiles[0]?.id) : selectedProfileId}
@@ -1206,11 +1271,13 @@ const createStyles = (theme: any) =>
       marginTop: 6,
       marginBottom: 4,
     },
+    emiItem: {
+      marginTop: 8,
+    },
     emiRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
-      marginTop: 4,
     },
     progressContainer: {
       flexDirection: 'row',
@@ -1256,6 +1323,17 @@ const createStyles = (theme: any) =>
     sectionHeaderText: {
       flex: 1,
     },
+    sectionAddButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
     sectionTitle: {
       fontSize: 16,
       fontWeight: '700',
@@ -1270,6 +1348,50 @@ const createStyles = (theme: any) =>
       fontSize: 13,
       color: theme.colors.textSecondary,
       marginTop: 2,
+    },
+    breakdown: {
+      alignSelf: 'stretch',
+      marginTop: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      gap: 6,
+    },
+    breakdownRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 12,
+    },
+    breakdownLabel: {
+      flex: 1,
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+    },
+    breakdownValue: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    breakdownTotalRow: {
+      marginTop: 4,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    breakdownTotalText: {
+      color: theme.colors.text,
+      fontWeight: '700',
+    },
+    breakdownNote: {
+      alignSelf: 'stretch',
+      marginTop: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
     },
     loanStats: {
       marginTop: 8,

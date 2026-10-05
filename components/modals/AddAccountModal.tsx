@@ -23,6 +23,10 @@ interface AddAccountModalProps {
   profileId?: number | 'all';
   /** When set, the form edits this (non-loan) account instead of adding one. onAccountAdded fires after the save. */
   account?: Account | null;
+  /** The type the form opens on when adding (e.g. from a section's + button). Defaults to checking. */
+  initialType?: Account['type'];
+  /** For a loan: open on "Money Lent" (true) or "Money Borrowed" (false). */
+  initialIsLending?: boolean;
 }
 
 export default function AddAccountModal({
@@ -31,6 +35,8 @@ export default function AddAccountModal({
   onAccountAdded,
   profileId,
   account,
+  initialType,
+  initialIsLending,
 }: AddAccountModalProps) {
   const { theme } = useTheme();
   // Amounts everywhere use the currency chosen in Settings, so accounts don't get one of their own
@@ -45,6 +51,8 @@ export default function AddAccountModal({
   const [creditLimit, setCreditLimit] = useState('');
   const [billDay, setBillDay] = useState('');
   const [payAtMonthEnd, setPayAtMonthEnd] = useState(false);
+  // Optional fields stay folded away so adding an account only needs a type and a balance
+  const [showDetails, setShowDetails] = useState(false);
 
   // Loan-specific state
   const [isLending, setIsLending] = useState(true);
@@ -76,7 +84,15 @@ export default function AddAccountModal({
     setCreditLimit(account.creditLimit ? String(account.creditLimit) : '');
     setBillDay(account.billDay ? String(account.billDay) : '');
     setPayAtMonthEnd(!!account.payAtMonthEnd);
+    setShowDetails(!!(account.bankName || account.accountNumber || account.creditLimit || account.billDay || account.payAtMonthEnd));
   }, [visible, account?.id]);
+
+  // Each time the add form opens, start on the type it was opened for
+  useEffect(() => {
+    if (!visible || account) return;
+    setType(initialType ?? 'checking');
+    setIsLending(initialIsLending ?? true);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible || type !== 'loan' || !profileId || profileId === 'all') return;
@@ -104,6 +120,7 @@ export default function AddAccountModal({
     setCreditLimit('');
     setBillDay('');
     setPayAtMonthEnd(false);
+    setShowDetails(false);
     // Reset loan fields
     setIsLending(true);
     setLoanCounterpartyName('');
@@ -151,11 +168,7 @@ export default function AddAccountModal({
         }
       }
     } else {
-      if (!name.trim()) {
-        Alert.alert('Error', 'Please enter an account name.');
-        return;
-      }
-      if (!balance || isNaN(parseFloat(balance))) {
+      if (balance.trim() && isNaN(parseFloat(balance))) {
         Alert.alert('Error', type === 'credit_card'
           ? 'Please enter the amount owed on this card (0 if nothing).'
           : 'Please enter a valid initial balance.');
@@ -171,11 +184,15 @@ export default function AddAccountModal({
       }
     }
 
+    // A blank name falls back to the type (e.g. "Cash"); a blank balance means 0
+    const accountName = name.trim() || getAccountTypeLabel(type);
+    const amount = parseFloat(balance) || 0;
+
     try {
       if (account) {
         getAccountService().updateAccount(account.id, {
-          name: name.trim(),
-          balance: type === 'credit_card' ? 0 - Math.abs(parseFloat(balance)) : parseFloat(balance),
+          name: accountName,
+          balance: type === 'credit_card' ? 0 - Math.abs(amount) : amount,
           // null clears the value; undefined would leave the old one in place
           bankName: bankName.trim() || null,
           accountNumber: accountNumber.trim() || null,
@@ -233,10 +250,10 @@ export default function AddAccountModal({
       } else {
         accountData = {
           profileId,
-          name: name.trim(),
+          name: accountName,
           type,
           // A credit card is money owed, stored as a negative balance so spending deepens it and payments reduce it
-          balance: type === 'credit_card' ? 0 - Math.abs(parseFloat(balance)) : parseFloat(balance),
+          balance: type === 'credit_card' ? 0 - Math.abs(amount) : amount,
           currency,
           creditLimit: type === 'credit_card' && creditLimit.trim() ? parseFloat(creditLimit) : undefined,
           billDay: type === 'credit_card' && billDay.trim() ? Number(billDay) : undefined,
@@ -261,7 +278,7 @@ export default function AddAccountModal({
     }
   };
 
-  const getAccountTypeEmoji = (accountType: Account['type']) => {
+  function getAccountTypeEmoji(accountType: Account['type']) {
     const emojiMap = {
       savings: '🏦',
       checking: '💳',
@@ -271,19 +288,19 @@ export default function AddAccountModal({
       cash: '💵',
     };
     return emojiMap[accountType] || '💰';
-  };
+  }
 
-  const getAccountTypeLabel = (accountType: Account['type']) => {
+  function getAccountTypeLabel(accountType: Account['type']) {
     const labelMap = {
-      savings: 'Savings Account',
-      checking: 'Checking Account',
+      savings: 'Savings',
+      checking: 'Bank',
       credit_card: 'Credit Card',
-      loan: 'Loan Account',
-      investment: 'Investment Account',
-      cash: 'Cash Wallet',
+      loan: 'Loan',
+      investment: 'Investment',
+      cash: 'Cash',
     };
     return labelMap[accountType] || accountType;
-  };
+  }
 
   const accountTypes: Account['type'][] = [
     'checking',
@@ -317,16 +334,15 @@ export default function AddAccountModal({
           {!isEditing && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Account Type</Text>
-              <View style={styles.typeGrid}>
+              <View style={styles.chipRow}>
                 {accountTypes.map((accountType) => (
                   <TouchableOpacity
                     key={accountType}
-                    style={[styles.typeCard, type === accountType && styles.typeCardActive]}
+                    style={[styles.chip, type === accountType && styles.chipActive]}
                     onPress={() => setType(accountType)}
                   >
-                    <Text style={styles.typeEmoji}>{getAccountTypeEmoji(accountType)}</Text>
-                    <Text style={[styles.typeLabel, type === accountType && styles.typeLabelActive]}>
-                      {getAccountTypeLabel(accountType)}
+                    <Text style={[styles.chipText, type === accountType && styles.chipTextActive]}>
+                      {`${getAccountTypeEmoji(accountType)} ${getAccountTypeLabel(accountType)}`}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -514,12 +530,13 @@ export default function AddAccountModal({
             <>
               {/* Account Name */}
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Account Name</Text>
+                <Text style={styles.sectionTitle}>Name</Text>
                 <TextInput
                   style={styles.textInput}
                   value={name}
                   onChangeText={setName}
-                  placeholder="e.g., Main Checking, Chase Savings"
+                  placeholder={`e.g., HDFC Salary (blank = "${getAccountTypeLabel(type)}")`}
+                  placeholderTextColor={theme.colors.textSecondary}
                   autoFocus={!isEditing}
                 />
               </View>
@@ -536,6 +553,7 @@ export default function AddAccountModal({
                     onChangeText={setBalance}
                     placeholder="0.00"
                     keyboardType="decimal-pad"
+                    placeholderTextColor={theme.colors.textSecondary}
                   />
                 </View>
                 {type === 'credit_card' && (
@@ -545,7 +563,14 @@ export default function AddAccountModal({
                 )}
               </View>
 
-              {type === 'credit_card' && (
+              <TouchableOpacity style={styles.detailsToggle} onPress={() => setShowDetails((shown) => !shown)}>
+                <Text style={styles.detailsToggleText}>
+                  {showDetails ? 'Hide details' : type === 'credit_card' ? 'More details (limit, bill day, bank)' : 'More details (bank, account number)'}
+                </Text>
+                <Text style={styles.detailsToggleText}>{showDetails ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+
+              {showDetails && type === 'credit_card' && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Credit Limit (Optional)</Text>
                   <TextInput
@@ -562,7 +587,7 @@ export default function AddAccountModal({
                 </View>
               )}
 
-              {type === 'credit_card' && (
+              {showDetails && type === 'credit_card' && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Bill Day (Optional)</Text>
                   <TextInput
@@ -593,6 +618,8 @@ export default function AddAccountModal({
                 </View>
               )}
 
+              {showDetails && (
+              <>
               {/* Bank Name (Optional) */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Bank Name (Optional)</Text>
@@ -601,6 +628,7 @@ export default function AddAccountModal({
                   value={bankName}
                   onChangeText={setBankName}
                   placeholder="e.g., Chase, Bank of America"
+                  placeholderTextColor={theme.colors.textSecondary}
                 />
               </View>
 
@@ -615,6 +643,9 @@ export default function AddAccountModal({
                   secureTextEntry
                 />
               </View>
+              </>
+              )}
+              <View style={{ height: 32 }} />
             </>
           )}
         </ScrollView>
@@ -690,38 +721,19 @@ const createStyles = (theme: any) =>
       height: 80,
       textAlignVertical: 'top',
     },
-    typeGrid: {
+    detailsToggle: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 12,
-    },
-    typeCard: {
-      flex: 1,
-      minWidth: '45%',
-      backgroundColor: theme.colors.surface,
-      borderRadius: 12,
-      padding: 16,
+      justifyContent: 'space-between',
       alignItems: 'center',
-      borderWidth: 2,
-      borderColor: 'transparent',
+      marginTop: 24,
+      paddingVertical: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
     },
-    typeCardActive: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primaryLight || theme.colors.surface,
-    },
-    typeEmoji: {
-      fontSize: 32,
-      marginBottom: 8,
-    },
-    typeLabel: {
-      fontSize: 12,
-      textAlign: 'center',
-      color: theme.colors.text,
-      fontWeight: '500',
-    },
-    typeLabelActive: {
-      color: theme.colors.primary,
+    detailsToggleText: {
+      fontSize: 14,
       fontWeight: '600',
+      color: theme.colors.primary,
     },
     balanceRow: {
       flexDirection: 'row',
