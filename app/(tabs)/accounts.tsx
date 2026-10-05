@@ -717,11 +717,15 @@ export default function AccountsScreen() {
     );
   };
 
-  // Money owed on credit cards; already subtracted inside Total Balance, shown here so it is visible
-  const cardDebt = useMemo(
-    () => allAccounts.reduce((sum, a) => (a.type === "credit_card" && a.balance < 0 ? sum - a.balance : sum), 0),
-    [allAccounts]
-  );
+  // The two parts Total Balance is made of, so the card can show the sum: what is in bank, cash,
+  // savings and investment accounts, plus the credit card balances (negative when money is owed)
+  const balanceParts = useMemo(() => {
+    const sum = (items: Account[]) => Math.round(items.reduce((total, a) => total + a.balance, 0) * 100) / 100;
+    return {
+      inAccounts: sum(allAccounts.filter((a) => a.type !== "loan" && a.type !== "credit_card")),
+      onCards: sum(allAccounts.filter((a) => a.type === "credit_card")),
+    };
+  }, [allAccounts]);
 
   // Everything on one page, grouped so there is nothing to switch between. Empty groups are left out.
   const sections = useMemo(() => {
@@ -810,11 +814,33 @@ export default function AccountsScreen() {
         >
           {formatCurrency(totalBalance)}
         </Text>
-        <View style={styles.loanStats}>
-          <View style={styles.loanStatItem}>
-            <Text style={styles.loanStatLabel}>On credit cards</Text>
-            <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>{formatCurrency(cardDebt)}</Text>
+        <Text style={styles.accountCount}>Money in your accounts minus credit card dues</Text>
+
+        {/* The sum that makes up the total, line by line */}
+        <View style={styles.breakdown}>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>Bank, cash, savings & investments</Text>
+            <Text style={styles.breakdownValue}>{formatCurrency(balanceParts.inAccounts)}</Text>
           </View>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>
+              {balanceParts.onCards > 0 ? "Credit cards (paid in advance)" : "Credit card dues"}
+            </Text>
+            <Text style={[styles.breakdownValue, balanceParts.onCards < 0 && { color: '#ef4444' }]}>
+              {`${balanceParts.onCards < 0 ? "− " : "+ "}${formatCurrency(Math.abs(balanceParts.onCards))}`}
+            </Text>
+          </View>
+          <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
+            <Text style={[styles.breakdownLabel, styles.breakdownTotalText]}>Total Balance</Text>
+            <Text style={[styles.breakdownValue, styles.breakdownTotalText, totalBalance < 0 && styles.negativeBalance]}>
+              {formatCurrency(totalBalance)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Loans are tracked here but kept out of the total; Net Worth brings them in */}
+        <Text style={styles.breakdownNote}>Not included above (see Net Worth)</Text>
+        <View style={styles.loanStats}>
           <View style={styles.loanStatItem}>
             <Text style={styles.loanStatLabel}>You owe</Text>
             <Text style={[styles.loanStatValue, { color: '#ef4444' }]}>{formatCurrency(loanSummary.outstandingBorrowings)}</Text>
@@ -835,7 +861,7 @@ export default function AccountsScreen() {
     theme,
     searchTerm,
     totalBalance,
-    cardDebt,
+    balanceParts,
     loanSummary,
     overdueLoans,
     formatCurrency,
@@ -1314,6 +1340,50 @@ const createStyles = (theme: any) =>
       fontSize: 13,
       color: theme.colors.textSecondary,
       marginTop: 2,
+    },
+    breakdown: {
+      alignSelf: 'stretch',
+      marginTop: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      gap: 6,
+    },
+    breakdownRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 12,
+    },
+    breakdownLabel: {
+      flex: 1,
+      fontSize: 13,
+      color: theme.colors.textSecondary,
+    },
+    breakdownValue: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.colors.text,
+    },
+    breakdownTotalRow: {
+      marginTop: 4,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    breakdownTotalText: {
+      color: theme.colors.text,
+      fontWeight: '700',
+    },
+    breakdownNote: {
+      alignSelf: 'stretch',
+      marginTop: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      fontSize: 12,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
     },
     loanStats: {
       marginTop: 8,
