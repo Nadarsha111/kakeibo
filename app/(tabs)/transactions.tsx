@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl, Alert, Platform, Modal, Pressable } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, StatusBar, RefreshControl, Alert, Platform, Modal, Pressable } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -92,6 +92,7 @@ export default function TransactionsScreen() {
   const [customEnd, setCustomEnd] = useState(() => toLocalDateString(new Date()));
   const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(null);
   const [showPeriods, setShowPeriods] = useState(false);
+  const [search, setSearch] = useState('');
 
   // Categories state
   const [categorySummary, setCategorySummary] = useState<{ category: string; amount: number; color: string; icon?: string | null; percentage: number }[]>([]);
@@ -178,11 +179,21 @@ export default function TransactionsScreen() {
     });
   }, [transactions, dateFilter, customStart, customEnd]);
 
-  // Money moved between your own accounts is neither spending nor income
-  const spent = inPeriod.filter((t) => t.type === 'expense' && !isTransfer(t)).reduce((sum, t) => sum + t.amount, 0);
-  const received = inPeriod.filter((t) => t.type === 'income' && !isTransfer(t)).reduce((sum, t) => sum + t.amount, 0);
+  // Search narrows the period (and its totals) by category, note, account or amount
+  const query = search.trim().toLowerCase();
+  const matched = useMemo(() => {
+    if (!query) return inPeriod;
+    return inPeriod.filter((t) => {
+      const account = t.accountId != null ? accountNames[t.accountId] : undefined;
+      return [t.category, t.description, account, String(t.amount)].some((field) => field?.toLowerCase().includes(query));
+    });
+  }, [inPeriod, query, accountNames]);
 
-  const shown = typeFilter === 'all' ? inPeriod : inPeriod.filter((t) => t.type === typeFilter && !isTransfer(t));
+  // Money moved between your own accounts is neither spending nor income
+  const spent = matched.filter((t) => t.type === 'expense' && !isTransfer(t)).reduce((sum, t) => sum + t.amount, 0);
+  const received = matched.filter((t) => t.type === 'income' && !isTransfer(t)).reduce((sum, t) => sum + t.amount, 0);
+
+  const shown = typeFilter === 'all' ? matched : matched.filter((t) => t.type === typeFilter && !isTransfer(t));
 
   // Newest day first, as the service already returns them
   const days = useMemo(() => {
@@ -337,6 +348,8 @@ export default function TransactionsScreen() {
         <ScrollView
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -346,6 +359,25 @@ export default function TransactionsScreen() {
             />
           }
         >
+          <View style={styles.searchBox}>
+            <MaterialCommunityIcons name="magnify" size={18} color={theme.colors.textSecondary} />
+            <TextInput
+              style={styles.searchInput}
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search category, note, account or amount"
+              placeholderTextColor={theme.colors.textSecondary}
+              returnKeyType="search"
+              autoCorrect={false}
+              clearButtonMode="never"
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')} hitSlop={10}>
+                <MaterialCommunityIcons name="close-circle" size={18} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
           {/* Spent / received in the period; tapping one shows only those */}
           <View style={styles.summaryRow}>
             <TouchableOpacity
@@ -380,7 +412,11 @@ export default function TransactionsScreen() {
             {days.length === 0 && (
               <View style={styles.empty}>
                 <Text style={styles.emptyText}>
-                  {transactions.length === 0 ? 'No transactions yet.' : `Nothing${periodText || ' here'}.`}
+                  {transactions.length === 0
+                    ? 'No transactions yet.'
+                    : query
+                      ? `No matches for "${search.trim()}"${periodText}.`
+                      : `Nothing${periodText || ' here'}.`}
                 </Text>
                 {transactions.length === 0 ? (
                   <Text style={styles.emptyAction} onPress={() => openModal()}>Add your first transaction</Text>
@@ -619,6 +655,24 @@ function createStyles(theme: any) {
       fontWeight: '600',
       color: theme.colors.text,
       marginTop: 2,
+    },
+    searchBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginHorizontal: 16,
+      marginTop: 12,
+      paddingHorizontal: 12,
+      backgroundColor: theme.colors.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: Platform.OS === 'ios' ? 10 : 6,
+      fontSize: 15,
+      color: theme.colors.text,
     },
     summaryRow: {
       flexDirection: 'row',
