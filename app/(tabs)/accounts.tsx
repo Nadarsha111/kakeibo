@@ -890,6 +890,10 @@ export default function AccountsScreen() {
         <Text style={styles.emptyEmoji}>🏦</Text>
         <Text style={styles.emptyTitle}>No Accounts</Text>
         <Text style={styles.emptyText}>Add your bank accounts, credit cards, cash and loans to track your finances</Text>
+        {/* Sections carry their own + once there's an account; with none there are no sections yet */}
+        <TouchableOpacity style={styles.addButton} onPress={() => openAddAccount()}>
+          <Text style={styles.addButtonText}>+ Add an account</Text>
+        </TouchableOpacity>
       </View>
     );
   }, [debouncedSearchTerm, theme]);
@@ -904,20 +908,6 @@ export default function AccountsScreen() {
           <Text style={styles.headerTitle}>{getSelectedProfileName()}</Text>
           <MaterialCommunityIcons name="chevron-down" size={24} color={theme.colors.text} />
         </TouchableOpacity>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => openModal({ initialType: "transfer" })}
-          >
-            <MaterialCommunityIcons name="swap-horizontal" size={24} color={theme.colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => openAddAccount()}
-          >
-            <Text style={styles.addButtonText}>+ Add</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       <SectionList
@@ -1041,15 +1031,8 @@ const createStyles = (theme: any) =>
       fontWeight: "bold",
       color: theme.colors.text,
     },
-    headerActions: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    actionButton: {
-      padding: 8,
-    },
     addButton: {
+      marginTop: 16,
       backgroundColor: theme.colors.primary,
       paddingHorizontal: 16,
       paddingVertical: 8,
