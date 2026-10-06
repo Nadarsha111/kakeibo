@@ -1017,6 +1017,25 @@ class TransactionService {
   }
 
   /**
+   * How many times each category was used for this type since `sinceDate`, so pickers can put
+   * the user's regular categories first.
+   */
+  getCategoryUsage(type: 'income' | 'expense', sinceDate: string): Record<string, number> {
+    try {
+      const rows = this.db.getAllSync(
+        `SELECT category, COUNT(*) as uses FROM transactions
+         WHERE type = ? AND DATE(date) >= DATE(?)
+         GROUP BY category`,
+        [type, sinceDate]
+      ) as { category: string; uses: number }[];
+      return Object.fromEntries(rows.map((r) => [r.category, r.uses]));
+    } catch (error) {
+      console.error('Error getting category usage:', error);
+      return {};
+    }
+  }
+
+  /**
    * Search transactions by description or category
    */
   searchTransactions(searchTerm: string, limit?: number): Transaction[] {

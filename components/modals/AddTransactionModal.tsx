@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -74,6 +74,11 @@ function relativeDayLabel(date: string): string | null {
 // New transactions start from whatever was last saved, so repeat entries need fewer taps.
 const LAST_ACCOUNT_KEY = "addTransaction.lastAccountId";
 const lastCategoryKey = (type: "income" | "expense") => `addTransaction.lastCategory.${type}`;
+
+// Categories are ordered by how often they were used in this window, and only the top few are
+// shown until the user asks for the rest.
+const CATEGORY_USAGE_DAYS = 90;
+const TOP_CATEGORY_COUNT = 8;
 
 function defaultAccount(accounts: Account[]): Account | undefined {
   const lastId = Number(getSettingsService().getSetting(LAST_ACCOUNT_KEY));
@@ -206,6 +211,7 @@ export default function AddTransactionModal({
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [date, setDate] = useState(todayString());
   const [showMore, setShowMore] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [keypadVisible, setKeypadVisible] = useState(true);
 
@@ -218,6 +224,7 @@ export default function AddTransactionModal({
     setToAccount(undefined);
     setCardId(undefined);
     setShowMore(false);
+    setShowAllCategories(false);
     setShowDatePicker(false);
 
     setSelectedCategory(defaultCategory("expense", categories));
@@ -304,6 +311,7 @@ export default function AddTransactionModal({
   const handleTypeChange = (newType: "income" | "expense" | "transfer") => {
     setType(newType);
     setSelectedCategory(defaultCategory(newType, categories));
+    setShowAllCategories(false);
 
     // Reset priority for income transactions
     if (newType === "income" || newType === "transfer") {
@@ -405,11 +413,25 @@ export default function AddTransactionModal({
     }
   };
 
-  const getFilteredCategories = () => {
-    return categories.filter(
-      (cat) => cat.type === type && !cat.name.startsWith("Transfer"),
-    );
-  };
+  // Most-used categories first (over the last few months), so the usual picks are up front.
+  const sortedCategories = useMemo(() => {
+    if (type === "transfer") return [];
+    const since = shiftDate(todayString(), -CATEGORY_USAGE_DAYS);
+    const usage = visible ? getTransactionService().getCategoryUsage(type, since) : {};
+    return categories
+      .filter((cat) => cat.type === type && !cat.name.startsWith("Transfer"))
+      .map((cat, index) => ({ cat, index, uses: usage[cat.name] ?? 0 }))
+      .sort((a, b) => b.uses - a.uses || a.index - b.index)
+      .map(({ cat }) => cat);
+  }, [categories, type, visible]);
+
+  // Only the top few show until expanded; the selected one is always among them.
+  const visibleCategories = useMemo(() => {
+    if (showAllCategories || sortedCategories.length <= TOP_CATEGORY_COUNT + 1) return sortedCategories;
+    const top = sortedCategories.slice(0, TOP_CATEGORY_COUNT);
+    const selected = sortedCategories.find((cat) => cat.name === selectedCategory);
+    return selected && !top.includes(selected) ? [...top.slice(0, -1), selected] : top;
+  }, [sortedCategories, showAllCategories, selectedCategory]);
 
   const getAccountTypeEmoji = (type: Account["type"]) => {
     const emojiMap = {
@@ -543,18 +565,28 @@ export default function AddTransactionModal({
           {type !== "transfer" && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Category</Text>
-              {renderChipRow(
-                getFilteredCategories().findIndex((category) => category.name === selectedCategory),
-                getFilteredCategories().map((category) =>
+              <View style={styles.chipWrap}>
+                {visibleCategories.map((category) =>
                   renderChip(
                     category.id,
                     category.name,
                     selectedCategory === category.name,
-                    () => setSelectedCategory(category.name),
+                    () => {
+                      setSelectedCategory(category.name);
+                      setShowAllCategories(false);
+                    },
                     category.icon,
                   ),
-                ),
-              )}
+                )}
+                {sortedCategories.length > visibleCategories.length || showAllCategories
+                  ? renderChip(
+                      "more",
+                      showAllCategories ? "Less ▴" : `+${sortedCategories.length - visibleCategories.length} more`,
+                      false,
+                      () => setShowAllCategories((v) => !v),
+                    )
+                  : null}
+              </View>
             </View>
           )}
 
