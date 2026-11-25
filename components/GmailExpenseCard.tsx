@@ -9,6 +9,7 @@ interface Props {
   details: string;
   amount: string;
   category?: { label: string; color: string };
+  localCategory?: { label: string; color: string };
   ready: boolean;
   disabled: boolean;
   onReview: () => void;
@@ -18,9 +19,10 @@ interface Props {
 const SWIPE_DISTANCE = 64;
 const ACTION_WIDTH = 90;
 
-export default function GmailExpenseCard({ payee, details, amount, category, ready, disabled, onReview, onSwipe }: Props) {
+export default function GmailExpenseCard({ payee, details, amount, category, localCategory, ready, disabled, onReview, onSwipe }: Props) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+  const badge = category ?? localCategory;
   const translateX = useRef(new Animated.Value(0)).current;
   const latest = useRef({ disabled, onSwipe });
   latest.current = { disabled, onSwipe };
@@ -63,10 +65,10 @@ export default function GmailExpenseCard({ payee, details, amount, category, rea
           <View style={styles.details}>
             <Text style={styles.label}>{payee}</Text>
             <Text style={styles.muted}>{details}</Text>
-            {category && (
-              <View style={[styles.category, { backgroundColor: tint(category.color) ?? theme.colors.background }]}>
-                <MaterialCommunityIcons name="tag-outline" size={13} color={theme.isDark ? category.color : theme.colors.textSecondary} />
-                <Text style={styles.categoryLabel}>{category.label}</Text>
+            {badge && (
+              <View style={[styles.category, { backgroundColor: tint(badge.color) ?? theme.colors.background }]}>
+                <MaterialCommunityIcons name="tag-outline" size={13} color={theme.isDark ? badge.color : theme.colors.textSecondary} />
+                <Text style={styles.categoryLabel}>{category ? badge.label : `Possible match · ${badge.label}`}</Text>
               </View>
             )}
           </View>
