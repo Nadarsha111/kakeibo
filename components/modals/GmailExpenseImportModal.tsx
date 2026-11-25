@@ -50,12 +50,14 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
   const [expenses, setExpenses] = useState<GmailExpense[]>([]);
   const [nextPage, setNextPage] = useState<{ mailboxId: string; token: string }>();
   const [scanned, setScanned] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string>();
+  const [pendingSearch, setPendingSearch] = useState<'search' | 'older' | null>(null);
+  const [searchError, setSearchError] = useState<{ message: string; older: boolean }>();
   const [feedback, setFeedback] = useState<string>();
   const [categorizedCount, setCategorizedCount] = useState(0);
   const [selected, setSelected] = useState<GmailExpense>();
   const [drafts, setDrafts] = useState<Record<string, ExpenseDraft>>({});
+  const searching = pendingSearch !== null;
+  const loadingOlder = pendingSearch === 'older';
 
   const allAccounts = expenses.length
     ? getAccountService().getAccounts(profileId === 'all' ? undefined : profileId)
@@ -111,8 +113,8 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
   }) : [];
 
   const search = async (older = false) => {
-    if (searching) return;
-    setSearching(true);
+    if (searching || (older && !nextPage)) return;
+    setPendingSearch(older ? 'older' : 'search');
     setSearchError(undefined);
     setFeedback(undefined);
     try {
@@ -123,9 +125,9 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
       setNextPage(result.nextPage);
       setScanned(true);
     } catch (error) {
-      setSearchError(error instanceof Error ? error.message : 'Gmail search failed. Try again.');
+      setSearchError({ message: error instanceof Error ? error.message : 'Gmail search failed. Try again.', older });
     } finally {
-      setSearching(false);
+      setPendingSearch(null);
     }
   };
 
@@ -265,8 +267,8 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
             <TouchableOpacity accessibilityRole="button" style={[styles.primary, searching && styles.disabled]} onPress={() => search()} disabled={searching}>
               <Text style={styles.primaryText}>{scanned ? 'Search again' : 'Find Slice alerts'}</Text>
             </TouchableOpacity>
-            {searching && <ActivityIndicator color={theme.colors.primary} accessibilityLabel="Searching Gmail" />}
-            {searchError && <Text accessibilityLiveRegion="polite" style={styles.muted}>{searchError}</Text>}
+            {pendingSearch === 'search' && <ActivityIndicator color={theme.colors.primary} accessibilityLabel="Searching Gmail" />}
+            {searchError && !searchError.older && <Text accessibilityLiveRegion="polite" style={styles.muted}>{searchError.message}</Text>}
             {feedback && <Text accessibilityLiveRegion="polite" style={styles.muted}>{feedback}</Text>}
             {scanned && !searching && !expenses.length && (
               <Text style={styles.muted}>{nextPage ? 'No new supported alerts on this page.' : 'No new supported Slice alerts found.'}</Text>
@@ -291,10 +293,20 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
               );
             })}
             {nextPage && (
-              <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={() => search(true)} disabled={searching}>
-                <Text style={styles.secondaryText}>Load older alerts</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityState={{ busy: loadingOlder, disabled: searching }}
+                style={[styles.secondary, styles.pagination]}
+                onPress={() => search(true)}
+                disabled={searching}
+              >
+                {loadingOlder && <ActivityIndicator size="small" color={theme.colors.primary} />}
+                <Text accessibilityLiveRegion="polite" style={styles.secondaryText}>
+                  {loadingOlder ? 'Loading older alerts…' : 'Load older alerts'}
+                </Text>
               </TouchableOpacity>
             )}
+            {searchError?.older && <Text accessibilityLiveRegion="polite" style={styles.muted}>{searchError.message}</Text>}
           </ScrollView>
         )}
       </SafeAreaView>
@@ -315,5 +327,6 @@ const createStyles = (theme: ReturnType<typeof useTheme>['theme']) => StyleSheet
   primaryText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   disabled: { opacity: 0.5 },
   secondary: { alignItems: 'center', padding: 12 },
+  pagination: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   secondaryText: { color: theme.colors.primary, fontWeight: '600', fontSize: 15 },
 });

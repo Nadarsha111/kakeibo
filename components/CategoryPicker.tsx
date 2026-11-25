@@ -9,7 +9,7 @@ import { EXPENSE_CATEGORY_PRESETS, expenseCategoryLabel, expensePresetIndex } fr
 interface Props {
   categories: Category[];
   selected: string | null;
-  onSelect: (name: string | null) => void;
+  onSelect: (name: string) => void;
   disclosure?: { limit: number; expanded: boolean; toggle: () => void };
 }
 
@@ -26,18 +26,7 @@ export default function CategoryPicker({ categories, selected, onSelect, disclos
 
   return (
     <View style={styles.container}>
-      <View style={styles.heading}>
-        <Text style={styles.title}>Category</Text>
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Reset category selection"
-          disabled={!selected}
-          hitSlop={6}
-          onPress={() => onSelect(null)}
-        >
-          <Text style={[styles.control, !selected && styles.disabled]}>Reset</Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={styles.title}>Category</Text>
       {categories.length ? (
         <View style={styles.chips}>
           {visible.map((category) => {
@@ -83,10 +72,8 @@ export default function CategoryPicker({ categories, selected, onSelect, disclos
 
 const createStyles = (theme: ReturnType<typeof useTheme>['theme']) => StyleSheet.create({
   container: { gap: 9 },
-  heading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
   control: { fontSize: 13, fontWeight: '600', color: theme.colors.primary },
-  disabled: { color: theme.colors.textSecondary, opacity: 0.6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   chip: {
     flexDirection: 'row',

@@ -564,8 +564,8 @@ export default function AddTransactionModal({
                 categories={sortedCategories}
                 selected={selectedCategory || null}
                 onSelect={(name) => {
-                  setSelectedCategory(name ?? "");
-                  if (name) setShowAllCategories(false);
+                  setSelectedCategory(name);
+                  setShowAllCategories(false);
                 }}
                 disclosure={{
                   limit: TOP_CATEGORY_COUNT,
