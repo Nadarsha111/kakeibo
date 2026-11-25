@@ -1,4 +1,5 @@
 import * as SQLite from "expo-sqlite";
+import { seedExpenseCategories } from './seedExpenseCategories';
 
 /**
  * Central database connector that provides a shared SQLite instance
@@ -205,6 +206,7 @@ class DatabaseConnector {
 
       // Insert default categories if none exist
       this.insertDefaultCategories();
+      this.withTransaction(() => seedExpenseCategories(this.db));
       this.insertDefaultProfiles();
       
       console.log("Database tables initialized successfully");

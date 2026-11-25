@@ -9,6 +9,8 @@ import {
   type GmailExpense,
 } from '../../services/emailTransactions/importExpenses';
 import { formatShortDate } from '../../utils/format';
+import { expensePresetIndex } from '../../utils/expenseCategoryPresets';
+import CategoryPicker from '../CategoryPicker';
 import ChipSelect from '../ChipSelect';
 
 interface Props {
@@ -45,7 +47,9 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
   const account = accounts.find(({ id }) => id === accountId);
   const cards = account?.type === 'credit_card' ? getCardService().getCardsForAccount(account.id) : [];
   const profiles = selected && profileId === 'all' ? getProfileService().getProfiles() : [];
-  const categories = selected ? getExpenseCategories() : [];
+  const categories = selected
+    ? getExpenseCategories().sort((a, b) => expensePresetIndex(a.name) - expensePresetIndex(b.name))
+    : [];
   const possibleDuplicate = selected && account && hasPossibleDuplicate(selected, account);
   const canImport = !!account && !!category && (!cards.length || cardId !== null);
 
@@ -133,10 +137,7 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
                 <ChipSelect options={cards.map(({ id, name }) => ({ key: id, label: name }))} selected={cardId} onSelect={setCardId} />
               </>
             )}
-            <Text style={styles.label}>Category</Text>
-            {categories.length ? (
-              <ChipSelect options={categories.map(({ name }) => ({ key: name, label: name }))} selected={category} onSelect={setCategory} />
-            ) : <Text style={styles.muted}>Add an expense category before importing this alert.</Text>}
+            <CategoryPicker categories={categories} selected={category} onSelect={setCategory} />
             {possibleDuplicate && (
               <Text style={styles.muted}>Possible duplicate. An expense with the same date and amount already exists.</Text>
             )}

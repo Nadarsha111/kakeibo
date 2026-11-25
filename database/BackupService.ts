@@ -1,4 +1,5 @@
 import DatabaseConnector from './DatabaseConnector';
+import { seedExpenseCategories } from './seedExpenseCategories';
 
 /**
  * Every table holding the user's data, parents before children, so a restore can insert them in
@@ -129,6 +130,7 @@ class BackupService {
             );
           });
         });
+        seedExpenseCategories(this.db);
       });
     } finally {
       this.db.execSync('PRAGMA foreign_keys = ON;');
