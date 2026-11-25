@@ -4,7 +4,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../context/ThemeContext';
 import type { Category } from '../types';
 import { tint } from '../utils/categoryIcon';
-import { EXPENSE_CATEGORY_PRESETS, expensePresetIndex } from '../utils/expenseCategoryPresets';
+import { EXPENSE_CATEGORY_PRESETS, expenseCategoryLabel, expensePresetIndex } from '../utils/expenseCategoryPresets';
 
 interface Props {
   categories: Category[];
@@ -45,7 +45,7 @@ export default function CategoryPicker({ categories, selected, onSelect, disclos
             const usePresetIcon = preset && category.icon === preset.emoji;
             const color = category.color;
             const active = category.name === selected;
-            const label = preset && category.name === `${preset.name} (expense)` ? preset.name : category.name;
+            const label = category.type === 'expense' ? expenseCategoryLabel(category.name) : category.name;
             const accent = theme.isDark ? color : theme.colors.text;
 
             return (

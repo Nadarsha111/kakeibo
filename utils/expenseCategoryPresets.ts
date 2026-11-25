@@ -26,3 +26,8 @@ export function expensePresetIndex(name: string): number {
   const index = EXPENSE_CATEGORY_PRESETS.findIndex((preset) => preset.name.toLowerCase() === normalized);
   return index < 0 ? EXPENSE_CATEGORY_PRESETS.length : index;
 }
+
+export function expenseCategoryLabel(name: string): string {
+  const preset = EXPENSE_CATEGORY_PRESETS[expensePresetIndex(name)];
+  return preset && name === `${preset.name} (expense)` ? preset.name : name;
+}
