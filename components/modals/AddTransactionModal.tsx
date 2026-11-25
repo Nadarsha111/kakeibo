@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AmountKeypad, { evaluateAmount, hasOperator } from "../AmountKeypad";
+import CategoryPicker from "../CategoryPicker";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import {
   getCategoryService,
@@ -25,6 +26,7 @@ import { Category, Account, CreditCard, Transaction } from "../../types";
 import { useTheme } from "../../context/ThemeContext";
 import { useSettings } from "../../context/SettingsContext";
 import { isValidDate } from "../../utils/loanMath";
+import { expensePresetIndex } from "../../utils/expenseCategoryPresets";
 
 type PaymentMethod = "cash" | "credit_card" | "debit_card";
 
@@ -419,19 +421,13 @@ export default function AddTransactionModal({
     const since = shiftDate(todayString(), -CATEGORY_USAGE_DAYS);
     const usage = visible ? getTransactionService().getCategoryUsage(type, since) : {};
     return categories
-      .filter((cat) => cat.type === type && !cat.name.startsWith("Transfer"))
+      .filter((cat) => cat.type === type && cat.name !== "Transfer In" && cat.name !== "Transfer Out")
       .map((cat, index) => ({ cat, index, uses: usage[cat.name] ?? 0 }))
-      .sort((a, b) => b.uses - a.uses || a.index - b.index)
+      .sort((a, b) => b.uses - a.uses ||
+        (type === "expense" ? expensePresetIndex(a.cat.name) - expensePresetIndex(b.cat.name) : 0) ||
+        a.index - b.index)
       .map(({ cat }) => cat);
   }, [categories, type, visible]);
-
-  // Only the top few show until expanded; the selected one is always among them.
-  const visibleCategories = useMemo(() => {
-    if (showAllCategories || sortedCategories.length <= TOP_CATEGORY_COUNT + 1) return sortedCategories;
-    const top = sortedCategories.slice(0, TOP_CATEGORY_COUNT);
-    const selected = sortedCategories.find((cat) => cat.name === selectedCategory);
-    return selected && !top.includes(selected) ? [...top.slice(0, -1), selected] : top;
-  }, [sortedCategories, showAllCategories, selectedCategory]);
 
   const getAccountTypeEmoji = (type: Account["type"]) => {
     const emojiMap = {
@@ -564,29 +560,19 @@ export default function AddTransactionModal({
           {/* Category */}
           {type !== "transfer" && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Category</Text>
-              <View style={styles.chipWrap}>
-                {visibleCategories.map((category) =>
-                  renderChip(
-                    category.id,
-                    category.name,
-                    selectedCategory === category.name,
-                    () => {
-                      setSelectedCategory(category.name);
-                      setShowAllCategories(false);
-                    },
-                    category.icon,
-                  ),
-                )}
-                {sortedCategories.length > visibleCategories.length || showAllCategories
-                  ? renderChip(
-                      "more",
-                      showAllCategories ? "Less ▴" : `+${sortedCategories.length - visibleCategories.length} more`,
-                      false,
-                      () => setShowAllCategories((v) => !v),
-                    )
-                  : null}
-              </View>
+              <CategoryPicker
+                categories={sortedCategories}
+                selected={selectedCategory || null}
+                onSelect={(name) => {
+                  setSelectedCategory(name ?? "");
+                  if (name) setShowAllCategories(false);
+                }}
+                disclosure={{
+                  limit: TOP_CATEGORY_COUNT,
+                  expanded: showAllCategories,
+                  toggle: () => setShowAllCategories((value) => !value),
+                }}
+              />
             </View>
           )}
 
