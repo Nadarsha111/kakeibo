@@ -114,6 +114,19 @@ npm run web
 - Payment method tracking
 - Add new transaction functionality
 
+#### Import Slice alerts from Gmail
+
+On mobile, open **Transactions → Import → Find Slice alerts**. The app searches the past
+30 days for Slice UPI credit card purchases and bank-account debits. Open an alert, confirm
+the destination account (and physical card where applicable), choose an expense category, and
+tap **Import expense**. The same Gmail message can only be imported once.
+
+Enable the Gmail API in the Google Cloud project used for sign-in and add the
+`https://www.googleapis.com/auth/gmail.readonly` scope under **Data Access**. If the OAuth
+app is in Testing, add your Google account as a test user. Kakeibo requests permission when
+you first search and parses the matching emails on your phone.
+[Google's Gmail scope guide](https://developers.google.com/workspace/gmail/api/auth/scopes)
+
 ### Budget Screen
 - Monthly budget overview
 - Category-wise budget limits
