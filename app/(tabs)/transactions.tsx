@@ -10,6 +10,7 @@ import { useSettings } from '../../context/SettingsContext';
 import { formatShortDate } from '../../utils/format';
 import { categoryIcon, tint } from '../../utils/categoryIcon';
 import CategoryBreakdown from '../../components/CategoryBreakdown';
+import GmailExpenseImportModal from '../../components/modals/GmailExpenseImportModal';
 import { useTransactionModal } from '../../context/TransactionModalContext';
 import { useTabBarInset } from '../../components/PebbleTabBar';
 
@@ -93,6 +94,7 @@ export default function TransactionsScreen() {
   const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(null);
   const [showPeriods, setShowPeriods] = useState(false);
   const [search, setSearch] = useState('');
+  const [showGmailImport, setShowGmailImport] = useState(false);
 
   // Categories state
   const [categorySummary, setCategorySummary] = useState<{ category: string; amount: number; color: string; icon?: string | null; percentage: number }[]>([]);
@@ -317,7 +319,21 @@ export default function TransactionsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Transactions</Text>
+        {Platform.OS !== 'web' && (
+          <TouchableOpacity style={styles.periodButton} onPress={() => setShowGmailImport(true)} accessibilityRole="button" accessibilityLabel="Import from Gmail">
+            <MaterialCommunityIcons name="email-outline" size={18} color={theme.colors.primary} />
+            <Text style={styles.periodButtonText}>Import</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {showGmailImport && (
+        <GmailExpenseImportModal
+          profileId={selectedProfileId}
+          onClose={() => setShowGmailImport(false)}
+          onImported={() => { loadTransactions(); loadCategoryData(); }}
+        />
+      )}
 
       {/* Tab Switcher, with the period button beside it on the list */}
       <View style={styles.toolbar}>
@@ -526,6 +542,9 @@ function createStyles(theme: any) {
       alignItems: 'center',
     },
     header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       paddingHorizontal: 20,
       paddingTop: 40,
       paddingBottom: 12,
