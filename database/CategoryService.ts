@@ -1,6 +1,16 @@
 import DatabaseConnector from './DatabaseConnector';
 import { Category } from '../types';
 
+export interface CategoryUsage {
+  transactions: number;
+  recurringItems: number;
+  budgets: number;
+}
+
+export function isTransferCategory(name: string): boolean {
+  return name === 'Transfer In' || name === 'Transfer Out';
+}
+
 /**
  * Service class for category CRUD operations and budget logic
  */
@@ -124,38 +134,59 @@ class CategoryService {
     }
   }
 
-  /**
-   * Delete a category (only if not used in transactions)
-   */
-  deleteCategory(id: number): boolean {
-    try {
-      // Check if category is being used in transactions
-      const usageCount = this.db.getFirstSync(
-        'SELECT COUNT(*) as count FROM transactions WHERE category = (SELECT name FROM categories WHERE id = ?)',
-        [id]
-      ) as { count: number };
+  getCategoryUsage(id: number): CategoryUsage {
+    const usage = this.db.getFirstSync<CategoryUsage>(
+      `SELECT
+        (SELECT COUNT(*) FROM transactions WHERE category = c.name) AS transactions,
+        (SELECT COUNT(*) FROM recurring_items WHERE category = c.name AND type IN ('expense', 'income')) AS recurringItems,
+        (SELECT COUNT(*) FROM budgets WHERE categoryId = c.id) AS budgets
+      FROM categories c WHERE c.id = ?`,
+      [id],
+    );
+    if (!usage) throw new Error('This category no longer exists.');
+    return usage;
+  }
 
-      if (usageCount.count > 0) {
-        throw new Error(`Cannot delete category that is being used in ${usageCount.count} transactions`);
+  /** Move existing uses and delete the category in the same transaction. */
+  deleteCategory(id: number, replacementId?: number): void {
+    DatabaseConnector.getInstance().withTransaction(() => {
+      const source = this.db.getFirstSync<Category>('SELECT * FROM categories WHERE id = ?', [id]);
+      if (!source) throw new Error('This category no longer exists.');
+      if (isTransferCategory(source.name)) throw new Error('This category is used for transfers between accounts.');
+
+      const usage = this.getCategoryUsage(id);
+      if (replacementId === undefined && (usage.transactions || usage.recurringItems || usage.budgets)) {
+        throw new Error('Choose a replacement category for the items using this category.');
       }
 
-      // Check if category is being used in budgets
-      const budgetUsage = this.db.getFirstSync(
-        'SELECT COUNT(*) as count FROM budgets WHERE categoryId = ?',
-        [id]
-      ) as { count: number };
+      if (replacementId !== undefined) {
+        const replacement = this.db.getFirstSync<Category>('SELECT * FROM categories WHERE id = ?', [replacementId]);
+        if (!replacement || replacement.id === id || replacement.type !== source.type || isTransferCategory(replacement.name)) {
+          throw new Error('Choose another category of the same type.');
+        }
+        if (usage.budgets && this.db.getFirstSync(
+          `SELECT 1 FROM budgets source
+           JOIN budgets target ON target.period = source.period
+           WHERE source.categoryId = ? AND target.categoryId = ? LIMIT 1`,
+          [id, replacementId],
+        )) {
+          throw new Error('The replacement has a budget for the same period type. Choose a different category or edit one of the budgets first.');
+        }
 
-      if (budgetUsage.count > 0) {
-        throw new Error(`Cannot delete category that is being used in ${budgetUsage.count} budgets`);
+        const now = new Date().toISOString();
+        this.db.runSync('UPDATE transactions SET category = ?, updatedAt = ? WHERE category = ?', [replacement.name, now, source.name]);
+        this.db.runSync(
+          "UPDATE recurring_items SET category = ?, updatedAt = ? WHERE category = ? AND type IN ('expense', 'income')",
+          [replacement.name, now, source.name],
+        );
+        this.db.runSync('UPDATE budgets SET categoryId = ? WHERE categoryId = ?', [replacementId, id]);
+        if (source.budgetLimit != null && replacement.budgetLimit == null) {
+          this.db.runSync('UPDATE categories SET budgetLimit = ? WHERE id = ?', [source.budgetLimit, replacementId]);
+        }
       }
 
       this.db.runSync('DELETE FROM categories WHERE id = ?', [id]);
-      console.log('Category deleted:', id);
-      return true;
-    } catch (error) {
-      console.error('Error deleting category:', error);
-      return false;
-    }
+    });
   }
 
   /**
