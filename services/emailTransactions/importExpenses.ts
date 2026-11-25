@@ -1,11 +1,69 @@
 import { DatabaseConnector, getAccountService, getCardService, getCategoryService, getSettingsService, getTransactionService } from '../../database';
-import type { Account } from '../../types';
+import type { Account, Transaction } from '../../types';
 import { readGmailPage } from './gmail';
 import { parseSliceExpense, SLICE_SENDER, type SliceExpense } from './slice';
 
 export interface GmailExpense extends SliceExpense {
   mailboxId: string;
   messageId: string;
+}
+
+export function receiverKey(payee: string): string {
+  return payee.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function dateAmountKey(date: string, amount: number): string {
+  return `${date.slice(0, 10)}:${Math.round(amount * 100)}`;
+}
+
+export function getLocalExpensesForAlerts(expenses: GmailExpense[], profileId?: number): Map<string, Transaction[]> {
+  const matches = new Map<string, Transaction[]>();
+  if (!expenses.length) return matches;
+
+  const dates = expenses.map(({ date }) => date).sort();
+  const keys = new Set(expenses.map(({ date, amount }) => dateAmountKey(date, amount)));
+  const local = getTransactionService().getTransactionsByDateRange(dates[0], dates[dates.length - 1], profileId);
+  for (const transaction of local) {
+    const key = dateAmountKey(transaction.date, transaction.amount);
+    if (transaction.type !== 'expense' || !keys.has(key)) continue;
+    const bucket = matches.get(key) ?? [];
+    bucket.push(transaction);
+    matches.set(key, bucket);
+  }
+  return matches;
+}
+
+/** Prefer the same receiver, then the same account. Ambiguous matches only supply a category if they agree. */
+export function findLocalExpenseCategory(
+  expense: GmailExpense,
+  matches: Map<string, Transaction[]>,
+  accounts: Account[],
+  target?: Account,
+  viewProfileId?: number,
+): string | undefined {
+  const receiver = receiverKey(expense.payee);
+  const profileId = target?.profileId ?? viewProfileId;
+  const sameReceiver = ({ description }: Transaction) => !!receiver && receiverKey(description ?? '') === receiver;
+  const candidates = matches.get(dateAmountKey(expense.date, expense.amount))?.filter((item) => {
+    if (profileId !== undefined && item.profileId !== profileId) return false;
+    if (item.accountId == null) return profileId !== undefined && sameReceiver(item);
+    if (target) return item.accountId === target.id;
+    if (!sameReceiver(item)) return false;
+    return accounts.some((account) => {
+      if (account.id !== item.accountId || !isExpenseAccount(expense, account)) return false;
+      const digits = account.accountNumber?.replace(/\D/g, '').slice(-4);
+      return !digits || digits.length < 4 || digits === expense.lastFour;
+    });
+  }) ?? [];
+
+  const samePayee = candidates.filter(sameReceiver);
+  const preferred = samePayee.length ? samePayee : candidates;
+  const sameAccount = target ? preferred.filter((item) => item.accountId === target.id) : [];
+  const best = sameAccount.length ? sameAccount : preferred;
+  const first = best[0];
+  if (first && best.every((item) => item.category === first.category && item.profileId === first.profileId)) {
+    return first.category;
+  }
 }
 
 function importKey({ mailboxId, messageId }: GmailExpense): string {

@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../context/ThemeContext';
 import { getAccountService, getCardService, getProfileService } from '../../database';
 import {
-  findSliceExpenses, getExpenseCategories, hasPossibleDuplicate, isExpenseAccount, saveGmailExpense,
+  findLocalExpenseCategory, findSliceExpenses, getExpenseCategories, getLocalExpensesForAlerts,
+  hasPossibleDuplicate, isExpenseAccount, receiverKey, saveGmailExpense,
   type GmailExpense,
 } from '../../services/emailTransactions/importExpenses';
 import { formatShortDate } from '../../utils/format';
@@ -33,10 +34,6 @@ const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'IN
 
 function expenseKey({ mailboxId, messageId }: GmailExpense): string {
   return `${mailboxId}:${messageId}`;
-}
-
-function receiverKey(payee: string): string {
-  return payee.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function alertDetails(expense: GmailExpense): string {
@@ -79,6 +76,13 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
     : [];
   const categoriesByName = new Map(categories.map((item) => [item.name, item]));
   const possibleDuplicate = selected && account && hasPossibleDuplicate(selected, account);
+  const localMatches = useMemo(
+    () => getLocalExpensesForAlerts(expenses, profileId === 'all' ? undefined : profileId),
+    [expenses, profileId],
+  );
+  const reviewedLocalCategory = selected
+    ? findLocalExpenseCategory(selected, localMatches, allAccounts, account, viewProfile)
+    : undefined;
 
   const matchedAccount = (expense: GmailExpense) => {
     const matches = allAccounts.filter((candidate) => isExpenseAccount(expense, candidate) &&
@@ -234,6 +238,19 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
                 <ChipSelect options={cards.map(({ id, name }) => ({ key: id, label: name }))} selected={cardId} onSelect={(id) => updateDraft({ cardId: id })} />
               </>
             )}
+            {reviewedLocalCategory && (
+              <View style={styles.localMatch}>
+                <Text style={styles.muted}>Possible local match · {expenseCategoryLabel(reviewedLocalCategory)}</Text>
+                {category !== reviewedLocalCategory && categoriesByName.has(reviewedLocalCategory) && (
+                  <TouchableOpacity accessibilityRole="button" onPress={() => {
+                    setCategorizedCount(0);
+                    updateDraft({ category: reviewedLocalCategory });
+                  }}>
+                    <Text style={styles.secondaryText}>Use {expenseCategoryLabel(reviewedLocalCategory)}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
             <CategoryPicker
               categories={categories}
               selected={category}
@@ -278,6 +295,10 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
               const key = expenseKey(expense);
               const draft = drafts[key] ?? EMPTY_DRAFT;
               const chosen = draft.category === null ? undefined : categoriesByName.get(draft.category);
+              const target = draft.accountId === null ? matchedAccount(expense) : accountById.get(draft.accountId);
+              const localCategory = !chosen
+                ? findLocalExpenseCategory(expense, localMatches, allAccounts, target, viewProfile)
+                : undefined;
               return (
                 <GmailExpenseCard
                   key={key}
@@ -285,6 +306,10 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
                   details={alertDetails(expense)}
                   amount={rupees.format(expense.amount)}
                   category={chosen && { label: expenseCategoryLabel(chosen.name), color: chosen.color }}
+                  localCategory={localCategory ? {
+                    label: expenseCategoryLabel(localCategory),
+                    color: categoriesByName.get(localCategory)?.color ?? theme.colors.textSecondary,
+                  } : undefined}
                   ready={isReady(expense, draft)}
                   disabled={searching}
                   onReview={() => review(expense)}
@@ -320,6 +345,7 @@ const createStyles = (theme: ReturnType<typeof useTheme>['theme']) => StyleSheet
   title: { color: theme.colors.text, fontWeight: '700', fontSize: 22 },
   content: { padding: 16, paddingBottom: 28, gap: 14 },
   preview: { padding: 16, gap: 6, backgroundColor: theme.colors.surface, borderRadius: 12 },
+  localMatch: { gap: 6 },
   amount: { color: theme.colors.text, fontSize: 28, fontWeight: '700' },
   label: { color: theme.colors.text, fontSize: 16, fontWeight: '600' },
   muted: { color: theme.colors.textSecondary, fontSize: 14 },
