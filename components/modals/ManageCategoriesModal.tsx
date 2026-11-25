@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../../context/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { getCategoryService } from '../../database';
+import { isTransferCategory, type CategoryUsage } from '../../database/CategoryService';
 import { Category } from '../../types';
 import OptionSelector from '../OptionSelector';
 
@@ -31,6 +32,9 @@ export default function ManageCategoriesModal({ visible, onClose }: ManageCatego
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [selectedTab, setSelectedTab] = useState<'expense' | 'income'>('expense');
+  const [categoryToDelete, setCategoryToDelete] = useState<{ category: Category; usage: CategoryUsage } | null>(null);
+  const [replacementId, setReplacementId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string>();
 
   // Form states
   const [formName, setFormName] = useState('');
@@ -68,6 +72,16 @@ export default function ManageCategoriesModal({ visible, onClose }: ManageCatego
   };
 
   const filteredCategories = categories.filter(cat => cat.type === selectedTab);
+  const replacements = categoryToDelete ? categories.filter((category) =>
+    category.type === categoryToDelete.category.type && category.id !== categoryToDelete.category.id &&
+    !isTransferCategory(category.name),
+  ) : [];
+  const replacement = replacements.find(({ id }) => id === replacementId);
+  const usageLabels = categoryToDelete ? ([
+    [categoryToDelete.usage.transactions, 'transaction', 'transactions'],
+    [categoryToDelete.usage.recurringItems, 'recurring item', 'recurring items'],
+    [categoryToDelete.usage.budgets, 'budget', 'budgets'],
+  ] as const).flatMap(([count, singular, plural]) => count ? [`${count} ${count === 1 ? singular : plural}`] : []) : [];
 
   const resetForm = () => {
     setFormName('');
@@ -125,27 +139,42 @@ export default function ManageCategoriesModal({ visible, onClose }: ManageCatego
     }
   };
 
+  const closeReplacement = () => {
+    setCategoryToDelete(null);
+    setReplacementId(null);
+    setDeleteError(undefined);
+  };
+
+  const deleteCategory = (category: Category, targetId?: number) => {
+    try {
+      getCategoryService().deleteCategory(category.id, targetId);
+      closeReplacement();
+      loadCategories();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Try again.';
+      if (targetId === undefined) Alert.alert('Could not delete category', message);
+      else setDeleteError(message);
+    }
+  };
+
   const handleDeleteCategory = (category: Category) => {
-    Alert.alert(
-      'Delete Category',
-      `Are you sure you want to delete "${category.name}"? This action cannot be undone.`,
-      [
+    if (isTransferCategory(category.name)) {
+      Alert.alert('Transfer category', 'This category is used for transfers between accounts.');
+      return;
+    }
+    try {
+      const usage = getCategoryService().getCategoryUsage(category.id);
+      if (usage.transactions || usage.recurringItems || usage.budgets) {
+        setCategoryToDelete({ category, usage });
+        return;
+      }
+      Alert.alert('Delete category', `Delete “${category.name}”?`, [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            const categoryService = getCategoryService();
-            const success = categoryService.deleteCategory(category.id);
-            if (success) {
-              loadCategories();
-            } else {
-              Alert.alert('Error', 'Cannot delete category that is being used in transactions');
-            }
-          },
-        },
-      ]
-    );
+        { text: 'Delete', style: 'destructive', onPress: () => deleteCategory(category) },
+      ]);
+    } catch (error) {
+      Alert.alert('Could not delete category', error instanceof Error ? error.message : 'Try again.');
+    }
   };
 
   const renderCategoryItem = ({ item }: { item: Category }) => (
@@ -233,6 +262,57 @@ export default function ManageCategoriesModal({ visible, onClose }: ManageCatego
           style={styles.categoriesList}
           showsVerticalScrollIndicator={false}
         />
+
+        {categoryToDelete && (
+          <Modal visible transparent animationType="fade" onRequestClose={closeReplacement}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Delete “{categoryToDelete.category.name}”</Text>
+                <Text style={styles.replacementNote}>
+                  Used by {usageLabels.join(', ')}. Choose where to move these items before deleting the category.
+                </Text>
+                <FlatList
+                  data={replacements}
+                  keyExtractor={({ id }) => String(id)}
+                  style={styles.replacementList}
+                  ListEmptyComponent={<Text style={styles.replacementNote}>Add another {categoryToDelete.category.type} category first.</Text>}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: item.id === replacementId }}
+                      style={[styles.replacementOption, item.id === replacementId && styles.replacementSelected]}
+                      onPress={() => {
+                        setReplacementId(item.id);
+                        setDeleteError(undefined);
+                      }}
+                    >
+                      <Text style={styles.categoryName}>{item.icon} {item.name}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+                {replacement?.budgetLimit != null && categoryToDelete.category.budgetLimit != null && (
+                  <Text style={styles.replacementNote}>The replacement keeps its current category budget limit.</Text>
+                )}
+                {deleteError && <Text accessibilityLiveRegion="polite" style={styles.deleteError}>{deleteError}</Text>}
+                <View style={styles.modalActions}>
+                  <TouchableOpacity accessibilityRole="button" style={styles.cancelButton} onPress={closeReplacement}>
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    disabled={!replacement}
+                    style={[styles.confirmDeleteButton, !replacement && styles.disabled]}
+                    onPress={() => {
+                      if (replacement) deleteCategory(categoryToDelete.category, replacement.id);
+                    }}
+                  >
+                    <Text style={styles.saveButtonText}>Move and delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
 
         {/* Add/Edit Category Modal */}
         <Modal visible={showAddModal} animationType="slide" transparent={true}>
@@ -488,6 +568,19 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginBottom: 24,
     textAlign: 'center',
   },
+  replacementNote: { color: theme.colors.textSecondary, marginBottom: 8 },
+  replacementList: { flexGrow: 0, marginTop: 8 },
+  replacementOption: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 6,
+  },
+  replacementSelected: { borderColor: theme.colors.primary },
+  deleteError: { color: theme.colors.error, marginTop: 8 },
+  confirmDeleteButton: { flex: 1, backgroundColor: theme.colors.error, borderRadius: 8, padding: 12 },
+  disabled: { opacity: 0.5 },
   formGroup: {
     marginBottom: 16,
   },
