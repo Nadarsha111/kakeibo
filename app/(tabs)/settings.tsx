@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
@@ -15,6 +16,8 @@ import { useSettings } from "../../context/SettingsContext";
 import OptionSelector from "../../components/OptionSelector";
 import ManageCategoriesModal from "../../components/modals/ManageCategoriesModal";
 import ExportDataModal from "../../components/modals/ExportDataModal";
+import GmailExpenseImportModal from "../../components/modals/GmailExpenseImportModal";
+import { useTransactionModal } from "../../context/TransactionModalContext";
 import { getGoogleSyncService } from "../../services/GoogleSyncService";
 import {
   applyDownloadedUpdate,
@@ -37,10 +40,12 @@ export default function SettingsScreen() {
     currency,
     decimalPlaces,
     appLockEnabled,
+    selectedProfileId,
     updateCurrency,
     updateDecimalPlaces,
     updateAppLock,
   } = useSettings();
+  const { notifyDataChanged } = useTransactionModal();
   const styles = createStyles(theme);
   const appVersion = getAppVersionInfo();
   const [checkingForUpdate, setCheckingForUpdate] = useState(false);
@@ -74,6 +79,7 @@ export default function SettingsScreen() {
   const [decimalModalVisible, setDecimalModalVisible] = useState(false);
   const [manageCategoriesVisible, setManageCategoriesVisible] = useState(false);
   const [exportDataVisible, setExportDataVisible] = useState(false);
+  const [gmailImportVisible, setGmailImportVisible] = useState(false);
 
   // Google Sync state
   const [googleUser, setGoogleUser] = useState<User | null>(null);
@@ -279,6 +285,18 @@ export default function SettingsScreen() {
           /> */}
         </View>
 
+        {Platform.OS !== "web" && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Gmail imports</Text>
+            <SettingItem
+              title="Import from Gmail"
+              subtitle="Search for Slice and SBI alerts and review them before importing"
+              rightComponent={<Text style={styles.chevron}>›</Text>}
+              onPress={() => setGmailImportVisible(true)}
+            />
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Categories</Text>
           <SettingItem
@@ -381,6 +399,16 @@ export default function SettingsScreen() {
           onClose={() => setExportDataVisible(false)}
         />
       </ScrollView>
+      {gmailImportVisible && (
+        <GmailExpenseImportModal
+          profileId={selectedProfileId}
+          onClose={() => {
+            setGmailImportVisible(false);
+            void checkGoogleSignInStatus();
+          }}
+          onImported={notifyDataChanged}
+        />
+      )}
     </View>
   );
 }

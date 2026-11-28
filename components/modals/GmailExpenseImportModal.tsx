@@ -5,8 +5,8 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../context/ThemeContext';
 import { getAccountService, getCardService, getProfileService } from '../../database';
 import {
-  findGmailExpenses, findLocalExpenseCategory, getExpenseCategories, getLocalExpensesForAlerts,
-  hasPossibleDuplicate, isExpenseAccount, receiverKey, saveGmailExpense,
+  findGmailExpenses, findLocalExpenseCategory, getExpenseCategories, getLocalExpensesForAlerts, getMatchingEmiPurchases,
+  hasPossibleDuplicate, isExpenseAccount, NEW_EMI_PURCHASE, receiverKey, saveGmailEmi, saveGmailExpense,
   type GmailExpense,
 } from '../../services/emailTransactions/importExpenses';
 import { formatShortDate } from '../../utils/format';
@@ -25,11 +25,12 @@ interface ExpenseDraft {
   accountId: number | null;
   cardId: number | null;
   category: string | null;
+  purchaseId: number | null;
 }
 
 type ReadyDraft = ExpenseDraft & { accountId: number; category: string };
 
-const EMPTY_DRAFT: ExpenseDraft = { accountId: null, cardId: null, category: null };
+const EMPTY_DRAFT: ExpenseDraft = { accountId: null, cardId: null, category: null, purchaseId: null };
 const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
 
 function expenseKey({ mailboxId, messageId }: GmailExpense): string {
@@ -37,9 +38,11 @@ function expenseKey({ mailboxId, messageId }: GmailExpense): string {
 }
 
 function alertDetails(expense: GmailExpense): string {
+  const date = formatShortDate(new Date(`${expense.date}T00:00:00`));
+  if (expense.emi) return `${date} · ${rupees.format(expense.emi.installmentAmount)} × ${expense.emi.termMonths} months`;
   const bank = expense.provider === 'sbi' ? 'SBI' : 'Slice';
   const accountType = expense.accountKind === 'credit_card' ? 'credit card' : 'bank account';
-  return `${formatShortDate(new Date(`${expense.date}T00:00:00`))} · ${bank} ${accountType} ••${expense.lastFour}`;
+  return `${date} · ${bank} ${accountType} ••${expense.lastFour}`;
 }
 
 export default function GmailExpenseImportModal({ profileId, onClose, onImported }: Props) {
@@ -67,7 +70,9 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
   const cardsByAccount = getCardService().getCardsForAccounts(
     allAccounts.filter(({ type }) => type === 'credit_card').map(({ id }) => id),
   );
-  const { accountId, cardId, category } = (selected && drafts[expenseKey(selected)]) || EMPTY_DRAFT;
+  const draft = (selected && drafts[expenseKey(selected)]) || EMPTY_DRAFT;
+  const { accountId, cardId, category, purchaseId } = draft;
+  const emi = selected?.emi;
   const accounts = selected ? allAccounts.filter((account) => isExpenseAccount(selected, account)) : [];
   const account = accounts.find(({ id }) => id === accountId);
   const cards = account ? cardsByAccount.get(account.id) ?? [] : [];
@@ -76,35 +81,40 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
     ? getExpenseCategories().sort((a, b) => expensePresetIndex(a.name) - expensePresetIndex(b.name))
     : [];
   const categoriesByName = new Map(categories.map((item) => [item.name, item]));
-  const possibleDuplicate = selected && account && hasPossibleDuplicate(selected, account);
+  const possibleDuplicate = selected && !emi && account && hasPossibleDuplicate(selected, account);
+  const matchingPurchases = emi && selected && account ? getMatchingEmiPurchases(selected, account) : [];
+  const chosenPurchase = matchingPurchases.find(({ id }) => id === purchaseId);
   const localMatches = useMemo(
     () => getLocalExpensesForAlerts(expenses, profileId === 'all' ? undefined : profileId),
     [expenses, profileId],
   );
-  const reviewedLocalCategory = selected
+  const reviewedLocalCategory = selected && !emi
     ? findLocalExpenseCategory(selected, localMatches, allAccounts, account, viewProfile)
     : undefined;
 
   const matchedAccount = (expense: GmailExpense) => {
+    if (!expense.lastFour) return undefined;
     const matches = allAccounts.filter((candidate) => isExpenseAccount(expense, candidate) &&
       candidate.accountNumber?.replace(/\D/g, '').slice(-4) === expense.lastFour);
     return matches.length === 1 ? matches[0] : undefined;
   };
 
   const isReady = (expense: GmailExpense, draft: ExpenseDraft): draft is ReadyDraft => {
-    if (draft.accountId === null || draft.category === null || !categoriesByName.has(draft.category)) return false;
+    if (expense.emi || draft.accountId === null || draft.category === null || !categoriesByName.has(draft.category)) return false;
     const target = accountById.get(draft.accountId);
     if (!target || !isExpenseAccount(expense, target)) return false;
     const targetCards = cardsByAccount.get(target.id) ?? [];
     return targetCards.length ? targetCards.some(({ id }) => id === draft.cardId) : draft.cardId === null;
   };
-  const canImport = selected && isReady(selected, { accountId, cardId, category });
+  const canImportEmi = account && (chosenPurchase ||
+    ((!matchingPurchases.length || purchaseId === NEW_EMI_PURCHASE) && category !== null && categoriesByName.has(category)));
+  const canImport = emi ? !!canImportEmi : selected && isReady(selected, draft);
 
   const sourceProfile = account?.profileId ?? viewProfile;
   const selectedReceiver = selected ? receiverKey(selected.payee) : '';
-  const matchingUncategorized = selected && category && selectedReceiver ? expenses.flatMap((expense) => {
+  const matchingUncategorized = selected && !emi && category && selectedReceiver ? expenses.flatMap((expense) => {
     const key = expenseKey(expense);
-    if (key === expenseKey(selected) || expense.mailboxId !== selected.mailboxId ||
+    if (expense.emi || key === expenseKey(selected) || expense.mailboxId !== selected.mailboxId ||
         receiverKey(expense.payee) !== selectedReceiver || drafts[key]?.category) return [];
 
     const existing = drafts[key];
@@ -169,6 +179,28 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
     setCategorizedCount(matchingUncategorized.length);
   };
 
+  const finishImport = (expense: GmailExpense, result: 'imported' | 'already_imported') => {
+    const key = expenseKey(expense);
+    setExpenses((previous) => previous.filter((item) => expenseKey(item) !== key));
+    setDrafts((previous) => {
+      const remaining = { ...previous };
+      delete remaining[key];
+      return remaining;
+    });
+    setSelected((current) => current && expenseKey(current) === key ? undefined : current);
+    setFeedback(result === 'imported' ? (expense.emi ? 'EMI plan added.' : 'Expense imported.') : 'This email was already imported.');
+    if (result === 'imported') onImported();
+  };
+
+  const saveEmi = () => {
+    if (!selected || !account || !canImportEmi) return;
+    try {
+      finishImport(selected, saveGmailEmi(selected, account.id, cardId, category, purchaseId));
+    } catch (error) {
+      Alert.alert('Could not add EMI plan', error instanceof Error ? error.message : 'Try again.');
+    }
+  };
+
   const save = (expense: GmailExpense, draft: ReadyDraft, confirmDuplicate = false) => {
     try {
       const result = saveGmailExpense(expense, draft.accountId, draft.cardId, draft.category, confirmDuplicate);
@@ -179,16 +211,7 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
         ]);
         return;
       }
-      const key = expenseKey(expense);
-      setExpenses((previous) => previous.filter((item) => expenseKey(item) !== key));
-      setDrafts((previous) => {
-        const remaining = { ...previous };
-        delete remaining[key];
-        return remaining;
-      });
-      setSelected((current) => current && expenseKey(current) === key ? undefined : current);
-      setFeedback(result === 'imported' ? 'Expense imported.' : 'This email was already imported.');
-      if (result === 'imported') onImported();
+      finishImport(expense, result);
     } catch (error) {
       Alert.alert('Could not import expense', error instanceof Error ? error.message : 'Try again.');
     }
@@ -212,7 +235,7 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
           <TouchableOpacity onPress={close} accessibilityRole="button" accessibilityLabel={selected ? 'Back to alerts' : 'Close Gmail import'} hitSlop={8}>
             <MaterialCommunityIcons name={selected ? 'arrow-left' : 'close'} color={theme.colors.text} size={24} />
           </TouchableOpacity>
-          <Text style={styles.title}>{selected ? 'Review expense' : 'Import from Gmail'}</Text>
+          <Text style={styles.title}>{emi ? 'Review EMI plan' : selected ? 'Review expense' : 'Import from Gmail'}</Text>
         </View>
         {selected ? (
           <ScrollView contentContainerStyle={styles.content} key="review">
@@ -221,6 +244,13 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
               <Text style={styles.label}>{selected.payee}</Text>
               <Text style={styles.muted}>{alertDetails(selected)}</Text>
               {selected.reference && <Text style={styles.muted}>RRN {selected.reference}</Text>}
+              {emi && (
+                <>
+                  <Text style={styles.muted}>Financed amount {rupees.format(emi.principal)} · {emi.interestRate}% per year</Text>
+                  <Text style={styles.muted}>First EMI {formatShortDate(new Date(`${emi.firstDueDate}T00:00:00`))}</Text>
+                  {emi.processingFee !== undefined && <Text style={styles.muted}>Processing fee {rupees.format(emi.processingFee)}</Text>}
+                </>
+              )}
             </View>
             <Text style={styles.label}>Account</Text>
             {accounts.length ? (
@@ -230,17 +260,46 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
                 }))}
                 selected={accountId}
                 onSelect={(id) => {
-                  if (id !== accountId) updateDraft({ accountId: id, cardId: null });
+                  if (id !== accountId) updateDraft({ accountId: id, cardId: null, purchaseId: null });
                 }}
               />
             ) : <Text style={styles.muted}>Add a matching account in Accounts before importing this alert.</Text>}
-            {!!cards.length && (
+            {!!cards.length && !chosenPurchase && (
               <>
                 <Text style={styles.label}>Card</Text>
-                <ChipSelect options={cards.map(({ id, name }) => ({ key: id, label: name }))} selected={cardId} onSelect={(id) => updateDraft({ cardId: id })} />
+                <ChipSelect
+                  options={[
+                    ...(emi ? [{ key: null, label: 'Unassigned' }] : []),
+                    ...cards.map(({ id, name }) => ({ key: id, label: name })),
+                  ]}
+                  selected={cardId}
+                  onSelect={(id) => {
+                    if (id !== cardId) updateDraft({ cardId: id });
+                  }}
+                />
               </>
             )}
-            {reviewedLocalCategory && (
+            {emi && matchingPurchases.length > 0 && (
+              <>
+                <Text style={styles.label}>Original purchase</Text>
+                <ChipSelect
+                  options={[
+                    ...matchingPurchases.map(({ id, description, category }) => ({
+                      key: id, label: description || expenseCategoryLabel(category),
+                    })),
+                    { key: NEW_EMI_PURCHASE, label: 'Record a new purchase' },
+                  ]}
+                  selected={purchaseId}
+                  onSelect={(id) => updateDraft({ purchaseId: id })}
+                />
+              </>
+            )}
+            {emi && account && (
+              <Text style={styles.muted}>
+                {chosenPurchase ? 'The EMI will use this saved purchase.' : 'Choose a saved purchase when available to keep the charge recorded once.'}
+              </Text>
+            )}
+            {!emi && reviewedLocalCategory && (
               <View style={styles.localMatch}>
                 <Text style={styles.muted}>Possible local match · {expenseCategoryLabel(reviewedLocalCategory)}</Text>
                 {category !== reviewedLocalCategory && categoriesByName.has(reviewedLocalCategory) && (
@@ -253,14 +312,14 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
                 )}
               </View>
             )}
-            <CategoryPicker
+            {!chosenPurchase && <CategoryPicker
               categories={categories}
               selected={category}
               onSelect={(name) => {
                 setCategorizedCount(0);
                 updateDraft({ category: name });
               }}
-            />
+            />}
             {!!matchingUncategorized.length && (
               <TouchableOpacity accessibilityRole="button" style={styles.secondary} onPress={applyCategoryToMatches}>
                 <Text style={styles.secondaryText}>
@@ -276,13 +335,13 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
             {possibleDuplicate && (
               <Text style={styles.muted}>Possible duplicate. An expense with the same date and amount already exists.</Text>
             )}
-            <TouchableOpacity accessibilityRole="button" style={[styles.primary, !canImport && styles.disabled]} onPress={() => importOrReview(selected)} disabled={!canImport}>
-              <Text style={styles.primaryText}>Import expense</Text>
+            <TouchableOpacity accessibilityRole="button" style={[styles.primary, !canImport && styles.disabled]} onPress={emi ? saveEmi : () => importOrReview(selected)} disabled={!canImport}>
+              <Text style={styles.primaryText}>{emi ? 'Add EMI plan' : 'Import expense'}</Text>
             </TouchableOpacity>
           </ScrollView>
         ) : (
           <ScrollView contentContainerStyle={styles.content} key="alerts">
-            {!scanned && <Text style={styles.muted}>Find Slice UPI and SBI credit card purchase alerts from the last 30 days.</Text>}
+            {!scanned && <Text style={styles.muted}>Find Slice UPI alerts and SBI credit card purchases and EMI bookings from the last 30 days.</Text>}
             <TouchableOpacity accessibilityRole="button" style={[styles.primary, searching && styles.disabled]} onPress={() => search()} disabled={searching}>
               <Text style={styles.primaryText}>{scanned ? 'Search again' : 'Find transaction alerts'}</Text>
             </TouchableOpacity>
@@ -298,7 +357,7 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
               const draft = drafts[key] ?? EMPTY_DRAFT;
               const chosen = draft.category === null ? undefined : categoriesByName.get(draft.category);
               const target = draft.accountId === null ? matchedAccount(expense) : accountById.get(draft.accountId);
-              const localCategory = !chosen
+              const localCategory = !expense.emi && !chosen
                 ? findLocalExpenseCategory(expense, localMatches, allAccounts, target, viewProfile)
                 : undefined;
               return (

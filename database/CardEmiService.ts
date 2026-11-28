@@ -22,6 +22,7 @@ interface CardEmiInput {
   date?: string;
   purchaseAmount?: number;
   purchaseTransactionId?: number;
+  remainingInstallments?: number;
 }
 
 /**
@@ -78,34 +79,23 @@ class CardEmiService {
     }
 
     const purchaseTransactionId = data.purchaseTransactionId ?? this.transactionService.addTransactionUnsafe({
-          profileId: data.profileId,
-          amount: data.purchaseAmount ?? data.principal,
-          type: 'expense',
-          category: data.category,
-          description: `${data.name} (EMI)`,
-          date: data.date || now.split('T')[0],
-          paymentMethod: 'credit_card',
-          accountId: data.accountId,
-          cardId: data.cardId ?? null,
+      profileId: data.profileId,
+      amount: data.purchaseAmount ?? data.principal,
+      type: 'expense',
+      category: data.category,
+      description: `${data.name} (EMI)`,
+      date: data.date || now.split('T')[0],
+      paymentMethod: 'credit_card',
+      accountId: data.accountId,
+      cardId: data.cardId ?? null,
     });
 
     const result = this.db.runSync(
-          `INSERT INTO card_emis (accountId, cardId, name, principal, returnedAmount, interestRate, termMonths, installmentAmount, paymentDay, nextDueDate, interestPaid, status, isActive, createdAt, updatedAt, purchaseTransactionId)
-           VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 0, 'active', 1, ?, ?, ?)`,
-          [
-            data.accountId,
-            data.cardId ?? null,
-            data.name,
-            data.principal,
-            data.interestRate ?? 0,
-            data.termMonths,
-            installmentAmount,
-            paymentDay,
-            data.firstDueDate,
-            now,
-            now,
-            purchaseTransactionId,
-          ],
+      `INSERT INTO card_emis (accountId, cardId, name, principal, returnedAmount, interestRate, termMonths, installmentAmount,
+        paymentDay, nextDueDate, interestPaid, status, isActive, createdAt, updatedAt, purchaseTransactionId, remainingInstallments)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 0, 'active', 1, ?, ?, ?, ?)`,
+      [data.accountId, data.cardId ?? null, data.name, data.principal, data.interestRate ?? 0, data.termMonths,
+        installmentAmount, paymentDay, data.firstDueDate, now, now, purchaseTransactionId, data.remainingInstallments ?? null],
     );
     return result.lastInsertRowId;
   }
@@ -128,21 +118,28 @@ class CardEmiService {
         let returnedAmount = emi.returnedAmount || 0;
         let interestPaid = emi.interestPaid || 0;
         let nextDueDate = emi.nextDueDate as string;
+        let remaining = emi.remainingInstallments ?? null;
         let iterations = 0;
 
-        while (nextDueDate <= today && outstanding > 0.005 && iterations < MAX_CATCH_UP) {
-          const { interest, principalPortion } = this.splitInstallment(emi, outstanding);
+        while (nextDueDate <= today && (remaining === null ? outstanding > 0.005 : remaining > 0) && iterations < MAX_CATCH_UP) {
+          const estimate = this.splitInstallment(emi, outstanding);
+          // Keep the estimated principal repayable within the bank's remaining fixed payments.
+          const principalPortion = remaining === null ? estimate.principalPortion : Math.max(
+            estimate.principalPortion, round2(outstanding - (remaining - 1) * emi.installmentAmount),
+          );
+          const interest = remaining === null ? estimate.interest : Math.max(0, round2(emi.installmentAmount - principalPortion));
           returnedAmount = round2(returnedAmount + principalPortion);
           interestPaid = round2(interestPaid + interest);
           outstanding = round2((emi.principal || 0) - returnedAmount);
           nextDueDate = addMonths(nextDueDate, 1, emi.paymentDay || undefined);
+          if (remaining !== null) remaining--;
           iterations++;
         }
 
-        const fullyPaid = outstanding <= 0.005;
+        const fullyPaid = remaining === null ? outstanding <= 0.005 : remaining === 0;
         this.db.runSync(
-          `UPDATE card_emis SET returnedAmount = ?, interestPaid = ?, nextDueDate = ?, status = ?, updatedAt = ? WHERE id = ?`,
-          [returnedAmount, interestPaid, fullyPaid ? null : nextDueDate, fullyPaid ? 'fully_paid' : 'active', new Date().toISOString(), emi.id],
+          `UPDATE card_emis SET returnedAmount = ?, interestPaid = ?, nextDueDate = ?, status = ?, remainingInstallments = ?, updatedAt = ? WHERE id = ?`,
+          [returnedAmount, interestPaid, fullyPaid ? null : nextDueDate, fullyPaid ? 'fully_paid' : 'active', remaining, new Date().toISOString(), emi.id],
         );
       });
     } catch (error) {

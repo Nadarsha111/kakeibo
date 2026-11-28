@@ -87,6 +87,7 @@ export interface CardEmi {
   interestRate?: number | null; // annual percentage, charged monthly on the outstanding principal
   termMonths: number;
   installmentAmount: number;
+  remainingInstallments?: number | null;
   paymentDay?: number | null;
   nextDueDate?: string | null;
   interestPaid?: number | null;

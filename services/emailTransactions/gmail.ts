@@ -41,15 +41,20 @@ export function decodeGmailBody(data: string): string {
   return decodeURIComponent(escaped);
 }
 
-async function getGmailUser() {
-  const sync = getGoogleSyncService();
-  if (!(await sync.isSignedIn()) && !(await sync.signIn())) return null;
+function getAuthorizedGmailMailbox(): string | undefined {
   const user = GoogleSignin.getCurrentUser();
-  if (user?.scopes.includes(GMAIL_SCOPE)) return user;
+  return user?.scopes.includes(GMAIL_SCOPE) ? user.user.id : undefined;
+}
+
+async function authorizeGmailMailbox(): Promise<string | undefined> {
+  const sync = getGoogleSyncService();
+  if (!(await sync.isSignedIn()) && !(await sync.signIn())) return undefined;
+  const mailbox = getAuthorizedGmailMailbox();
+  if (mailbox) return mailbox;
   const response = await GoogleSignin.addScopes({ scopes: [GMAIL_SCOPE] });
   return response?.type === 'success' && response.data.scopes.includes(GMAIL_SCOPE)
-    ? response.data
-    : null;
+    ? response.data.user.id
+    : undefined;
 }
 
 class GmailRequestError extends Error {
@@ -67,18 +72,22 @@ function bodyParts(part: MessagePart): MessagePart[] {
 }
 
 export async function readGmailPage<T>(
-  senders: readonly string[],
+  search: {
+    query: string;
+    acceptsSender: (sender: string) => boolean;
+    excludeMessage?: (mailboxId: string, messageId: string) => boolean;
+  },
   parse: (sender: string, bodies: EmailBody[]) => T | null,
   page?: { mailboxId: string; token: string },
 ): Promise<{ mailboxId: string; items: Array<{ messageId: string; value: T }>; nextPageToken?: string }> {
-  const user = await getGmailUser();
-  if (!user) throw new Error('Sign in to Google and allow Gmail read access to find transaction alerts.');
-  const mailboxId = user.user.id;
+  const mailboxId = await authorizeGmailMailbox();
+  if (!mailboxId) throw new Error('Sign in to Google and allow Gmail read access to find transaction alerts.');
   if (page && page.mailboxId !== mailboxId) {
     throw new Error('The signed-in Gmail account changed. Close this screen and search again.');
   }
 
   let { accessToken } = await GoogleSignin.getTokens();
+  if (getAuthorizedGmailMailbox() !== mailboxId) throw new Error('The signed-in Gmail account changed.');
   const get = async <ResponseBody>(path: string): Promise<ResponseBody> => {
     const response = await fetch(GMAIL_API + path, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) throw new GmailRequestError(response.status);
@@ -86,11 +95,10 @@ export async function readGmailPage<T>(
   };
 
   const readPage = async () => {
-    const fromQuery = senders.map((sender) => `from:${sender}`).join(' ');
-    const query = encodeURIComponent(`{${fromQuery}} newer_than:30d`);
+    const query = encodeURIComponent(search.query);
     const token = page ? `&pageToken=${encodeURIComponent(page.token)}` : '';
     const list = await get<MessagePage>(`/messages?maxResults=25&q=${query}${token}`);
-    const messages = list.messages ?? [];
+    const messages = (list.messages ?? []).filter(({ id }) => !search.excludeMessage?.(mailboxId, id));
     const items: Array<{ messageId: string; value: T }> = [];
 
     for (let start = 0; start < messages.length; start += 5) {
@@ -100,7 +108,7 @@ export async function readGmailPage<T>(
         if (!message.payload) return null;
         const from = message.payload.headers?.find((header) => header.name.toLowerCase() === 'from')?.value.trim();
         const sender = (from?.match(/<([^<>]+)>$/)?.[1] ?? from)?.trim().toLowerCase();
-        if (!sender || !senders.includes(sender)) return null;
+        if (!sender || !search.acceptsSender(sender)) return null;
 
         const bodies: EmailBody[] = [];
         for (const part of bodyParts(message.payload)) {
@@ -131,6 +139,7 @@ export async function readGmailPage<T>(
     if (!(error instanceof GmailRequestError) || error.status !== 401) throw error;
     await GoogleSignin.clearCachedAccessToken(accessToken);
     ({ accessToken } = await GoogleSignin.getTokens());
+    if (getAuthorizedGmailMailbox() !== mailboxId) throw new Error('The signed-in Gmail account changed.');
     return readPage();
   }
 }

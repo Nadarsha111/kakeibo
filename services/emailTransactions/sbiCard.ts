@@ -24,8 +24,8 @@ export function parseSbiCardEmi(body: string, mimeType: 'text/plain' | 'text/htm
   const amountText = /\bTransaction Amount\s*:\s*(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)(?=\s|$)/i.exec(text)?.[1];
   const principalText = /\bBooking Amount\s*:\s*(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)(?=\s|$)/i.exec(text)?.[1];
   const installmentText = /\bEMI Amount\s*:\s*(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)(?=\s|$)/i.exec(text)?.[1];
-  const transactionDate = /\bTransaction Date(?:\s*\(DD\/MM\/YYYY\))?\s*:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\b/i.exec(text);
-  const firstEmiDate = /\bFirst EMI Date(?:\s*\(DD\/MM\/YYYY\))?\s*:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\b/i.exec(text);
+  const transactionDate = /\bTransaction Date(?:\s*\(DD\/MM\/YYYY\)+)?\s*:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\b/i.exec(text);
+  const firstEmiDate = /\bFirst EMI Date(?:\s*\(DD\/MM\/YYYY\)+)?\s*:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\b/i.exec(text);
   const rate = /\bRate of Interest\s*:\s*(\d+(?:\.\d+)?)\s*%/i.exec(text)?.[1];
   const tenure = /\bTenure\s*:\s*(\d+)\s*months?\b/i.exec(text)?.[1];
   if (!amountText || !principalText || !installmentText || !transactionDate || !firstEmiDate || !rate || !tenure) return null;

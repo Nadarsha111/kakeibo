@@ -116,9 +116,11 @@ npm run web
 
 #### Import transaction alerts from Gmail
 
-On mobile, open **Transactions → Import → Find transaction alerts**. The app searches the past
+On mobile, open **Settings → Gmail imports → Import from Gmail** and select **Find transaction alerts**. The app searches the past
 30 days for Slice UPI credit card purchases, Slice account debits, and SBI credit card purchase
-alerts. For SBI purchases with a separate EMI booking confirmation, use the purchase alert.
+alerts and SBI Card Merchant EMI booking confirmations. Open a booking to review the installment
+terms and add the EMI to a credit card account. If the purchase is already saved on that account,
+select it in the review screen to attach the plan to the original charge.
 Open an alert, confirm the destination account (and physical card where applicable), choose an
 expense category, and tap **Import expense**. The same Gmail message can only be imported once.
 When you return to the alert list, each reviewed alert shows its selected category. Swipe

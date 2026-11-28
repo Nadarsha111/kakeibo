@@ -331,6 +331,10 @@ class DatabaseConnector {
       db.execSync('ALTER TABLE card_emis ADD COLUMN purchaseTransactionId INTEGER REFERENCES transactions(id) ON DELETE SET NULL');
       db.execSync('CREATE UNIQUE INDEX card_emis_purchase ON card_emis(purchaseTransactionId)');
     },
+    // 9: imported EMI bookings have a fixed installment count.
+    (db) => {
+      db.execSync('ALTER TABLE card_emis ADD COLUMN remainingInstallments INTEGER');
+    },
   ];
 
   private static hasColumn(db: SQLite.SQLiteDatabase, table: string, column: string): boolean {
