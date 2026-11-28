@@ -33,7 +33,6 @@ export function getLocalExpensesForAlerts(expenses: GmailExpense[], profileId?: 
   return matches;
 }
 
-/** Prefer the same receiver, then the same account. Ambiguous matches only supply a category if they agree. */
 export function findLocalExpenseCategory(
   expense: GmailExpense,
   matches: Map<string, Transaction[]>,
@@ -44,22 +43,22 @@ export function findLocalExpenseCategory(
   const receiver = receiverKey(expense.payee);
   const profileId = target?.profileId ?? viewProfileId;
   const sameReceiver = ({ description }: Transaction) => !!receiver && receiverKey(description ?? '') === receiver;
-  const candidates = matches.get(dateAmountKey(expense.date, expense.amount))?.filter((item) => {
-    if (profileId !== undefined && item.profileId !== profileId) return false;
-    if (item.accountId == null) return profileId !== undefined && sameReceiver(item);
-    if (target) return item.accountId === target.id;
-    if (!sameReceiver(item)) return false;
-    return accounts.some((account) => {
-      if (account.id !== item.accountId || !isExpenseAccount(expense, account)) return false;
-      const digits = account.accountNumber?.replace(/\D/g, '').slice(-4);
-      return !digits || digits.length < 4 || digits === expense.lastFour;
-    });
-  }) ?? [];
+  const candidates = (matches.get(dateAmountKey(expense.date, expense.amount)) ?? []).filter((item) =>
+    item.category !== 'Transfer Out' && (profileId === undefined || item.profileId === profileId));
 
-  const samePayee = candidates.filter(sameReceiver);
-  const preferred = samePayee.length ? samePayee : candidates;
-  const sameAccount = target ? preferred.filter((item) => item.accountId === target.id) : [];
-  const best = sameAccount.length ? sameAccount : preferred;
+  const matchingAccounts = target ? [target.id] : accounts.filter((account) => {
+    if (!isExpenseAccount(expense, account)) return false;
+    const digits = account.accountNumber?.replace(/\D/g, '').slice(-4);
+    return !digits || digits.length < 4 || digits === expense.lastFour;
+  }).map(({ id }) => id);
+  const onMatchingAccount = candidates.filter(({ accountId }) => accountId != null && matchingAccounts.includes(accountId));
+
+  // Use the strongest group with evidence. A conflict in that group leaves the suggestion blank.
+  const matchesByPriority = [onMatchingAccount.filter(sameReceiver)];
+  if (profileId !== undefined) {
+    matchesByPriority.push(candidates.filter(sameReceiver), onMatchingAccount);
+  }
+  const best = matchesByPriority.find((group) => group.length > 0) ?? [];
   const first = best[0];
   if (first && best.every((item) => item.category === first.category && item.profileId === first.profileId)) {
     return first.category;
