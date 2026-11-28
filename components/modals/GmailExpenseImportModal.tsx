@@ -5,7 +5,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../context/ThemeContext';
 import { getAccountService, getCardService, getProfileService } from '../../database';
 import {
-  findLocalExpenseCategory, findSliceExpenses, getExpenseCategories, getLocalExpensesForAlerts,
+  findGmailExpenses, findLocalExpenseCategory, getExpenseCategories, getLocalExpensesForAlerts,
   hasPossibleDuplicate, isExpenseAccount, receiverKey, saveGmailExpense,
   type GmailExpense,
 } from '../../services/emailTransactions/importExpenses';
@@ -37,8 +37,9 @@ function expenseKey({ mailboxId, messageId }: GmailExpense): string {
 }
 
 function alertDetails(expense: GmailExpense): string {
-  const source = expense.accountKind === 'credit_card' ? 'Slice credit card' : 'Slice bank account';
-  return `${formatShortDate(new Date(`${expense.date}T00:00:00`))} · ${source} ••${expense.lastFour}`;
+  const bank = expense.provider === 'sbi' ? 'SBI' : 'Slice';
+  const accountType = expense.accountKind === 'credit_card' ? 'credit card' : 'bank account';
+  return `${formatShortDate(new Date(`${expense.date}T00:00:00`))} · ${bank} ${accountType} ••${expense.lastFour}`;
 }
 
 export default function GmailExpenseImportModal({ profileId, onClose, onImported }: Props) {
@@ -109,7 +110,8 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
     const existing = drafts[key];
     const target = existing?.accountId != null ? accountById.get(existing.accountId) : matchedAccount(expense);
     const targetProfile = target?.profileId ?? viewProfile;
-    const sameInstrument = expense.accountKind === selected.accountKind && expense.lastFour === selected.lastFour;
+    const sameInstrument = expense.provider === selected.provider && expense.accountKind === selected.accountKind &&
+      expense.lastFour === selected.lastFour;
     const sameProfile = targetProfile !== undefined && targetProfile === sourceProfile;
     if (!sameProfile && !(targetProfile === undefined && sameInstrument)) return [];
 
@@ -122,7 +124,7 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
     setSearchError(undefined);
     setFeedback(undefined);
     try {
-      const result = await findSliceExpenses(older ? nextPage : undefined);
+      const result = await findGmailExpenses(older ? nextPage : undefined);
       setExpenses((previous) => older
         ? [...previous, ...result.expenses.filter((expense) => !previous.some((item) => expenseKey(item) === expenseKey(expense)))]
         : result.expenses);
@@ -280,15 +282,15 @@ export default function GmailExpenseImportModal({ profileId, onClose, onImported
           </ScrollView>
         ) : (
           <ScrollView contentContainerStyle={styles.content} key="alerts">
-            {!scanned && <Text style={styles.muted}>Find Slice UPI debit and credit card alerts from the last 30 days.</Text>}
+            {!scanned && <Text style={styles.muted}>Find Slice UPI and SBI credit card purchase alerts from the last 30 days.</Text>}
             <TouchableOpacity accessibilityRole="button" style={[styles.primary, searching && styles.disabled]} onPress={() => search()} disabled={searching}>
-              <Text style={styles.primaryText}>{scanned ? 'Search again' : 'Find Slice alerts'}</Text>
+              <Text style={styles.primaryText}>{scanned ? 'Search again' : 'Find transaction alerts'}</Text>
             </TouchableOpacity>
             {pendingSearch === 'search' && <ActivityIndicator color={theme.colors.primary} accessibilityLabel="Searching Gmail" />}
             {searchError && !searchError.older && <Text accessibilityLiveRegion="polite" style={styles.muted}>{searchError.message}</Text>}
             {feedback && <Text accessibilityLiveRegion="polite" style={styles.muted}>{feedback}</Text>}
             {scanned && !searching && !expenses.length && (
-              <Text style={styles.muted}>{nextPage ? 'No new supported alerts on this page.' : 'No new supported Slice alerts found.'}</Text>
+              <Text style={styles.muted}>{nextPage ? 'No new supported alerts on this page.' : 'No new supported alerts found.'}</Text>
             )}
             {!!expenses.length && <Text style={styles.muted}>Tap to review. Swipe left to import a ready expense.</Text>}
             {expenses.map((expense) => {

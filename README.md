@@ -114,12 +114,13 @@ npm run web
 - Payment method tracking
 - Add new transaction functionality
 
-#### Import Slice alerts from Gmail
+#### Import transaction alerts from Gmail
 
-On mobile, open **Transactions → Import → Find Slice alerts**. The app searches the past
-30 days for Slice UPI credit card purchases and bank-account debits. Open an alert, confirm
-the destination account (and physical card where applicable), choose an expense category, and
-tap **Import expense**. The same Gmail message can only be imported once.
+On mobile, open **Transactions → Import → Find transaction alerts**. The app searches the past
+30 days for Slice UPI credit card purchases, Slice account debits, and SBI credit card purchase
+alerts. For SBI purchases with a separate EMI booking confirmation, use the purchase alert.
+Open an alert, confirm the destination account (and physical card where applicable), choose an
+expense category, and tap **Import expense**. The same Gmail message can only be imported once.
 When you return to the alert list, each reviewed alert shows its selected category. Swipe
 left to import an alert whose account and category are ready, or to review any missing choices.
 If other loaded alerts from the same receiver need a category, use **Apply to other alerts**

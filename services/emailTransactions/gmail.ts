@@ -67,8 +67,8 @@ function bodyParts(part: MessagePart): MessagePart[] {
 }
 
 export async function readGmailPage<T>(
-  sender: string,
-  parse: (bodies: EmailBody[]) => T | null,
+  senders: readonly string[],
+  parse: (sender: string, bodies: EmailBody[]) => T | null,
   page?: { mailboxId: string; token: string },
 ): Promise<{ mailboxId: string; items: Array<{ messageId: string; value: T }>; nextPageToken?: string }> {
   const user = await getGmailUser();
@@ -86,7 +86,8 @@ export async function readGmailPage<T>(
   };
 
   const readPage = async () => {
-    const query = encodeURIComponent(`from:${sender} newer_than:30d`);
+    const fromQuery = senders.map((sender) => `from:${sender}`).join(' ');
+    const query = encodeURIComponent(`{${fromQuery}} newer_than:30d`);
     const token = page ? `&pageToken=${encodeURIComponent(page.token)}` : '';
     const list = await get<MessagePage>(`/messages?maxResults=25&q=${query}${token}`);
     const messages = list.messages ?? [];
@@ -98,8 +99,8 @@ export async function readGmailPage<T>(
         const message = await get<{ payload?: MessagePart }>(`${path}?format=full`);
         if (!message.payload) return null;
         const from = message.payload.headers?.find((header) => header.name.toLowerCase() === 'from')?.value.trim();
-        const address = from?.match(/<([^<>]+)>$/)?.[1] ?? from;
-        if (address?.toLowerCase() !== sender) return null;
+        const sender = (from?.match(/<([^<>]+)>$/)?.[1] ?? from)?.trim().toLowerCase();
+        if (!sender || !senders.includes(sender)) return null;
 
         const bodies: EmailBody[] = [];
         for (const part of bodyParts(message.payload)) {
@@ -114,7 +115,7 @@ export async function readGmailPage<T>(
             // Another MIME alternative, if present, may still be usable.
           }
         }
-        const value = parse(bodies);
+        const value = parse(sender, bodies);
         return value === null ? null : { messageId: id, value };
       }));
       for (const item of batch) {

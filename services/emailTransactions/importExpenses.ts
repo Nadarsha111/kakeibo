@@ -1,9 +1,11 @@
 import { DatabaseConnector, getAccountService, getCardService, getCategoryService, getSettingsService, getTransactionService } from '../../database';
 import type { Account, Transaction } from '../../types';
+import type { ExpenseAlert } from './expenseAlert';
 import { readGmailPage } from './gmail';
-import { parseSliceExpense, SLICE_SENDER, type SliceExpense } from './slice';
+import { parseSbiCardExpense, SBI_CARD_SENDER } from './sbiCard';
+import { parseSliceExpense, SLICE_SENDER } from './slice';
 
-export interface GmailExpense extends SliceExpense {
+export interface GmailExpense extends ExpenseAlert {
   mailboxId: string;
   messageId: string;
 }
@@ -69,10 +71,17 @@ function importKey({ mailboxId, messageId }: GmailExpense): string {
   return `gmail.imported.${mailboxId}.${messageId}`;
 }
 
-export async function findSliceExpenses(page?: { mailboxId: string; token: string }) {
-  const result = await readGmailPage(SLICE_SENDER, (bodies) => {
+const expenseParsers = new Map([
+  [SLICE_SENDER, parseSliceExpense],
+  [SBI_CARD_SENDER, parseSbiCardExpense],
+]);
+
+export async function findGmailExpenses(page?: { mailboxId: string; token: string }) {
+  const result = await readGmailPage([...expenseParsers.keys()], (sender, bodies) => {
+    const parseExpense = expenseParsers.get(sender);
+    if (!parseExpense) return null;
     for (const { text, mimeType } of bodies) {
-      const expense = parseSliceExpense(text, mimeType);
+      const expense = parseExpense(text, mimeType);
       if (expense) return expense;
     }
     return null;
