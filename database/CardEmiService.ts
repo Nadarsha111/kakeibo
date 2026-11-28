@@ -8,6 +8,22 @@ import { localToday } from '../utils/recurring';
 // further back is picked up the next time the app runs. Roughly two years of monthly installments.
 const MAX_CATCH_UP = 24;
 
+interface CardEmiInput {
+  accountId: number;
+  cardId?: number | null;
+  profileId: number;
+  name: string;
+  category: string;
+  principal: number;
+  interestRate?: number;
+  termMonths: number;
+  installmentAmount?: number;
+  firstDueDate: string;
+  date?: string;
+  purchaseAmount?: number;
+  purchaseTransactionId?: number;
+}
+
 /**
  * A purchase on a credit card converted to fixed monthly installments. There is no separate
  * payment action, the way there is for a loan: an EMI is paid simply by paying the card's own
@@ -41,33 +57,29 @@ class CardEmiService {
    * shared balance reflects it immediately like any other charge, plus the installment plan that
    * determines how much of it is billed each month instead of all at once.
    */
-  addEmi(data: {
-    accountId: number;
-    cardId?: number | null;
-    profileId: number;
-    name: string;
-    category: string;
-    principal: number;
-    interestRate?: number;
-    termMonths: number;
-    installmentAmount?: number;
-    firstDueDate: string;
-    date?: string;
-  }): number {
+  addEmi(data: CardEmiInput): number {
+    return DatabaseConnector.getInstance().withTransaction(() => this.addEmiUnsafe(data));
+  }
+
+  /** Caller owns the database transaction and validates any existing purchase supplied. */
+  addEmiUnsafe(data: CardEmiInput): number {
     if (!(data.principal > 0)) throw new Error('Enter a valid purchase amount.');
     if (!Number.isInteger(data.termMonths) || data.termMonths < 1) throw new Error('Enter the term as a whole number of months.');
 
-    try {
-      return DatabaseConnector.getInstance().withTransaction(() => {
-        const installmentAmount = data.installmentAmount && data.installmentAmount > 0
-          ? round2(data.installmentAmount)
-          : monthlyPayment(data.principal, data.interestRate || 0, data.termMonths);
-        const paymentDay = parseInt(data.firstDueDate.slice(8), 10);
-        const now = new Date().toISOString();
+    const installmentAmount = data.installmentAmount && data.installmentAmount > 0
+      ? round2(data.installmentAmount)
+      : monthlyPayment(data.principal, data.interestRate || 0, data.termMonths);
+    const paymentDay = parseInt(data.firstDueDate.slice(8), 10);
+    const now = new Date().toISOString();
+    if (data.purchaseTransactionId != null && this.db.getFirstSync(
+      'SELECT id FROM card_emis WHERE purchaseTransactionId = ?', [data.purchaseTransactionId],
+    )) {
+      throw new Error('This purchase already has an EMI plan.');
+    }
 
-        this.transactionService.addTransactionUnsafe({
+    const purchaseTransactionId = data.purchaseTransactionId ?? this.transactionService.addTransactionUnsafe({
           profileId: data.profileId,
-          amount: data.principal,
+          amount: data.purchaseAmount ?? data.principal,
           type: 'expense',
           category: data.category,
           description: `${data.name} (EMI)`,
@@ -75,11 +87,11 @@ class CardEmiService {
           paymentMethod: 'credit_card',
           accountId: data.accountId,
           cardId: data.cardId ?? null,
-        });
+    });
 
-        const result = this.db.runSync(
-          `INSERT INTO card_emis (accountId, cardId, name, principal, returnedAmount, interestRate, termMonths, installmentAmount, paymentDay, nextDueDate, interestPaid, status, isActive, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 0, 'active', 1, ?, ?)`,
+    const result = this.db.runSync(
+          `INSERT INTO card_emis (accountId, cardId, name, principal, returnedAmount, interestRate, termMonths, installmentAmount, paymentDay, nextDueDate, interestPaid, status, isActive, createdAt, updatedAt, purchaseTransactionId)
+           VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 0, 'active', 1, ?, ?, ?)`,
           [
             data.accountId,
             data.cardId ?? null,
@@ -92,14 +104,10 @@ class CardEmiService {
             data.firstDueDate,
             now,
             now,
+            purchaseTransactionId,
           ],
-        );
-        return result.lastInsertRowId;
-      });
-    } catch (error) {
-      console.error('Error adding card EMI:', error);
-      throw error;
-    }
+    );
+    return result.lastInsertRowId;
   }
 
   /**

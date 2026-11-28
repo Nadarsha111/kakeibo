@@ -326,6 +326,11 @@ class DatabaseConnector {
         db.execSync('ALTER TABLE transactions ADD COLUMN cardId INTEGER REFERENCES credit_cards(id)');
       }
     },
+    // 8: link installment plans to their original purchase.
+    (db) => {
+      db.execSync('ALTER TABLE card_emis ADD COLUMN purchaseTransactionId INTEGER REFERENCES transactions(id) ON DELETE SET NULL');
+      db.execSync('CREATE UNIQUE INDEX card_emis_purchase ON card_emis(purchaseTransactionId)');
+    },
   ];
 
   private static hasColumn(db: SQLite.SQLiteDatabase, table: string, column: string): boolean {

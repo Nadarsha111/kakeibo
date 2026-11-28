@@ -3,9 +3,17 @@ export interface ExpenseAlert {
   amount: number;
   date: string;
   payee: string;
-  lastFour: string;
+  lastFour?: string;
   accountKind: 'credit_card' | 'bank';
   reference?: string;
+  emi?: {
+    principal: number;
+    interestRate: number;
+    termMonths: number;
+    installmentAmount: number;
+    firstDueDate: string;
+    processingFee?: number;
+  };
 }
 
 const ENTITIES: Record<string, string> = {
